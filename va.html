@@ -25,6 +25,9 @@
   a.open{display:block;text-align:center;background:#1d3050;border:1px solid #2b4a7d;color:#cfe0ff;
          border-radius:11px;padding:15px;margin:13px 0;text-decoration:none;font-weight:650;
          font-size:17px;min-height:52px}
+  /* The one action a VA takes on every card, so it is the biggest thing on the screen. */
+  a.open.primary{background:#1e5e46;border-color:#2b7d5f;color:#eafff5;padding:18px;
+         font-size:18px;min-height:58px;margin-bottom:6px}
   .script{background:#10161e;border:1px solid var(--line);border-radius:11px;padding:12px;
           white-space:pre-wrap;font-size:14px;line-height:1.5;margin:11px 0}
   .acts{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
@@ -203,6 +206,56 @@ async function boot() {
   draw();
 }
 
+/** Confirmation under the primary action, cleared on the next card. */
+function say(text) {
+  const el = $('copystate');
+  if (el) el.textContent = text || ' ';
+}
+
+/**
+ * Copy without awaiting, so the tap that triggered it can still navigate.
+ *
+ * navigator.clipboard.writeText returns a promise, but the write is authorised at the moment it is
+ * CALLED, inside the gesture -- so it is started and deliberately not awaited. Awaiting it before
+ * the anchor navigates is what makes Safari treat the navigation as a popup and block it.
+ *
+ * The execCommand path is the fallback for anything older or any context where the async API is
+ * missing. On iOS it needs a real selection range, not just .select(), which is why the range is
+ * built by hand.
+ */
+function copyNow(text) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).catch(() => legacyCopy(text));
+      return true;
+    }
+  } catch { /* fall through to the old way */ }
+  return legacyCopy(text);
+}
+
+function legacyCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.contentEditable = 'true';
+  ta.readOnly = false;
+  // Off-screen but not display:none -- a hidden element cannot be selected, and iOS scrolls to a
+  // focused field, so it is parked at the current scroll position rather than at the top.
+  ta.style.cssText = 'position:fixed;left:-9999px;top:' + window.scrollY + 'px;opacity:0';
+  document.body.appendChild(ta);
+  let ok = false;
+  try {
+    const range = document.createRange();
+    range.selectNodeContents(ta);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    ta.setSelectionRange(0, text.length);
+    ok = document.execCommand('copy');
+  } catch { ok = false; }
+  document.body.removeChild(ta);
+  return ok;
+}
+
 // ---------------------------------------------------------------------------------------------
 // ONE CARD. Finishing a lead advances to the next immediately -- the VA never returns to a list to
 // choose, which is what makes the queue actually get worked from the top.
@@ -220,10 +273,17 @@ function draw() {
       + '<div><div class="who">' + esc(t.display_name || t.handle || 'creator') + '</div>'
       + '<div class="meta">' + esc(t.handle ? '@' + t.handle : '') + ' · ' + esc(t.platform) + '</div></div>'
       + '<span class="pill ' + esc(t.priority) + '">' + esc(t.priority) + '</span></div>'
-    + '<a class="open" href="' + esc(t.profile_url) + '" target="_blank" rel="noopener">Open profile</a>'
     + '<p class="muted" style="margin:13px 0 5px">Personalized message</p>'
     + '<div class="script" id="script">' + esc(t.dm_message) + '</div>'
-    + '<button class="good" id="copy">Copy DM</button>'
+    // THE PRIMARY ACTION IS AN ANCHOR, NOT A BUTTON, AND THAT IS THE WHOLE TRICK ON IOS.
+    // Tapping a real link to https://www.tiktok.com/@handle lets iOS hand off to the TikTok app
+    // through its universal link; if the app is not installed, Safari simply loads the web profile,
+    // so the fallback costs no code. window.open() would be a popup, and Safari blocks popups that
+    // happen after any await -- which is exactly what copying is.
+    + '<a class="open primary" id="copyopen" href="' + esc(t.profile_url) + '"'
+      + ' target="_blank" rel="noopener">Copy DM &amp; open profile</a>'
+    + '<p class="muted" id="copystate" style="margin:-4px 0 10px;text-align:center">&nbsp;</p>'
+    + '<button class="sm" id="copy">Copy DM</button>'
     + '<p class="muted" style="margin:13px 0 5px">Note (optional)</p>'
     + '<textarea id="note" placeholder="Anything worth remembering">' + esc(t.notes || '') + '</textarea>'
     + '<div class="acts" style="margin-top:12px">'
@@ -236,10 +296,20 @@ function draw() {
     + '<p class="muted" style="margin-bottom:0">' + (cursor + 1) + ' of ' + queue.length + '</p>'
     + '</div>';
 
-  // The message is already written for this creator. The VA copies it, pastes it, comes back.
-  $('copy').onclick = async () => {
-    try { await navigator.clipboard.writeText(t.dm_message); $('copy').textContent = 'Copied'; }
-    catch { $('copy').textContent = 'Select the text above to copy'; }
+  // COPY, CONFIRM, THEN LET THE LINK DO ITS JOB -- in that order, with nothing awaited in between.
+  // Safari treats the tap as a user gesture only for the synchronous part of the handler; the
+  // moment you await the clipboard promise before navigating, the navigation is a popup and gets
+  // blocked. So the copy is only STARTED here and the anchor's own default action carries on.
+  // Nothing here changes the task: the VA still taps Sent DM after they have actually sent it.
+  $('copyopen').addEventListener('click', () => {
+    const ok = copyNow(t.dm_message);
+    say(ok ? 'Copied — paste it in the DM' : 'Copy failed, select the message above');
+  });
+
+  $('copy').onclick = () => {
+    const ok = copyNow(t.dm_message);
+    $('copy').textContent = ok ? 'Copied' : 'Select the text above to copy';
+    say(ok ? 'Copied' : '');
   };
 
   for (const b of $('card').querySelectorAll('button[data-s]')) {
