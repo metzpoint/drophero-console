@@ -229,9 +229,16 @@ async function boot() {
   $('claim').hidden = true;
   const { data, error } = await sb.rpc('dh_va_queue');
   if (error) {
-    // Not a VA is not an error to debug; it is simply the wrong door.
+    // TWO VERY DIFFERENT FAILURES USED TO SHOW THE SAME SENTENCE. Any error here was reported as
+    // "not set up as a VA yet" -- so when a bug in the query made every call fail, a VA with a
+    // correct password was told their account was wrong. Sign-in had worked perfectly; the message
+    // sent them to look in the one place that was fine. Only the specific "no VA is linked"
+    // exception means the wrong door; anything else is a fault and says so.
     $('login').hidden = false; $('app').hidden = true;
-    $('loginmsg').textContent = 'This account is not set up as a VA yet.';
+    $('loginmsg').textContent = /no va is linked/i.test(error.message || '')
+      ? 'This account is not set up as a VA yet.'
+      : 'Signed in, but the queue could not be loaded — this is a fault on our side, not your '
+        + 'account. Please tell Rico. (' + (error.message || 'unknown error') + ')';
     return;
   }
   $('login').hidden = true; $('app').hidden = false;
