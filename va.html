@@ -107,7 +107,6 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
 
 let queue = [];       // the VA's open leads, untouched work first
 let cursor = 0;       // which one is on screen
-let template = null;  // the approved message, or null when the owner has not written one
 
 $('signin').onclick = async () => {
   $('loginmsg').textContent = 'signing in…';
@@ -195,7 +194,6 @@ async function boot() {
   }
   $('login').hidden = true; $('app').hidden = false;
   queue = data.tasks || [];
-  template = data.dm_template ?? null;
   cursor = Math.min(cursor, Math.max(0, queue.length - 1));
   $('hello').textContent = 'Hi ' + ((data.va && data.va.name) || '');
   $('sub').textContent = queue.length ? queue.length + ' creators assigned to you'
@@ -223,11 +221,9 @@ function draw() {
       + '<div class="meta">' + esc(t.handle ? '@' + t.handle : '') + ' · ' + esc(t.platform) + '</div></div>'
       + '<span class="pill ' + esc(t.priority) + '">' + esc(t.priority) + '</span></div>'
     + '<a class="open" href="' + esc(t.profile_url) + '" target="_blank" rel="noopener">Open profile</a>'
-    + (template
-        ? '<div class="script" id="script">' + esc(template) + '</div>'
-          + '<button class="sm" id="copy">Copy message</button>'
-        : '<div class="warn">No approved message has been set yet. Ask your manager before '
-          + 'sending anything.</div>')
+    + '<p class="muted" style="margin:13px 0 5px">Personalized message</p>'
+    + '<div class="script" id="script">' + esc(t.dm_message) + '</div>'
+    + '<button class="good" id="copy">Copy DM</button>'
     + '<p class="muted" style="margin:13px 0 5px">Note (optional)</p>'
     + '<textarea id="note" placeholder="Anything worth remembering">' + esc(t.notes || '') + '</textarea>'
     + '<div class="acts" style="margin-top:12px">'
@@ -240,8 +236,9 @@ function draw() {
     + '<p class="muted" style="margin-bottom:0">' + (cursor + 1) + ' of ' + queue.length + '</p>'
     + '</div>';
 
-  if (template) $('copy').onclick = async () => {
-    try { await navigator.clipboard.writeText(template); $('copy').textContent = 'Copied'; }
+  // The message is already written for this creator. The VA copies it, pastes it, comes back.
+  $('copy').onclick = async () => {
+    try { await navigator.clipboard.writeText(t.dm_message); $('copy').textContent = 'Copied'; }
     catch { $('copy').textContent = 'Select the text above to copy'; }
   };
 
