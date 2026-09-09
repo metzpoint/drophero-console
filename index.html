@@ -193,7 +193,9 @@ $('signup').onclick = async () => {
   // what actually happened rather than assuming either one.
   if (data.session) { $('loginmsg').textContent = ''; boot(); }
   else $('loginmsg').textContent =
-    'Account created. Confirm the link we just emailed to ' + email + ', then sign in here.';
+    'Account created. Open the confirmation link we just emailed to ' + email + '. If it lands on a '
+    + 'blank or unfamiliar page, that is fine — the address is confirmed either way. Then come back '
+    + 'here and sign in with the password you just chose.';
 };
 
 $('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };

@@ -14,13 +14,13 @@ not rewrite it.
 GitHub Pages is free for public repositories only, which is why this one is public. The application
 code, database migrations and history stay in the private `DropHero-Outreach` repository.
 
-## Enabling Pages
+## Which branch is served
 
-Settings → Pages → Source: **Deploy from a branch** → branch `main`, folder `/ (root)` → Save.
+GitHub Pages serves **`gh-pages`**. Pushing that branch is what enabled Pages in the first place —
+GitHub's legacy auto-enable — after two other routes were refused: the GitHub App cannot create a
+Pages site, and neither can a workflow's default token (`Resource not accessible by integration`).
 
-Deploying from a branch rather than from a workflow is deliberate: an Actions-based deploy needs a
-token that can create the Pages site, and the repository's default workflow token cannot
-(`Resource not accessible by integration`).
+`main` and `gh-pages` are kept identical. Publish a change by pushing both.
 
 ## What is and is not exposed here
 
