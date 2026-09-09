@@ -466,8 +466,9 @@ function renderVas(d) {
       + '<th class="n">Reply %</th><th class="n">Int %</th><th class="n">Signups</th>'
       + '<th class="n">Sales</th><th class="n">Payable</th><th class="n">Flags</th><th></th></tr>'
       + rows.map((v) => '<tr><td>' + esc(v.name) + '</td>'
-        + '<td>' + (v.active ? '<span class="pill on">active</span>'
-                             : '<span class="pill off">off</span>') + '</td>'
+        + '<td>' + (!v.has_account ? '<span class="pill warnp">not signed up</span>'
+                                   : v.active ? '<span class="pill on">active</span>'
+                                              : '<span class="pill off">off</span>') + '</td>'
         + '<td class="n">' + n(v.assigned) + '</td><td class="n">' + n(v.contacted) + '</td>'
         + '<td class="n">' + n(v.replies) + '</td><td class="n">' + n(v.interested) + '</td>'
         + '<td class="n">' + pct(v.reply_rate) + '</td><td class="n">' + pct(v.interested_rate) + '</td>'
@@ -492,38 +493,30 @@ function renderVas(d) {
   for (const b of $('vas').querySelectorAll('button[data-act=edit]')) {
     b.onclick = () => editVa(rows.find((r) => r.va_id === b.dataset.va));
   }
-  // Adding a VA creates the invitation AND the account, in that order. The account is created
-  // already confirmed, so the VA never receives a mail and never meets the confirmation redirect --
-  // which points at this project's factory-default Site URL and lands on a browser error page.
+  // Inviting a VA produces one link to send. The link carries the invitation, so the VA sets their
+  // own password and is signed in immediately -- no confirmation mail, and therefore no encounter
+  // with the redirect to this project's factory-default Site URL, which lands on a browser error.
+  const inviteLink = (code) =>
+    location.origin + location.pathname.replace(/[^/]*$/, '') + 'va.html?invite=' + code;
+
+  // The link is a credential for 14 days, so it is shown once, offered to the clipboard, and never
+  // stored anywhere the dashboard can redisplay it.
+  async function handOver(email, code) {
+    const url = inviteLink(code);
+    try { await navigator.clipboard.writeText(url); } catch { /* shown below either way */ }
+    prompt('Send this link to ' + email + '. It is already copied.\\n\\n'
+      + 'They open it, choose their own password, and are straight in. Nothing is emailed.\\n'
+      + 'The link works once and expires in 14 days.', url);
+  }
+
   $('invite').onclick = async () => {
     const name = prompt('VA name'); if (!name) return;
     const email = (prompt('VA email') || '').trim(); if (!email) return;
     const cap = Number(prompt('Daily capacity (DMs per day)', '40'));
-    const pw = prompt('Temporary password for ' + email + ' — at least 8 characters.\\n\\n'
-      + 'Give it to them together with the portal link. They can change it once they are in.');
-    if (pw === null) return;
-    if (pw.length < 8) { alert('That password is too short.'); return; }
-
-    const { error } = await sb.rpc('dh_owner_invite_va',
+    const { data, error } = await sb.rpc('dh_owner_invite_va',
       { p_name: name, p_email: email, p_capacity: isFinite(cap) && cap > 0 ? cap : 40 });
     if (error) { alert(error.message); return; }
-
-    const { data: { session } } = await sb.auth.getSession();
-    const res = await fetch('https://aexomkitwnxvpqlmtrik.supabase.co/functions/v1/create-va-account', {
-      method: 'POST',
-      headers: { authorization: 'Bearer ' + session.access_token, 'content-type': 'application/json' },
-      body: JSON.stringify({ email, password: pw })
-    });
-    const out = await res.json().catch(() => ({ error: 'the server gave no answer' }));
-    if (!res.ok) {
-      // The VA record exists either way; say so, so the owner does not add a second one.
-      alert('The VA was added but the account could not be created:\\n\\n' + (out.error || res.status)
-        + '\\n\\nUse Edit on the VA to try again, or have them sign up on the portal themselves.');
-    } else {
-      alert('Done. Send them:\\n\\n' + location.origin + location.pathname.replace(/[^/]*$/, '') + 'va.html'
-        + '\\n\\nEmail: ' + email + '\\nPassword: ' + pw
-        + '\\n\\nThey sign in straight away — there is no confirmation email.');
-    }
+    await handOver(data.email, data.invite_code);
     boot();
   };
   $('setrates').onclick = async () => {
@@ -548,8 +541,21 @@ function renderVas(d) {
 
 async function editVa(v) {
   if (!v) return;
-  const what = prompt('Type: rename, capacity, on, off, or creators', 'creators');
+  const what = prompt(v.has_account
+    ? 'Type: rename, capacity, on, off, or creators'
+    : 'Type: link (they have not signed up yet), rename, capacity, on, off, or creators',
+    v.has_account ? 'creators' : 'link');
   if (!what) return;
+  if (what === 'link') {
+    // Reissuing invalidates the previous link, which is what makes "I lost it" safe to answer.
+    const { data, error } = await sb.rpc('dh_owner_reissue_invite', { p_va_id: v.va_id });
+    if (error) { alert(error.message); return; }
+    const url = location.origin + location.pathname.replace(/[^/]*$/, '')
+              + 'va.html?invite=' + data.invite_code;
+    try { await navigator.clipboard.writeText(url); } catch { /* shown below either way */ }
+    prompt('New link for ' + data.email + '. The previous one no longer works.', url);
+    return;
+  }
   if (what === 'creators') {
     const { data, error } = await sb.rpc('dh_owner_va_creators', { p_va_id: v.va_id, p_limit: 200 });
     if (error) { alert(error.message); return; }

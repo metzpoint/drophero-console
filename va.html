@@ -55,13 +55,28 @@
     <p class="muted" style="margin-top:11px">Password</p>
     <input id="pw" type="password" autocomplete="current-password">
     <div class="acts" style="margin-top:13px">
-      <button id="signin">Sign in</button>
-      <button id="signup">Create account</button>
+      <button id="signin" class="full">Sign in</button>
     </div>
     <p id="loginmsg" class="muted" style="margin-bottom:0"></p>
   </div>
-  <p class="muted">First time? Use <b>Create account</b> with the email your manager invited, and
-    pick your own password.</p>
+  <p class="muted">First time? Open the invitation link your manager sent you — that is where you
+    choose your password.</p>
+</div>
+
+<div id="claim" hidden>
+  <h1>DropHero</h1><p class="sub">Set up your account.</p>
+  <div class="card">
+    <p class="muted">You were invited as</p>
+    <p class="who" id="claimemail" style="font-size:16px">…</p>
+    <p class="muted" style="margin-top:13px">Choose a password</p>
+    <input id="claimpw" type="password" autocomplete="new-password">
+    <p class="muted" style="margin-top:11px">Repeat it</p>
+    <input id="claimpw2" type="password" autocomplete="new-password">
+    <div class="acts" style="margin-top:13px">
+      <button id="claimgo" class="good full">Create my account</button>
+    </div>
+    <p id="claimmsg" class="muted" style="margin-bottom:0"></p>
+  </div>
 </div>
 
 <main id="app" hidden>
@@ -102,20 +117,49 @@ $('signin').onclick = async () => {
   if (!error) boot();
 };
 
-$('signup').onclick = async () => {
-  const email = $('email').value.trim();
-  if (!email || $('pw').value.length < 8) {
-    $('loginmsg').textContent = 'Enter your email and a password of at least 8 characters.'; return;
+// ---------------------------------------------------------------------------------------------
+// CLAIMING AN INVITATION. The link carries a single-use code; the VA supplies only a password.
+// The account is created already confirmed, so there is no mail to wait for and no redirect to get
+// lost in -- which matters because this project's Site URL still points somewhere that does not
+// resolve, and a VA who lands there cannot tell a working signup from a broken one.
+// ---------------------------------------------------------------------------------------------
+const INVITE = new URLSearchParams(location.search).get('invite');
+
+async function claimEndpoint(payload) {
+  const res = await fetch('https://aexomkitwnxvpqlmtrik.supabase.co/functions/v1/claim-invite', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  return { ok: res.ok, body: await res.json().catch(() => ({ error: 'no answer from the server' })) };
+}
+
+async function offerClaim() {
+  const { ok, body } = await claimEndpoint({ code: INVITE, check: true });
+  if (!ok) { $('login').hidden = false; $('loginmsg').textContent = body.error; return; }
+  $('claim').hidden = false;
+  $('claimemail').textContent = body.email;
+}
+
+$('claimgo').onclick = async () => {
+  const pw = $('claimpw').value;
+  if (pw.length < 8) { $('claimmsg').textContent = 'At least 8 characters, please.'; return; }
+  if (pw !== $('claimpw2').value) { $('claimmsg').textContent = 'The two passwords differ.'; return; }
+  $('claimgo').disabled = true;
+  $('claimmsg').textContent = 'creating your account…';
+
+  const { ok, body } = await claimEndpoint({ code: INVITE, password: pw });
+  if (!ok) { $('claimmsg').textContent = body.error; $('claimgo').disabled = false; return; }
+
+  // Straight in. Signing in here rather than asking them to type it all again is the whole point.
+  const { error } = await sb.auth.signInWithPassword({ email: body.email, password: pw });
+  if (error) {
+    $('claim').hidden = true; $('login').hidden = false;
+    $('loginmsg').textContent = 'Your account is ready. Sign in with ' + body.email + '.';
+    return;
   }
-  $('loginmsg').textContent = 'creating your account…';
-  const { data, error } = await sb.auth.signUp({ email, password: $('pw').value,
-    options: { emailRedirectTo: location.origin + location.pathname } });
-  if (error) { $('loginmsg').textContent = error.message; return; }
-  if (data.session) { $('loginmsg').textContent = ''; boot(); }
-  else $('loginmsg').textContent =
-    'Account created. Open the confirmation link we emailed to ' + email + '. If it lands on a blank '
-    + 'or unfamiliar page, that is fine — the address is confirmed either way. Then come back here '
-    + 'and sign in with the password you just chose.';
+  history.replaceState(null, '', location.pathname);   // do not leave a used code in the address bar
+  $('claim').hidden = true;
+  boot();
 };
 
 $('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
@@ -134,7 +178,14 @@ $('changepw').onclick = async () => {
 
 async function boot() {
   const { data: { session } } = await sb.auth.getSession();
-  if (!session) { $('login').hidden = false; $('app').hidden = true; return; }
+  if (!session) {
+    $('app').hidden = true;
+    // An invitation link takes precedence over the sign-in form: someone arriving with one has no
+    // account yet, and showing them a password box they cannot use is how people give up.
+    if (INVITE) { await offerClaim(); } else { $('login').hidden = false; }
+    return;
+  }
+  $('claim').hidden = true;
   const { data, error } = await sb.rpc('dh_va_queue');
   if (error) {
     // Not a VA is not an error to debug; it is simply the wrong door.
