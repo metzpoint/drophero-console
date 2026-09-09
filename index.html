@@ -1,0 +1,692 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://esm.sh; style-src 'unsafe-inline'; connect-src https://aexomkitwnxvpqlmtrik.supabase.co wss://aexomkitwnxvpqlmtrik.supabase.co https://esm.sh; img-src data:; base-uri 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0f14">
+<title>DropHero — Owner</title>
+<style>
+  :root{--bg:#0b0f14;--card:#151b24;--line:#232c39;--ink:#e8edf5;--dim:#8b98ab;
+        --ok:#3ddc97;--warn:#ffb454;--bad:#ff6b6b;--accent:#6aa6ff}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{overflow-x:hidden;max-width:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:16px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;
+       padding:max(12px,env(safe-area-inset-top)) 12px calc(34px + env(safe-area-inset-bottom))}
+  h1{font-size:19px;margin:4px 0 2px}
+  h2{font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);
+     margin:28px 0 10px;font-weight:600}
+  .sub{color:var(--dim);font-size:12px;margin:0 0 14px}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:9px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px;
+        min-width:0;overflow-wrap:anywhere}
+  .k{color:var(--dim);font-size:11px;letter-spacing:.04em;text-transform:uppercase}
+  .v{font-size:24px;font-weight:650;margin-top:5px;font-variant-numeric:tabular-nums;
+     line-height:1.15;overflow-wrap:anywhere}
+  .v small{font-size:12px;color:var(--dim);font-weight:400}
+  .wide{grid-column:1/-1}
+  .row{display:flex;justify-content:space-between;align-items:center;gap:10px;
+       padding:11px 0;border-bottom:1px solid var(--line);min-width:0} .row:last-child{border-bottom:0}
+  .row>span:first-child{min-width:0}
+  .pill{font-size:11px;padding:3px 9px;border-radius:999px;border:1px solid var(--line);
+        color:var(--dim);white-space:nowrap}
+  .on{color:var(--ok);border-color:#1e5e46} .off{color:var(--bad);border-color:#5e2020}
+  .warnp{color:var(--warn);border-color:#5e4620}
+  a{color:var(--accent);text-decoration:none}
+  button{font:inherit;background:#1d2836;color:var(--ink);border:1px solid var(--line);
+         border-radius:11px;padding:10px 14px;min-height:44px;cursor:pointer}
+  button.sm{min-height:36px;padding:7px 11px;font-size:13px;border-radius:9px}
+  button[aria-pressed=true]{background:#1e5e46;border-color:#2b7d5f;color:#eafff5}
+  button.danger{background:#3a1d1d;border-color:#6b2b2b;color:#ffd3d3}
+  input,select,textarea{font:inherit;background:#10161e;color:var(--ink);border:1px solid var(--line);
+               border-radius:11px;padding:10px;min-height:44px;width:100%;max-width:100%}
+  textarea{min-height:96px;line-height:1.4}
+  .muted{color:var(--dim);font-size:12px}
+  .bar{height:7px;background:#10161e;border-radius:6px;overflow:hidden;margin-top:9px}
+  .bar>i{display:block;height:100%;background:var(--accent)}
+  .banner{background:#3a2318;border:1px solid #6b3a1f;color:#ffcf9e;padding:12px;border-radius:12px;
+          margin:10px 0;font-size:13px}
+  .banner.bad{background:#3a1a1a;border-color:#6b2b2b;color:#ffd3d3}
+  .chips{display:flex;gap:7px;overflow-x:auto;padding-bottom:3px;-webkit-overflow-scrolling:touch}
+  .chips button{white-space:nowrap;min-height:38px;padding:8px 13px;font-size:13px}
+  #login{max-width:420px;margin:9vh auto}
+  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -3px;padding:0 3px}
+  table{width:100%;border-collapse:collapse;font-size:13px;min-width:520px}
+  td,th{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{color:var(--dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+  td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+  .fnl{display:flex;align-items:center;gap:9px;padding:7px 0}
+  .fnl .lbl{width:96px;flex:none;font-size:12px;color:var(--dim)}
+  .fnl .trk{flex:1;height:22px;background:#10161e;border-radius:6px;overflow:hidden;min-width:0}
+  .fnl .trk>i{display:block;height:100%;background:linear-gradient(90deg,#2b5c96,#6aa6ff)}
+  .fnl .num{width:96px;flex:none;text-align:right;font-variant-numeric:tabular-nums;font-size:13px}
+  .fnl .num em{font-style:normal;color:var(--dim);font-size:11px}
+  .att{border-left:3px solid var(--warn);padding-left:10px;margin:10px 0}
+  .att.crit{border-left-color:var(--bad)}
+  .att h3{font-size:13px;margin:0 0 4px}
+  .stack{display:flex;flex-direction:column;gap:9px}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  @media(min-width:720px){.grid{grid-template-columns:repeat(4,1fr)} body{max-width:1080px;margin:0 auto}}
+</style></head><body>
+
+<div id="login" hidden>
+  <h1>DropHero</h1><p class="sub" id="loginlead">Owner and VA access.</p>
+  <div class="card">
+    <p class="k">Email</p><input id="email" type="email" autocomplete="username" inputmode="email">
+    <p class="k" style="margin-top:12px">Password</p>
+    <input id="pw" type="password" autocomplete="current-password">
+    <div class="two" style="margin-top:14px">
+      <button id="signin">Sign in</button>
+      <button id="signup">Create account</button>
+    </div>
+    <p id="loginmsg" class="muted" style="margin-bottom:0"></p>
+  </div>
+  <p class="muted" style="margin-top:14px">First time? Use <b>Create account</b> with the address
+    that was invited and pick your own password. Access is granted by the invitation, not by
+    signing up.</p>
+</div>
+
+<main id="app" hidden>
+  <h1>DropHero</h1>
+  <p class="sub" id="asof">loading…</p>
+  <div id="banners"></div>
+
+  <div class="chips" id="periods">
+    <button data-p="TODAY">Today</button>
+    <button data-p="7D">7 days</button>
+    <button data-p="30D">30 days</button>
+    <button data-p="ALL" aria-pressed="true">All time</button>
+  </div>
+
+  <h2>Needs your attention</h2>
+  <div class="card" id="attention"><div class="muted">loading…</div></div>
+
+  <h2>Overview</h2>
+  <div class="grid" id="kpis"></div>
+
+  <h2>Budget</h2>
+  <div class="card" id="budget"></div>
+
+  <h2>Funnel</h2>
+  <div class="card" id="funnel"></div>
+
+  <h2>Creators</h2>
+  <div class="card">
+    <input id="q" type="search" placeholder="Search handle, name or email" autocomplete="off">
+    <div class="chips" style="margin-top:9px">
+      <select id="f_platform"><option value="">All platforms</option>
+        <option value="tiktok">TikTok</option><option value="youtube">YouTube</option></select>
+      <select id="f_route"><option value="">All routes</option>
+        <option value="EMAIL">Email</option><option value="MANUAL_DM">Manual DM</option></select>
+      <select id="f_status"><option value="">Any status</option>
+        <option value="qualified">Qualified</option><option value="replied">Replied</option>
+        <option value="interested">Interested</option><option value="affiliate">Affiliate</option></select>
+    </div>
+    <div class="chips" style="margin-top:7px">
+      <select id="f_country"><option value="">All countries</option></select>
+      <select id="f_va"><option value="">All VAs</option></select>
+      <select id="f_source"><option value="">All sources</option></select>
+    </div>
+    <div class="scroll" style="margin-top:10px"><table id="creators"></table></div>
+    <div class="row"><span class="muted" id="creatorcount">—</span>
+      <span><button class="sm" id="prev">Back</button>
+            <button class="sm" id="next">More</button></span></div>
+  </div>
+
+  <h2>VAs</h2>
+  <div class="card" id="vas"></div>
+
+  <h2>Sourcing</h2>
+  <div class="card" id="sourcing"></div>
+
+  <h2>Config required</h2>
+  <div class="card" id="config"></div>
+
+  <h2>Integrations</h2>
+  <div class="card" id="integrations"></div>
+
+  <p style="margin-top:26px"><button id="signout" style="width:100%">Sign out</button></p>
+  <p class="muted" id="whoami"></p>
+</main>
+
+<script type="module">
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
+const sb = createClient('https://aexomkitwnxvpqlmtrik.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFleG9ta2l0d254dnBxbG10cmlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2MzEzMjQsImV4cCI6MjEwMjIwNzMyNH0.RPmcFB1YFzBGGuRLWJAZUYZXiKB1ILh9FFIie_EbFkQ',
+  // The session is kept and silently renewed, so opening the page on a phone tomorrow does not ask
+  // for the password again.
+  { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const n = (x) => (x === null || x === undefined) ? '–' : Number(x).toLocaleString('en-US');
+const usd = (x) => x === null || x === undefined ? '–'
+  : '$' + Number(x).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const pct = (x) => x === null || x === undefined ? '–' : Number(x).toFixed(1) + '%';
+const when = (t) => t ? new Date(t).toLocaleString() : 'never';
+
+let period = 'ALL';
+let offset = 0;
+const PAGE = 25;
+
+// ---------------------------------------------------------------------------------------------
+// AUTH. Two buttons, one form. Creating an account is the entire setup step.
+// ---------------------------------------------------------------------------------------------
+$('signin').onclick = async () => {
+  $('loginmsg').textContent = 'signing in…';
+  const { error } = await sb.auth.signInWithPassword(
+    { email: $('email').value.trim(), password: $('pw').value });
+  $('loginmsg').textContent = error ? error.message : '';
+  if (!error) boot();
+};
+
+$('signup').onclick = async () => {
+  const email = $('email').value.trim();
+  if (!email || $('pw').value.length < 8) {
+    $('loginmsg').textContent = 'Enter your email and a password of at least 8 characters.'; return;
+  }
+  $('loginmsg').textContent = 'creating your account…';
+  const { data, error } = await sb.auth.signUp({ email, password: $('pw').value,
+    options: { emailRedirectTo: location.origin + location.pathname } });
+  if (error) { $('loginmsg').textContent = error.message; return; }
+  // Whether a session comes back depends on the project's confirmation setting, so the page reports
+  // what actually happened rather than assuming either one.
+  if (data.session) { $('loginmsg').textContent = ''; boot(); }
+  else $('loginmsg').textContent =
+    'Account created. Confirm the link we just emailed to ' + email + ', then sign in here.';
+};
+
+$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+
+// ---------------------------------------------------------------------------------------------
+// BOOT. One call decides which of the two audiences is looking: the owner RPC succeeds only for the
+// owner, and a VA is sent to their own portal rather than shown an empty owner page.
+// ---------------------------------------------------------------------------------------------
+async function boot() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { show('login'); return; }
+  const { data: overview, error } = await sb.rpc('dh_owner_overview', { p_period: period });
+  if (error) {
+    show('login');
+    const { data: vaq } = await sb.rpc('dh_va_queue');
+    $('loginmsg').innerHTML = vaq
+      ? 'This account is a VA. <a href="./va.html">Open the VA portal</a>.'
+      : 'This account has no access yet.';
+    return;
+  }
+  show('app');
+  $('whoami').textContent = 'Signed in as ' + (session.user.email || '');
+  renderOverview(overview);
+
+  const [funnel, attention, vas, sourcing, integrations] = await Promise.all([
+    sb.rpc('dh_owner_funnel', { p_period: period }), sb.rpc('dh_owner_attention'),
+    sb.rpc('dh_owner_va_admin'), sb.rpc('dh_owner_sourcing_settings'), sb.rpc('dh_owner_integrations')
+  ]);
+  renderFunnel(funnel.data || []);
+  renderAttention(attention.data || {});
+  renderVas(vas.data || {});
+  renderSourcing(sourcing.data || {});
+  renderBudget((sourcing.data || {}).budget || {});
+  renderConfig(((attention.data || {}).config_required) || []);
+  renderIntegrations(integrations.data || {});
+  loadCreators();
+}
+
+function show(which) {
+  $('login').hidden = which !== 'login';
+  $('app').hidden = which !== 'app';
+}
+
+// ---------------------------------------------------------------------------------------------
+// TIME FILTER. The same period drives the KPI row and the funnel, so the two always agree.
+// ---------------------------------------------------------------------------------------------
+for (const b of $('periods').querySelectorAll('button')) {
+  b.onclick = () => {
+    for (const o of $('periods').querySelectorAll('button')) o.removeAttribute('aria-pressed');
+    b.setAttribute('aria-pressed', 'true');
+    period = b.dataset.p; boot();
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
+// THE ELEVEN NUMBERS.
+// ---------------------------------------------------------------------------------------------
+function renderOverview(d) {
+  $('asof').textContent = 'live · ' + when(d.as_of);
+  const cards = [
+    ['Creators', n(d.creators)], ['Qualified', n(d.qualified)],
+    ['Email routed', n(d.route_email)], ['DM routed', n(d.route_dm)],
+    ['DMs sent', n(d.dms_sent)], ['Replies', n(d.replies)],
+    ['Interested', n(d.interested)], ['Affiliates', n(d.affiliates)],
+    ['Customers', n(d.customers)], ['Revenue', usd(d.revenue)],
+    // Spend has no per-period breakdown before the run ledger existed, so the card says so rather
+    // than showing an all-time total dressed up as a period figure.
+    ['Sourcing spend', usd(d.spend) + ' <small>all time</small>']
+  ];
+  $('kpis').innerHTML = cards.map(([k, v]) =>
+    '<div class="card"><div class="k">' + k + '</div><div class="v">' + v + '</div></div>').join('');
+}
+
+// ---------------------------------------------------------------------------------------------
+// FUNNEL. Each bar is scaled against the first stage, and the percentage under it is conversion
+// from the stage above -- which is the number that tells you where people are actually lost.
+// ---------------------------------------------------------------------------------------------
+function renderFunnel(stages) {
+  if (!stages.length) { $('funnel').innerHTML = '<div class="muted">no data yet</div>'; return; }
+  const top = Math.max(1, Number(stages[0].count) || 0);
+  $('funnel').innerHTML = stages.map((s, i) => {
+    const c = Number(s.count) || 0;
+    const prev = i === 0 ? null : Number(stages[i - 1].count) || 0;
+    const conv = prev === null ? '' : prev === 0 ? '<em>—</em>'
+      : '<em>' + ((c / prev) * 100).toFixed(0) + '%</em>';
+    return '<div class="fnl"><span class="lbl">' + esc(s.stage) + '</span>'
+      + '<span class="trk"><i style="width:' + Math.max(c ? 2 : 0, (c / top) * 100) + '%"></i></span>'
+      + '<span class="num">' + n(c) + ' ' + conv + '</span></div>';
+  }).join('');
+}
+
+// ---------------------------------------------------------------------------------------------
+// NEEDS YOUR ATTENTION. Only blocks that actually have something in them are drawn -- an empty
+// heading is noise the owner has to read past.
+// ---------------------------------------------------------------------------------------------
+function renderAttention(a) {
+  const out = [];
+  const block = (crit, title, body) =>
+    out.push('<div class="att' + (crit ? ' crit' : '') + '"><h3>' + title + '</h3>' + body + '</div>');
+
+  if ((a.interested || []).length) block(false, 'Interested creators (' + a.interested.length + ')',
+    a.interested.slice(0, 12).map((i) => '<div class="row"><span><a href="' + esc(i.profile_url)
+      + '" target="_blank" rel="noopener">@' + esc(i.handle || i.display_name || 'creator') + '</a>'
+      + '<span class="muted"> · ' + esc(i.va || 'unassigned') + '</span></span>'
+      + '<span class="pill on">interested</span></div>').join(''));
+
+  if ((a.replies || []).length) block(false, 'Replies to read (' + a.replies.length + ')',
+    a.replies.slice(0, 12).map((i) => '<div class="row"><span><a href="' + esc(i.profile_url)
+      + '" target="_blank" rel="noopener">@' + esc(i.handle || i.display_name || 'creator') + '</a>'
+      + (i.notes ? '<br><span class="muted">' + esc(i.notes) + '</span>' : '') + '</span>'
+      + '<span class="pill">' + esc(when(i.replied_at)) + '</span></div>').join(''));
+
+  if ((a.fraud || []).length) block(true, 'Fraud flags (' + a.fraud.length + ')',
+    a.fraud.slice(0, 12).map((f) => '<div class="row"><span><b>'
+      + esc(String(f.flag_type).replace(/_/g, ' ').toLowerCase()) + '</b><br>'
+      + '<span class="muted">' + esc(f.detail) + '</span></span>'
+      + '<span class="pill ' + (f.severity === 'HIGH' ? 'off' : 'warnp') + '">'
+      + esc(f.severity) + '</span></div>').join(''));
+
+  if (a.sourcing_stopped && a.sourcing_stopped.stopped)
+    block(true, 'Sourcing is stopped', '<div class="muted">' + esc(a.sourcing_stopped.detail) + '</div>');
+
+  if (a.budget && a.budget.level)
+    block(a.budget.level !== 'WARNING_80', 'Budget ' + pct(a.budget.pct_used) + ' used',
+      '<div class="muted">' + usd(a.budget.spent) + ' of ' + usd(a.budget.ceiling) + ' — '
+      + usd(a.budget.remaining) + ' left. Raising the ceiling is under Sourcing, and never automatic.</div>');
+
+  if ((a.provider_errors || []).length) block(true, 'Provider errors (' + a.provider_errors.length + ')',
+    a.provider_errors.slice(0, 8).map((e) => '<div class="row"><span><b>' + esc(e.provider)
+      + '</b> · ' + esc(e.topic_cluster || '') + '<br><span class="muted">'
+      + esc(String(e.last_error).slice(0, 180)) + '</span></span></div>').join(''));
+
+  if (a.unassigned_backlog && a.unassigned_backlog.count > 0)
+    block(false, 'Unassigned DM backlog', '<div class="muted">'
+      + esc(a.unassigned_backlog.detail) + '</div>');
+
+  if ((a.integration_failures || []).length)
+    block(true, 'Integration failures (' + a.integration_failures.length + ')',
+      a.integration_failures.slice(0, 8).map((e) => '<div class="row"><span><b>' + esc(e.provider)
+        + '</b> ' + esc(e.outcome) + '<br><span class="muted">' + esc(e.detail || '')
+        + '</span></span><span class="pill">' + esc(when(e.received_at)) + '</span></div>').join(''));
+
+  if ((a.config_required || []).length)
+    block(false, 'Config required (' + a.config_required.length + ')',
+      a.config_required.map((c) => '<div class="row"><span><b>' + esc(c.label) + '</b><br>'
+        + '<span class="muted">' + esc(c.detail) + '</span></span></div>').join(''));
+
+  $('attention').innerHTML = out.length ? out.join('')
+    : '<div class="muted">Nothing needs you right now.</div>';
+}
+
+// ---------------------------------------------------------------------------------------------
+// BUDGET. Spent / ceiling / remaining / percentage, with the three warning bands the owner asked
+// for. Nothing on this card raises the ceiling by itself.
+// ---------------------------------------------------------------------------------------------
+function renderBudget(b) {
+  if (!b || b.ceiling === undefined) { $('budget').innerHTML = '<div class="muted">no budget set</div>'; return; }
+  const p = Number(b.pct_used || 0);
+  const colour = p >= 95 ? 'var(--bad)' : p >= 80 ? 'var(--warn)' : 'var(--accent)';
+  const note = { EXHAUSTED: 'The ceiling is reached — sourcing cannot spend another cent.',
+                 CRITICAL_95: 'Over 95% used. Sourcing stops very soon.',
+                 WARNING_90: 'Over 90% used.', WARNING_80: 'Over 80% used.',
+                 OK: '', UNKNOWN: 'No ceiling is authorised.' }[b.level] || '';
+  $('budget').innerHTML =
+    '<div class="row"><span>Spent</span><b>' + usd(b.spent) + '</b></div>'
+    + '<div class="row"><span>Ceiling</span><b>' + usd(b.ceiling) + '</b></div>'
+    + '<div class="row"><span>Remaining</span><b>' + usd(b.remaining) + '</b></div>'
+    + '<div class="row"><span>Used</span><b>' + pct(b.pct_used) + '</b></div>'
+    + '<div class="bar"><i style="width:' + Math.min(100, p) + '%;background:' + colour + '"></i></div>'
+    + (note ? '<p class="muted" style="margin-bottom:0">' + esc(note) + '</p>' : '')
+    + '<div class="row" style="margin-top:8px"><span class="muted">Raise the ceiling</span>'
+    + '<button class="sm" id="raise">Change…</button></div>';
+  $('raise').onclick = async () => {
+    const v = prompt('New total sourcing ceiling in US dollars.\n\n'
+      + 'This authorises real money to be spent on creator discovery. '
+      + 'The current ceiling is ' + usd(b.ceiling) + ' and ' + usd(b.spent) + ' has been spent.');
+    if (v === null) return;
+    const usdv = Number(v);
+    if (!isFinite(usdv) || usdv < 0) { alert('That is not an amount.'); return; }
+    if (usdv > Number(b.ceiling || 0)
+        && !confirm('Raise the ceiling to ' + usd(usdv) + '? This increases real spend.')) return;
+    const { error } = await sb.rpc('dh_owner_set_budget_ceiling',
+      { p_usd: usdv, p_confirm: true, p_reason: 'raised from the owner dashboard' });
+    if (error) alert(error.message); else boot();
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
+// CREATOR TABLE. Twelve fields, nine filters, one search box. The table scrolls inside its own box.
+// ---------------------------------------------------------------------------------------------
+const FILTERS = ['q', 'f_platform', 'f_route', 'f_status', 'f_country', 'f_va', 'f_source'];
+for (const id of FILTERS) {
+  $(id).addEventListener(id === 'q' ? 'input' : 'change', () => { offset = 0; debounced(); });
+}
+let timer;
+const debounced = () => { clearTimeout(timer); timer = setTimeout(loadCreators, 250); };
+$('prev').onclick = () => { offset = Math.max(0, offset - PAGE); loadCreators(); };
+$('next').onclick = () => { offset += PAGE; loadCreators(); };
+
+async function loadCreators() {
+  const { data, error } = await sb.rpc('dh_owner_creators', {
+    p_search: $('q').value.trim() || null,
+    p_platform: $('f_platform').value || null,
+    p_route: $('f_route').value || null,
+    p_status: $('f_status').value || null,
+    p_va: $('f_va').value || null,
+    p_country: $('f_country').value || null,
+    p_source: $('f_source').value || null,
+    p_limit: PAGE, p_offset: offset
+  });
+  if (error) { $('creators').innerHTML = ''; $('creatorcount').textContent = error.message; return; }
+  const rows = data.rows || [];
+  $('creatorcount').textContent = rows.length
+    ? (offset + 1) + '–' + (offset + rows.length) + ' of ' + n(data.total)
+    : 'nothing matches those filters';
+  $('prev').disabled = offset === 0;
+  $('next').disabled = offset + rows.length >= Number(data.total || 0);
+  $('creators').innerHTML =
+    '<tr><th>Creator</th><th>Platform</th><th>Relevance</th><th>Route</th><th>Email</th><th>VA</th>'
+    + '<th>Outreach</th><th>Reply</th><th>Affiliate</th><th>Country</th><th>Source</th>'
+    + '<th>Found</th></tr>'
+    + rows.map((r) => '<tr>'
+      + '<td>' + (r.url ? '<a href="' + esc(r.url) + '" target="_blank" rel="noopener">'
+                  + esc(r.name || 'creator') + '</a>' : esc(r.name || 'creator')) + '</td>'
+      + '<td>' + esc(r.platform) + '</td>'
+      + '<td>' + esc(r.qualification_status || '') + '</td>'
+      + '<td>' + esc(r.contact_route || '—') + '</td>'
+      + '<td>' + esc(r.email_status) + '</td>'
+      + '<td>' + esc(r.va || '—') + '</td>'
+      + '<td>' + esc(r.outreach_status || '—') + '</td>'
+      + '<td>' + (r.replied_at ? esc(new Date(r.replied_at).toLocaleDateString()) : '—') + '</td>'
+      + '<td>' + esc(r.affiliate_status || '—') + '</td>'
+      + '<td>' + esc(r.country || '—') + '</td>'
+      + '<td>' + esc(r.source || '—') + '</td>'
+      + '<td>' + esc(new Date(r.created_at).toLocaleDateString()) + '</td></tr>').join('');
+  fillFilterOptions(rows);
+}
+
+// The country and source lists come from what has actually been discovered, so they never offer a
+// filter that would return nothing.
+function fillFilterOptions(rows) {
+  for (const [id, key] of [['f_country', 'country'], ['f_source', 'source']]) {
+    const sel = $(id), have = new Set([...sel.options].map((o) => o.value));
+    for (const r of rows) if (r[key] && !have.has(r[key])) {
+      have.add(r[key]);
+      const o = document.createElement('option'); o.value = r[key]; o.textContent = r[key];
+      sel.appendChild(o);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// VA MANAGEMENT. Eleven columns and the six owner actions. Payable is blank, not zero, until a rate
+// exists -- a zero would read as "earned nothing", which is a different statement.
+// ---------------------------------------------------------------------------------------------
+function renderVas(d) {
+  const rows = d.vas || [];
+  window.__dm = d.dm_template ?? '';   // the Config-required card edits this same value
+  const sel = $('f_va'), have = new Set([...sel.options].map((o) => o.value));
+  for (const v of rows) if (!have.has(v.va_id)) {
+    const o = document.createElement('option'); o.value = v.va_id; o.textContent = v.name;
+    sel.appendChild(o);
+  }
+
+  const table = rows.length
+    ? '<div class="scroll"><table><tr><th>VA</th><th>State</th><th class="n">Assigned</th>'
+      + '<th class="n">Contacted</th><th class="n">Replies</th><th class="n">Interested</th>'
+      + '<th class="n">Reply %</th><th class="n">Int %</th><th class="n">Signups</th>'
+      + '<th class="n">Sales</th><th class="n">Payable</th><th class="n">Flags</th><th></th></tr>'
+      + rows.map((v) => '<tr><td>' + esc(v.name) + '</td>'
+        + '<td>' + (v.active ? '<span class="pill on">active</span>'
+                             : '<span class="pill off">off</span>') + '</td>'
+        + '<td class="n">' + n(v.assigned) + '</td><td class="n">' + n(v.contacted) + '</td>'
+        + '<td class="n">' + n(v.replies) + '</td><td class="n">' + n(v.interested) + '</td>'
+        + '<td class="n">' + pct(v.reply_rate) + '</td><td class="n">' + pct(v.interested_rate) + '</td>'
+        + '<td class="n">' + n(v.affiliate_signups) + '</td>'
+        + '<td class="n">' + n(v.affiliate_conversions) + '</td>'
+        + '<td class="n">' + (v.payable && v.payable.status === 'CALCULATED'
+              ? usd(v.payable.amount_usd)
+              : '<span class="pill warnp">no rate</span>') + '</td>'
+        + '<td class="n">' + (v.fraud_flags > 0
+              ? '<b style="color:var(--bad)">' + n(v.fraud_flags) + '</b>' : '0') + '</td>'
+        + '<td><button class="sm" data-va="' + esc(v.va_id) + '" data-act="edit">Edit</button></td>'
+        + '</tr>').join('') + '</table></div>'
+    : '<div class="muted">No VAs yet. Invite one and the DM queue assigns itself.</div>';
+
+  $('vas').innerHTML = table
+    + '<div class="row" style="margin-top:10px"><span class="muted">Compensation rate</span>'
+      + '<button class="sm" id="setrates">'
+      + (d.rates && d.rates !== null ? 'Change…' : 'Set…') + '</button></div>'
+    + '<div class="row"><span class="muted">Invite a VA</span>'
+      + '<button class="sm" id="invite">Invite…</button></div>';
+
+  for (const b of $('vas').querySelectorAll('button[data-act=edit]')) {
+    b.onclick = () => editVa(rows.find((r) => r.va_id === b.dataset.va));
+  }
+  $('invite').onclick = async () => {
+    const name = prompt('VA name'); if (!name) return;
+    const email = prompt('VA email — they create their own password with it'); if (!email) return;
+    const cap = Number(prompt('Daily capacity (DMs per day)', '40'));
+    const { error } = await sb.rpc('dh_owner_invite_va',
+      { p_name: name, p_email: email, p_capacity: isFinite(cap) && cap > 0 ? cap : 40 });
+    if (error) alert(error.message);
+    else { alert('Invited. ' + email + ' can now create an account on the VA portal.'); boot(); }
+  };
+  $('setrates').onclick = async () => {
+    const r = d.rates || {};
+    const ask = (k, label) => {
+      const v = prompt(label, r[k] !== undefined && r[k] !== null ? String(r[k]) : '0');
+      return v === null ? null : Number(v);
+    };
+    const per_contact = ask('per_contact', 'US$ per DM sent');           if (per_contact === null) return;
+    const per_reply = ask('per_reply', 'US$ per reply');                 if (per_reply === null) return;
+    const per_interested = ask('per_interested', 'US$ per interested reply');
+    if (per_interested === null) return;
+    const per_signup = ask('per_signup', 'US$ per affiliate signup');    if (per_signup === null) return;
+    if ([per_contact, per_reply, per_interested, per_signup].some((x) => !isFinite(x) || x < 0)) {
+      alert('Every rate must be a number of dollars, zero or more.'); return;
+    }
+    const { error } = await sb.rpc('dh_owner_set_setting', { p_key: 'va_compensation.rates',
+      p_value: { per_contact, per_reply, per_interested, per_signup } });
+    if (error) alert(error.message); else boot();
+  };
+}
+
+async function editVa(v) {
+  if (!v) return;
+  const what = prompt('Type: rename, capacity, on, off, or creators', 'creators');
+  if (!what) return;
+  if (what === 'creators') {
+    const { data, error } = await sb.rpc('dh_owner_va_creators', { p_va_id: v.va_id, p_limit: 200 });
+    if (error) { alert(error.message); return; }
+    alert((data || []).length
+      ? data.map((t) => (t.handle || t.display_name || 'creator') + ' — ' + t.status).join('\n')
+      : 'No creators are assigned to ' + v.name + ' yet.');
+    return;
+  }
+  const args = { p_va_id: v.va_id };
+  if (what === 'rename') { const nm = prompt('New name', v.name); if (!nm) return; args.p_name = nm; }
+  else if (what === 'capacity') {
+    const c = Number(prompt('Daily capacity', String(v.daily_capacity ?? 40)));
+    if (!isFinite(c) || c < 0) return; args.p_capacity = c;
+  } else if (what === 'on') args.p_active = true;
+  else if (what === 'off') args.p_active = false;
+  else return;
+  const { error } = await sb.rpc('dh_owner_va_set', args);
+  if (error) alert(error.message); else boot();
+}
+
+// ---------------------------------------------------------------------------------------------
+// SOURCING CONTROLS. Everything that costs more money asks first, in words that name the cost.
+// The outbound send kill-switch is deliberately NOT here: this card configures discovery only.
+// ---------------------------------------------------------------------------------------------
+function renderSourcing(s) {
+  const on = s.sourcing_enabled === true;
+  const q = s.qualification || {};
+  const territory = (s.territory && s.territory.countries) || [];
+  $('sourcing').innerHTML =
+    '<div class="row"><span>Sourcing</span><button class="sm" id="tgl" aria-pressed="' + on + '">'
+      + (on ? 'Running' : 'Paused') + '</button></div>'
+    + '<div class="row"><span>TikTok</span><button class="sm" id="tgtt" aria-pressed="'
+      + (s.tiktok_enabled === true) + '">' + (s.tiktok_enabled ? 'On' : 'Off') + '</button></div>'
+    + '<div class="row"><span>YouTube</span><button class="sm" id="tgyt" aria-pressed="'
+      + (s.youtube_enabled === true) + '">' + (s.youtube_enabled ? 'On' : 'Off') + '</button></div>'
+    + '<div class="row"><span>Providers</span><span class="pill">'
+      + esc((s.providers || []).join(', ') || 'none') + '</span></div>'
+    + '<div class="row"><span>Countries</span><span class="pill">'
+      + esc(territory.join(', ') || 'none') + '</span></div>'
+    + '<div class="row"><span>Daily budget</span>'
+      + '<button class="sm" id="setdaily">'
+      + (s.daily_budget_usd == null ? 'not set' : usd(s.daily_budget_usd)) + '</button></div>'
+    + '<div class="row"><span>Total ceiling</span><span class="pill">'
+      + usd((s.budget || {}).ceiling) + '</span></div>'
+    + '<div class="row"><span>Max creators / day</span>'
+      + '<button class="sm" id="setcap">' + n(s.daily_creator_cap) + '</button></div>'
+    + '<div class="row"><span>Max charge / run</span><span class="pill">'
+      + usd(s.max_charge_usd_per_run) + '</span></div>'
+    + '<div class="row"><span>Qualify from</span>'
+      + '<button class="sm" id="setmin">' + n(q.min_followers) + ' followers</button></div>'
+    + '<div class="row"><span>High priority from</span>'
+      + '<button class="sm" id="sethi">' + n(q.high_priority_followers) + ' followers</button></div>'
+    + '<h2 style="margin-top:18px">Keyword clusters</h2>'
+    + (( s.clusters || []).length
+        ? '<div class="scroll"><table><tr><th>Provider</th><th>Cluster</th><th>Country</th>'
+          + '<th>State</th><th class="n">Found</th><th class="n">Spent</th><th></th></tr>'
+          + s.clusters.map((c) => '<tr><td>' + esc(c.provider) + '</td>'
+            + '<td>' + esc(c.topic_cluster || '') + '</td><td>' + esc(c.country_code || '') + '</td>'
+            + '<td>' + esc(c.state) + '</td><td class="n">' + n(c.leads_created) + '</td>'
+            + '<td class="n">' + usd(c.actual_usd) + '</td>'
+            + '<td><button class="sm" data-cl="' + esc(c.queue_id) + '" data-state="' + esc(c.state)
+              + '">' + (c.state === 'HELD' ? 'Resume' : 'Hold') + '</button></td></tr>').join('')
+          + '</table></div>'
+        : '<div class="muted">no clusters configured</div>');
+
+  const setBool = (key, next) => sb.rpc('dh_owner_set_setting', { p_key: key, p_value: next });
+
+  $('tgl').onclick = async () => {
+    if (!on && !confirm('Start sourcing? Each discovery run charges the Apify account.')) return;
+    const { error } = await setBool('discovery_queue.enabled', !on);
+    if (error) alert(error.message); else boot();
+  };
+  const platform = async (name, currently) => {
+    if (!currently && !confirm('Enable ' + name + ' sourcing? Every run on this platform '
+        + 'costs real money and counts against the sourcing ceiling.')) return;
+    const { error } = await sb.rpc('dh_owner_set_platform',
+      { p_platform: name, p_enabled: !currently, p_confirm: true });
+    if (error) alert(error.message); else boot();
+  };
+  $('tgtt').onclick = () => platform('tiktok', s.tiktok_enabled === true);
+  $('tgyt').onclick = () => platform('youtube', s.youtube_enabled === true);
+
+  const num = async (label, key, current, warn) => {
+    const v = prompt(label, current == null ? '' : String(current));
+    if (v === null) return;
+    const x = v.trim() === '' ? null : Number(v);
+    if (x !== null && (!isFinite(x) || x < 0)) { alert('That is not a number.'); return; }
+    if (warn && x !== null && Number(current ?? 0) < x && !confirm(warn)) return;
+    const { error } = await sb.rpc('dh_owner_set_setting', { p_key: key, p_value: x });
+    if (error) alert(error.message); else boot();
+  };
+  $('setdaily').onclick = () => num('Daily sourcing budget in US dollars (blank for none)',
+    'discovery.daily_budget_usd', s.daily_budget_usd,
+    'Raising the daily budget lets sourcing spend more money every day. Continue?');
+  $('setcap').onclick = () => num('Maximum creators discovered per day',
+    'discovery.daily_creator_cap', s.daily_creator_cap,
+    'Raising the daily creator cap means more discovery runs and more spend. Continue?');
+  $('setmin').onclick = () => num('Minimum followers to qualify a creator',
+    'qualification.min_followers', q.min_followers, null);
+  $('sethi').onclick = () => num('Followers needed for HIGH priority in the DM queue',
+    'qualification.high_priority_followers', q.high_priority_followers, null);
+
+  for (const b of $('sourcing').querySelectorAll('button[data-cl]')) {
+    b.onclick = async () => {
+      const next = b.dataset.state === 'HELD' ? 'PENDING' : 'HELD';
+      if (next === 'PENDING' && !confirm('Resume this cluster? It will run again and spend.')) return;
+      const { error } = await sb.rpc('dh_owner_set_cluster',
+        { p_queue_id: b.dataset.cl, p_state: next });
+      if (error) alert(error.message); else boot();
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// CONFIG REQUIRED and INTEGRATIONS. Both read state; neither exposes a secret.
+// ---------------------------------------------------------------------------------------------
+function renderConfig(items) {
+  $('config').innerHTML = (items.length
+    ? items.map((c) => '<div class="row"><span><b>' + esc(c.label) + '</b><br>'
+        + '<span class="muted">' + esc(c.detail) + '</span></span></div>').join('')
+      + '<p class="muted">Rates and the DM script are set here; budget and keywords under Sourcing.</p>'
+    : '<div class="muted">Everything the system needs is configured.</div>')
+    + '<div class="row"><span>Approved DM text</span>'
+    + '<button class="sm" id="setdm">Edit…</button></div>';
+  $('setdm').onclick = async () => {
+    const t = prompt('The message VAs are approved to send. Leave blank to clear.',
+                     window.__dm || '');
+    if (t === null) return;
+    const { error } = await sb.rpc('dh_owner_set_setting',
+      { p_key: 'va.dm_template', p_value: t.trim() === '' ? null : t });
+    if (error) alert(error.message); else boot();
+  };
+}
+
+function renderIntegrations(d) {
+  const fp = d.firstpromoter || {};
+  $('integrations').innerHTML =
+    '<div class="row"><span>FirstPromoter</span><span class="pill ' + (fp.configured ? 'on' : 'warnp')
+      + '">' + (fp.configured ? 'configured' : 'not configured') + '</span></div>'
+    + '<div class="row"><span>Campaign</span><span class="pill">'
+      + esc(fp.campaign_id || '—') + '</span></div>'
+    + '<div class="row"><span>Last webhook</span><span class="pill">'
+      + esc(when(fp.last_webhook_at)) + (fp.last_webhook_outcome
+          ? ' · ' + esc(fp.last_webhook_outcome) : '') + '</span></div>'
+    + '<div class="row"><span>Last affiliate event</span><span class="pill">'
+      + esc(when(fp.last_affiliate_event_at)) + '</span></div>'
+    + '<div class="row"><span>Affiliates / conversions</span><span class="pill">'
+      + n(fp.affiliates) + ' / ' + n(fp.conversions) + '</span></div>'
+    + ((fp.recent_errors || []).length
+        ? '<div class="att crit" style="margin-top:10px"><h3>Recent failures</h3>'
+          + fp.recent_errors.map((e) => '<div class="row"><span>' + esc(e.outcome) + ' · '
+            + esc(e.detail || '') + '</span><span class="pill">' + esc(when(e.received_at))
+            + '</span></div>').join('') + '</div>'
+        : '');
+}
+
+// ---------------------------------------------------------------------------------------------
+// LIVE, without a refresh button. Realtime pushes the moment a VA touches the queue; the 30-second
+// poll is the belt to that braces, so a dropped socket costs freshness rather than correctness.
+// ---------------------------------------------------------------------------------------------
+sb.channel('dash')
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'dh_contact_tasks' }, () => boot())
+  .subscribe();
+setInterval(() => { if (!document.hidden && !$('app').hidden) boot(); }, 30000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) boot(); });
+boot();
+</script></body></html>

@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://esm.sh; style-src 'unsafe-inline'; connect-src https://aexomkitwnxvpqlmtrik.supabase.co wss://aexomkitwnxvpqlmtrik.supabase.co https://esm.sh; img-src data:; base-uri 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0f14">
+<title>DropHero — VA</title>
+<style>
+  :root{--bg:#0b0f14;--card:#151b24;--line:#232c39;--ink:#e8edf5;--dim:#8b98ab;
+        --ok:#3ddc97;--warn:#ffb454;--bad:#ff6b6b;--accent:#6aa6ff}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{overflow-x:hidden;max-width:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:16px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;
+       padding:max(12px,env(safe-area-inset-top)) 12px calc(30px + env(safe-area-inset-bottom))}
+  h1{font-size:19px;margin:4px 0 2px}
+  .sub{color:var(--dim);font-size:12px;margin:0 0 14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;
+        margin-bottom:11px;min-width:0;overflow-wrap:anywhere}
+  .top{border-color:#2b4a7d}
+  .who{font-size:20px;font-weight:650;line-height:1.2} .meta{color:var(--dim);font-size:12px;margin-top:4px}
+  .pill{font-size:11px;padding:3px 9px;border-radius:999px;border:1px solid var(--line);
+        color:var(--dim);white-space:nowrap}
+  .HIGH{color:var(--ok);border-color:#1e5e46} .MEDIUM{color:var(--warn);border-color:#5e4620}
+  a.open{display:block;text-align:center;background:#1d3050;border:1px solid #2b4a7d;color:#cfe0ff;
+         border-radius:11px;padding:15px;margin:13px 0;text-decoration:none;font-weight:650;
+         font-size:17px;min-height:52px}
+  .script{background:#10161e;border:1px solid var(--line);border-radius:11px;padding:12px;
+          white-space:pre-wrap;font-size:14px;line-height:1.5;margin:11px 0}
+  .acts{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+  .acts .full{grid-column:1/-1}
+  button{font:inherit;background:#1d2836;color:var(--ink);border:1px solid var(--line);
+         border-radius:11px;padding:12px;min-height:48px;cursor:pointer;width:100%}
+  button.good{background:#173d2e;border-color:#1e5e46;color:#b6f0d5}
+  button.bad{background:#3a1d1d;border-color:#5e2020;color:#ffc9c9}
+  button.sm{min-height:38px;padding:8px;font-size:13px}
+  input,textarea{font:inherit;background:#10161e;color:var(--ink);border:1px solid var(--line);
+         border-radius:11px;padding:11px;min-height:44px;width:100%;max-width:100%}
+  textarea{min-height:64px}
+  .muted{color:var(--dim);font-size:12px}
+  .counts{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:14px}
+  .counts div{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:12px;
+              text-align:center}
+  .counts b{display:block;font-size:26px;font-variant-numeric:tabular-nums;line-height:1.2}
+  .counts span{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+  #login{max-width:400px;margin:11vh auto}
+  .warn{background:#3a2318;border:1px solid #6b3a1f;color:#ffcf9e;padding:12px;border-radius:11px;
+        font-size:13px;margin:11px 0}
+</style></head><body>
+
+<div id="login" hidden>
+  <h1>DropHero</h1><p class="sub">VA sign in.</p>
+  <div class="card">
+    <p class="muted">Email</p><input id="email" type="email" autocomplete="username" inputmode="email">
+    <p class="muted" style="margin-top:11px">Password</p>
+    <input id="pw" type="password" autocomplete="current-password">
+    <div class="acts" style="margin-top:13px">
+      <button id="signin">Sign in</button>
+      <button id="signup">Create account</button>
+    </div>
+    <p id="loginmsg" class="muted" style="margin-bottom:0"></p>
+  </div>
+  <p class="muted">First time? Use <b>Create account</b> with the email your manager invited, and
+    pick your own password.</p>
+</div>
+
+<main id="app" hidden>
+  <h1 id="hello">DropHero</h1>
+  <p class="sub" id="sub">loading…</p>
+
+  <div class="counts">
+    <div><b id="remaining">–</b><span>Left today</span></div>
+    <div><b id="done">–</b><span>Done today</span></div>
+  </div>
+
+  <div id="card"></div>
+
+  <p style="margin-top:22px"><button id="signout">Sign out</button></p>
+</main>
+
+<script type="module">
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
+const sb = createClient('https://aexomkitwnxvpqlmtrik.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFleG9ta2l0d254dnBxbG10cmlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2MzEzMjQsImV4cCI6MjEwMjIwNzMyNH0.RPmcFB1YFzBGGuRLWJAZUYZXiKB1ILh9FFIie_EbFkQ',
+  { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+let queue = [];       // the VA's open leads, untouched work first
+let cursor = 0;       // which one is on screen
+let template = null;  // the approved message, or null when the owner has not written one
+
+$('signin').onclick = async () => {
+  $('loginmsg').textContent = 'signing in…';
+  const { error } = await sb.auth.signInWithPassword(
+    { email: $('email').value.trim(), password: $('pw').value });
+  $('loginmsg').textContent = error ? error.message : '';
+  if (!error) boot();
+};
+
+$('signup').onclick = async () => {
+  const email = $('email').value.trim();
+  if (!email || $('pw').value.length < 8) {
+    $('loginmsg').textContent = 'Enter your email and a password of at least 8 characters.'; return;
+  }
+  $('loginmsg').textContent = 'creating your account…';
+  const { data, error } = await sb.auth.signUp({ email, password: $('pw').value,
+    options: { emailRedirectTo: location.origin + location.pathname } });
+  if (error) { $('loginmsg').textContent = error.message; return; }
+  if (data.session) { $('loginmsg').textContent = ''; boot(); }
+  else $('loginmsg').textContent =
+    'Account created. Confirm the link we emailed to ' + email + ', then sign in here.';
+};
+
+$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+
+async function boot() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { $('login').hidden = false; $('app').hidden = true; return; }
+  const { data, error } = await sb.rpc('dh_va_queue');
+  if (error) {
+    // Not a VA is not an error to debug; it is simply the wrong door.
+    $('login').hidden = false; $('app').hidden = true;
+    $('loginmsg').textContent = 'This account is not set up as a VA yet.';
+    return;
+  }
+  $('login').hidden = true; $('app').hidden = false;
+  queue = data.tasks || [];
+  template = data.dm_template ?? null;
+  cursor = Math.min(cursor, Math.max(0, queue.length - 1));
+  $('hello').textContent = 'Hi ' + ((data.va && data.va.name) || '');
+  $('sub').textContent = queue.length ? queue.length + ' creators assigned to you'
+                                      : 'nothing assigned right now';
+  $('remaining').textContent = data.remaining_today ?? 0;
+  $('done').textContent = data.completed_today ?? 0;
+  draw();
+}
+
+// ---------------------------------------------------------------------------------------------
+// ONE CARD. Finishing a lead advances to the next immediately -- the VA never returns to a list to
+// choose, which is what makes the queue actually get worked from the top.
+// ---------------------------------------------------------------------------------------------
+function draw() {
+  const t = queue[cursor];
+  if (!t) {
+    $('card').innerHTML = '<div class="card"><div class="who">All caught up</div>'
+      + '<p class="muted">Nothing is waiting for you. New creators appear here on their own.</p></div>';
+    return;
+  }
+  $('card').innerHTML =
+    '<div class="card top">'
+    + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">'
+      + '<div><div class="who">' + esc(t.display_name || t.handle || 'creator') + '</div>'
+      + '<div class="meta">' + esc(t.handle ? '@' + t.handle : '') + ' · ' + esc(t.platform) + '</div></div>'
+      + '<span class="pill ' + esc(t.priority) + '">' + esc(t.priority) + '</span></div>'
+    + '<a class="open" href="' + esc(t.profile_url) + '" target="_blank" rel="noopener">Open profile</a>'
+    + (template
+        ? '<div class="script" id="script">' + esc(template) + '</div>'
+          + '<button class="sm" id="copy">Copy message</button>'
+        : '<div class="warn">No approved message has been set yet. Ask your manager before '
+          + 'sending anything.</div>')
+    + '<p class="muted" style="margin:13px 0 5px">Note (optional)</p>'
+    + '<textarea id="note" placeholder="Anything worth remembering">' + esc(t.notes || '') + '</textarea>'
+    + '<div class="acts" style="margin-top:12px">'
+      + '<button class="good full" data-s="CONTACTED">Sent DM</button>'
+      + '<button data-s="REPLIED">Replied</button>'
+      + '<button class="good" data-s="INTERESTED">Interested</button>'
+      + '<button class="bad" data-s="NOT_INTERESTED">Not interested</button>'
+      + '<button class="bad" data-s="UNREACHABLE">Can\'t reach</button>'
+    + '</div>'
+    + '<p class="muted" style="margin-bottom:0">' + (cursor + 1) + ' of ' + queue.length + '</p>'
+    + '</div>';
+
+  if (template) $('copy').onclick = async () => {
+    try { await navigator.clipboard.writeText(template); $('copy').textContent = 'Copied'; }
+    catch { $('copy').textContent = 'Select the text above to copy'; }
+  };
+
+  for (const b of $('card').querySelectorAll('button[data-s]')) {
+    b.onclick = async () => {
+      for (const o of $('card').querySelectorAll('button[data-s]')) o.disabled = true;
+      const { error } = await sb.rpc('dh_va_update_task',
+        { p_task_id: t.task_id, p_status: b.dataset.s, p_notes: $('note').value.trim() || null });
+      if (error) {
+        alert(error.message);
+        for (const o of $('card').querySelectorAll('button[data-s]')) o.disabled = false;
+        return;
+      }
+      // Straight to the next lead. boot() re-reads the queue so a status that removes the lead
+      // (not interested, unreachable) drops it, clamps the cursor to what is left, and moves both
+      // counters at the same time.
+      cursor = cursor + 1;
+      boot();
+    };
+  }
+}
+
+setInterval(() => { if (!document.hidden && !$('app').hidden) boot(); }, 30000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) boot(); });
+boot();
+</script></body></html>
