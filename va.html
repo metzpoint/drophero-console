@@ -355,8 +355,19 @@ function render() {
 // CHECK REPLIES. Everyone this VA has written to and not yet heard an outcome from, oldest check
 // due first -- so working top-down is the same as working the ones that have waited longest.
 // ---------------------------------------------------------------------------------------------
+/** Oldest due first. Whatever is due soonest has waited longest, so the top of the list is the
+ *  right place to start work. */
+function byDue(a, b) {
+  const at = new Date(a.follow_up_at || a.last_checked_at || a.first_sent_at || 0).getTime();
+  const bt = new Date(b.follow_up_at || b.last_checked_at || b.first_sent_at || 0).getTime();
+  return at - bt;
+}
+
 function drawReplies() {
-  const rows = (view.check_replies || []);
+  // dh_va_queue already returns these in order, and the page sorts them again anyway: the ordering
+  // is a promise this view makes to the VA, and it should not quietly depend on which query the
+  // rows arrived from. dh_va_search returns the same shape ordered by recency, not by due date.
+  const rows = (view.check_replies || []).slice().sort(byDue);
   if (!rows.length) {
     $('list').innerHTML = '<div class="card"><div class="who">Nothing to check</div>'
       + '<p class="muted">Creators appear here after you mark a DM as sent.</p></div>';
