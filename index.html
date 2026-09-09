@@ -492,14 +492,39 @@ function renderVas(d) {
   for (const b of $('vas').querySelectorAll('button[data-act=edit]')) {
     b.onclick = () => editVa(rows.find((r) => r.va_id === b.dataset.va));
   }
+  // Adding a VA creates the invitation AND the account, in that order. The account is created
+  // already confirmed, so the VA never receives a mail and never meets the confirmation redirect --
+  // which points at this project's factory-default Site URL and lands on a browser error page.
   $('invite').onclick = async () => {
     const name = prompt('VA name'); if (!name) return;
-    const email = prompt('VA email — they create their own password with it'); if (!email) return;
+    const email = (prompt('VA email') || '').trim(); if (!email) return;
     const cap = Number(prompt('Daily capacity (DMs per day)', '40'));
+    const pw = prompt('Temporary password for ' + email + ' — at least 8 characters.\\n\\n'
+      + 'Give it to them together with the portal link. They can change it once they are in.');
+    if (pw === null) return;
+    if (pw.length < 8) { alert('That password is too short.'); return; }
+
     const { error } = await sb.rpc('dh_owner_invite_va',
       { p_name: name, p_email: email, p_capacity: isFinite(cap) && cap > 0 ? cap : 40 });
-    if (error) alert(error.message);
-    else { alert('Invited. ' + email + ' can now create an account on the VA portal.'); boot(); }
+    if (error) { alert(error.message); return; }
+
+    const { data: { session } } = await sb.auth.getSession();
+    const res = await fetch('https://aexomkitwnxvpqlmtrik.supabase.co/functions/v1/create-va-account', {
+      method: 'POST',
+      headers: { authorization: 'Bearer ' + session.access_token, 'content-type': 'application/json' },
+      body: JSON.stringify({ email, password: pw })
+    });
+    const out = await res.json().catch(() => ({ error: 'the server gave no answer' }));
+    if (!res.ok) {
+      // The VA record exists either way; say so, so the owner does not add a second one.
+      alert('The VA was added but the account could not be created:\\n\\n' + (out.error || res.status)
+        + '\\n\\nUse Edit on the VA to try again, or have them sign up on the portal themselves.');
+    } else {
+      alert('Done. Send them:\\n\\n' + location.origin + location.pathname.replace(/[^/]*$/, '') + 'va.html'
+        + '\\n\\nEmail: ' + email + '\\nPassword: ' + pw
+        + '\\n\\nThey sign in straight away — there is no confirmation email.');
+    }
+    boot();
   };
   $('setrates').onclick = async () => {
     const r = d.rates || {};

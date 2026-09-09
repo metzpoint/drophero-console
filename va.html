@@ -75,7 +75,10 @@
 
   <div id="card"></div>
 
-  <p style="margin-top:22px"><button id="signout">Sign out</button></p>
+  <div class="acts" style="margin-top:22px">
+    <button id="changepw">Change password</button>
+    <button id="signout">Sign out</button>
+  </div>
 </main>
 
 <script type="module">
@@ -116,6 +119,18 @@ $('signup').onclick = async () => {
 };
 
 $('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+
+// A VA's first password was chosen by whoever created their account, so they get a way to replace
+// it. Password reset by email is not an option here: the confirmation redirect on this project
+// points at a Site URL that does not resolve, and a reset link that lands nowhere is worse than no
+// reset link at all.
+$('changepw').onclick = async () => {
+  const pw = prompt('New password — at least 8 characters.');
+  if (pw === null) return;
+  if (pw.length < 8) { alert('That is too short.'); return; }
+  const { error } = await sb.auth.updateUser({ password: pw });
+  alert(error ? error.message : 'Password changed. Use it the next time you sign in.');
+};
 
 async function boot() {
   const { data: { session } } = await sb.auth.getSession();
