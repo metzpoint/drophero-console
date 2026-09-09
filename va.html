@@ -41,6 +41,30 @@
          border-radius:11px;padding:11px;min-height:44px;width:100%;max-width:100%}
   textarea{min-height:64px}
   .muted{color:var(--dim);font-size:12px}
+  /* Three tabs, thumb-sized, stuck to the top: on a phone the VA is scrolling a list and still has
+     to be able to switch view without hunting for the top of the page. */
+  .tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;position:sticky;top:0;z-index:5;
+        background:var(--bg);padding:8px 0 10px;margin-bottom:4px}
+  .tab{font:inherit;background:#161d27;color:var(--dim);border:1px solid var(--line);
+       border-radius:11px;padding:10px 4px;min-height:52px;cursor:pointer;width:100%;
+       font-size:12px;line-height:1.25}
+  .tab b{display:block;font-size:16px;color:var(--ink);font-weight:650}
+  .tab[aria-selected="true"]{background:#1d3050;border-color:#2b4a7d;color:#cfe0ff}
+  .tab[aria-selected="true"] b{color:#eaf2ff}
+  /* Every row in the two history views is itself a card, so a long list stays scannable. */
+  .row{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:13px;
+       margin-bottom:10px}
+  .row .who{font-size:17px}
+  .badge{font-size:11px;padding:3px 9px;border-radius:999px;border:1px solid var(--line);
+         display:inline-block;margin-top:6px;color:var(--dim)}
+  .badge.warm{background:#173d2e;border-color:#1e5e46;color:#b6f0d5}
+  .badge.cold{background:#3a1d1d;border-color:#5e2020;color:#ffc9c9}
+  .badge.due{background:#4a3410;border-color:#7d5a1e;color:#ffe2ac}
+  details.prev{margin:10px 0}
+  details.prev summary{cursor:pointer;color:var(--dim);font-size:12px;padding:6px 0;
+                       min-height:32px}
+  .quote{background:#0e1620;border-left:3px solid #2b4a7d;border-radius:0 9px 9px 0;
+         padding:9px 11px;margin:8px 0;font-size:13px;white-space:pre-wrap;line-height:1.5}
   .counts{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:14px}
   .counts div{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:12px;
               text-align:center}
@@ -91,7 +115,17 @@
     <div><b id="done">–</b><span>Done today</span></div>
   </div>
 
+  <div class="tabs" role="tablist">
+    <button class="tab" id="tab-new"  role="tab" aria-selected="true"
+            data-tab="new"><b id="n-new">–</b>New DMs</button>
+    <button class="tab" id="tab-rep"  role="tab" aria-selected="false"
+            data-tab="rep"><b id="n-rep">–</b>Check replies</button>
+    <button class="tab" id="tab-conv" role="tab" aria-selected="false"
+            data-tab="conv"><b id="n-conv">–</b>Conversations</button>
+  </div>
+
   <div id="card"></div>
+  <div id="list" hidden></div>
 
   <div class="acts" style="margin-top:22px">
     <button id="changepw">Change password</button>
@@ -108,8 +142,13 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-let queue = [];       // the VA's open leads, untouched work first
+let queue = [];       // NEW DMS only: creators nobody has written to yet
 let cursor = 0;       // which one is on screen
+let view = {};        // the whole three-part payload from dh_va_queue
+let tab = 'new';      // 'new' | 'rep' | 'conv'
+// results === null means "no search running, show the normal conversations list". An empty array
+// means the search ran and matched nothing, which is a different thing to say on screen.
+const search = { q: '', results: null, timer: 0, focused: false };
 
 $('signin').onclick = async () => {
   $('loginmsg').textContent = 'signing in…';
@@ -196,14 +235,54 @@ async function boot() {
     return;
   }
   $('login').hidden = true; $('app').hidden = false;
-  queue = data.tasks || [];
+  view = data;
+  queue = data.new_dms || [];
   cursor = Math.min(cursor, Math.max(0, queue.length - 1));
   $('hello').textContent = 'Hi ' + ((data.va && data.va.name) || '');
-  $('sub').textContent = queue.length ? queue.length + ' creators assigned to you'
-                                      : 'nothing assigned right now';
+  $('sub').textContent = queue.length ? queue.length + ' creators waiting for a first DM'
+                                      : 'no new creators right now';
   $('remaining').textContent = data.remaining_today ?? 0;
   $('done').textContent = data.completed_today ?? 0;
-  draw();
+  $('n-new').textContent  = queue.length;
+  $('n-rep').textContent  = (data.check_replies || []).length;
+  $('n-conv').textContent = (data.conversations || []).length;
+  render();
+}
+
+// ---------------------------------------------------------------------------------------------
+// TIME, THE WAY SOMEONE WORKING A QUEUE READS IT. "3d ago" answers "is this worth checking yet";
+// a timestamp does not, and on a phone it costs a line of screen to say less.
+// ---------------------------------------------------------------------------------------------
+function ago(iso) {
+  if (!iso) return '';
+  const secs = (Date.now() - new Date(iso).getTime()) / 1000;
+  const future = secs < 0;
+  const s = Math.abs(secs);
+  const n = s < 3600 ? Math.max(1, Math.round(s / 60)) + 'm'
+          : s < 86400 ? Math.round(s / 3600) + 'h'
+          : Math.round(s / 86400) + 'd';
+  return future ? 'in ' + n : n + ' ago';
+}
+
+function when(iso) {
+  if (!iso) return 'unknown';
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+       + ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+}
+
+const STATUS_LABEL = {
+  NO_REPLY: 'No reply yet', REPLIED: 'Replied', INTERESTED: 'Interested',
+  NOT_INTERESTED: 'Not interested', FOLLOW_UP_LATER: 'Follow up later', UNREACHABLE: "Can't reach"
+};
+
+function badgeFor(t) {
+  const s = t.reply_status;
+  if (!s) return '<span class="badge">Sent, not checked</span>';
+  const cls = s === 'INTERESTED' || s === 'REPLIED' ? 'warm'
+            : s === 'NOT_INTERESTED' || s === 'UNREACHABLE' ? 'cold'
+            : s === 'FOLLOW_UP_LATER' ? 'due' : '';
+  return '<span class="badge ' + cls + '">' + esc(STATUS_LABEL[s] || s) + '</span>';
 }
 
 /** Confirmation under the primary action, cleared on the next card. */
@@ -260,11 +339,156 @@ function legacyCopy(text) {
 // ONE CARD. Finishing a lead advances to the next immediately -- the VA never returns to a list to
 // choose, which is what makes the queue actually get worked from the top.
 // ---------------------------------------------------------------------------------------------
+/** Which of the three views is on screen. Only the first is a one-card-at-a-time queue. */
+function render() {
+  for (const b of document.querySelectorAll('.tab')) {
+    b.setAttribute('aria-selected', String(b.dataset.tab === tab));
+  }
+  $('card').hidden = tab !== 'new';
+  $('list').hidden = tab === 'new';
+  if (tab === 'new') { draw(); return; }
+  if (tab === 'rep') { drawReplies(); return; }
+  drawConversations();
+}
+
+// ---------------------------------------------------------------------------------------------
+// CHECK REPLIES. Everyone this VA has written to and not yet heard an outcome from, oldest check
+// due first -- so working top-down is the same as working the ones that have waited longest.
+// ---------------------------------------------------------------------------------------------
+function drawReplies() {
+  const rows = (view.check_replies || []);
+  if (!rows.length) {
+    $('list').innerHTML = '<div class="card"><div class="who">Nothing to check</div>'
+      + '<p class="muted">Creators appear here after you mark a DM as sent.</p></div>';
+    return;
+  }
+  $('list').innerHTML =
+    '<p class="muted" style="margin:0 0 10px">' + rows.length
+    + ' sent, waiting on a reply. Oldest first.</p>'
+    + rows.map((t) => rowHtml(t, { due: true })).join('');
+  wireRows(rows);
+}
+
+// ---------------------------------------------------------------------------------------------
+// CONVERSATIONS. Anyone who answered or is being followed up, plus a search that reaches every
+// creator this VA has ever written to -- including the ones past the page limit and the ones marked
+// unreachable, because "can't reach" is often wrong and they answer a week later.
+// ---------------------------------------------------------------------------------------------
+function drawConversations() {
+  const rows = search.results !== null ? search.results : (view.conversations || []);
+  const box = '<input id="q" type="search" placeholder="Search name or handle"'
+            + ' value="' + esc(search.q) + '" autocomplete="off" style="margin-bottom:12px">';
+  const body = rows.length
+    ? '<p class="muted" style="margin:0 0 10px">' + rows.length
+      + (search.results !== null ? ' found' : ' conversations') + '</p>'
+      + rows.map((t) => rowHtml(t, { due: false })).join('')
+    : '<div class="card"><div class="who">'
+      + (search.results !== null ? 'No match' : 'No conversations yet')
+      + '</div><p class="muted">'
+      + (search.results !== null
+          ? 'Search looks at every creator you have written to, by name or handle.'
+          : 'Creators appear here once you record a reply or set a follow-up.')
+      + '</p></div>';
+  $('list').innerHTML = box + body;
+
+  const q = $('q');
+  // Focus is restored by hand because the input is re-created on every keystroke; without this the
+  // keyboard closes after one character.
+  if (search.focused) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
+  q.oninput = () => {
+    search.q = q.value; search.focused = true;
+    clearTimeout(search.timer);
+    search.timer = setTimeout(runSearch, 250);
+  };
+  wireRows(rows);
+}
+
+async function runSearch() {
+  const q = search.q.trim();
+  if (q.length < 2) { search.results = null; drawConversations(); return; }
+  const { data, error } = await sb.rpc('dh_va_search', { p_q: q });
+  search.results = error ? [] : (data || []);
+  drawConversations();
+}
+
+/**
+ * One creator in a history view. Everything the VA needs to answer a reply without leaving the
+ * page: who they are, when the DM went out, exactly what was sent, whatever they wrote back, and
+ * a profile link that is always present -- a conversation you cannot open is not much use.
+ */
+function rowHtml(t, opts) {
+  const due = t.follow_up_at || t.last_checked_at || t.first_sent_at;
+  return '<div class="row" data-task="' + esc(t.task_id) + '">'
+    + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">'
+      + '<div><div class="who">' + esc(t.display_name || t.handle || 'creator') + '</div>'
+      + '<div class="meta">' + esc(t.handle ? '@' + t.handle : '') + ' · ' + esc(t.platform) + '</div>'
+      + badgeFor(t) + '</div>'
+      + '<span class="pill ' + esc(t.priority) + '">' + esc(t.priority) + '</span></div>'
+    + '<p class="muted" style="margin:10px 0 0">Sent ' + esc(when(t.first_sent_at))
+      + ' (' + esc(ago(t.first_sent_at)) + ')'
+      + (t.last_checked_at ? ' · last checked ' + esc(ago(t.last_checked_at)) : '')
+      + (t.follow_up_at ? ' · follow up ' + esc(ago(t.follow_up_at)) : '')
+      + (opts.due && due ? '' : '') + '</p>'
+    + '<details class="prev"><summary>Show the DM that was sent</summary>'
+      + '<div class="script">' + esc(t.dm_message || '(no message stored)') + '</div></details>'
+    + (Array.isArray(t.replies) && t.replies.length
+        ? t.replies.map((r) => '<div class="quote">' + esc(r.text)
+            + '<div class="muted" style="margin-top:6px">pasted ' + esc(ago(r.at)) + '</div></div>').join('')
+        : '')
+    + '<a class="open" href="' + esc(t.profile_url) + '" target="_blank" rel="noopener">Open profile</a>'
+    + '<button class="sm" data-copy="1" style="margin-bottom:10px">Copy DM again</button>'
+    + '<p class="muted" style="margin:4px 0 5px">Paste their reply (optional)</p>'
+    + '<textarea data-reply="1" placeholder="What they wrote back"></textarea>'
+    + '<p class="muted" style="margin:10px 0 5px">Note (optional)</p>'
+    + '<textarea data-note="1">' + esc(t.notes || '') + '</textarea>'
+    + '<div class="acts" style="margin-top:11px">'
+      + '<button class="good" data-s="REPLIED">Replied</button>'
+      + '<button data-s="NO_REPLY">No reply</button>'
+      + '<button class="good" data-s="INTERESTED">Interested</button>'
+      + '<button class="bad" data-s="NOT_INTERESTED">Not interested</button>'
+      + '<button data-s="FOLLOW_UP_LATER">Follow up later</button>'
+      + '<button class="bad" data-s="UNREACHABLE">Can\'t reach</button>'
+    + '</div></div>';
+}
+
+function wireRows(rows) {
+  const byId = new Map(rows.map((r) => [r.task_id, r]));
+  for (const el of $('list').querySelectorAll('.row')) {
+    const t = byId.get(el.dataset.task);
+    if (!t) continue;
+    const copyBtn = el.querySelector('button[data-copy]');
+    copyBtn.onclick = () => {
+      copyBtn.textContent = copyNow(t.dm_message) ? 'Copied' : 'Select the text above';
+    };
+    for (const b of el.querySelectorAll('button[data-s]')) {
+      b.onclick = async () => {
+        for (const o of el.querySelectorAll('button[data-s]')) o.disabled = true;
+        const { error } = await sb.rpc('dh_va_update_task', {
+          p_task_id: t.task_id,
+          p_status: b.dataset.s,
+          p_notes: el.querySelector('textarea[data-note]').value.trim() || null,
+          p_reply_text: el.querySelector('textarea[data-reply]').value.trim() || null
+        });
+        if (error) {
+          alert(error.message);
+          for (const o of el.querySelectorAll('button[data-s]')) o.disabled = false;
+          return;
+        }
+        // A search result set is rebuilt from the server too, so a creator whose status just
+        // changed shows their new state rather than the one that was on screen.
+        if (search.results !== null) await runSearch();
+        boot();
+      };
+    }
+  }
+}
+
 function draw() {
   const t = queue[cursor];
   if (!t) {
     $('card').innerHTML = '<div class="card"><div class="who">All caught up</div>'
-      + '<p class="muted">Nothing is waiting for you. New creators appear here on their own.</p></div>';
+      + '<p class="muted">No new creators to write to. Anyone you have already messaged is under '
+      + 'Check replies and Conversations.</p></div>';
     return;
   }
   $('card').innerHTML =
@@ -286,13 +510,15 @@ function draw() {
     + '<button class="sm" id="copy">Copy DM</button>'
     + '<p class="muted" style="margin:13px 0 5px">Note (optional)</p>'
     + '<textarea id="note" placeholder="Anything worth remembering">' + esc(t.notes || '') + '</textarea>'
+    // Only the two outcomes that can genuinely happen before a DM exists. Replied, Interested and
+    // the rest moved to Check replies, where the reply box is -- offering them here invited a VA to
+    // record an answer to a message they had not sent yet, and cost the outcome its reply text.
     + '<div class="acts" style="margin-top:12px">'
       + '<button class="good full" data-s="CONTACTED">Sent DM</button>'
-      + '<button data-s="REPLIED">Replied</button>'
-      + '<button class="good" data-s="INTERESTED">Interested</button>'
-      + '<button class="bad" data-s="NOT_INTERESTED">Not interested</button>'
-      + '<button class="bad" data-s="UNREACHABLE">Can\'t reach</button>'
+      + '<button class="bad full" data-s="UNREACHABLE">Can\'t reach this profile</button>'
     + '</div>'
+    + '<p class="muted" style="margin:10px 0 0">After you send, they move to '
+      + '<b>Check replies</b> so you can come back when they answer.</p>'
     + '<p class="muted" style="margin-bottom:0">' + (cursor + 1) + ' of ' + queue.length + '</p>'
     + '</div>';
 
@@ -331,7 +557,23 @@ function draw() {
   }
 }
 
-setInterval(() => { if (!document.hidden && !$('app').hidden) boot(); }, 30000);
+for (const b of document.querySelectorAll('.tab')) {
+  b.onclick = () => {
+    tab = b.dataset.tab;
+    // Leaving Conversations drops the search, so coming back shows the real list rather than a
+    // stale result set from a query the VA has forgotten they typed.
+    if (tab !== 'conv') { search.q = ''; search.results = null; search.focused = false; }
+    render();
+  };
+}
+
+// The 30s refresh must not yank the ground from under someone mid-typing: a VA writing a note or
+// pasting a reply would lose it when the list re-rendered. Polling pauses while a field has focus.
+function typing() {
+  const a = document.activeElement;
+  return a && (a.tagName === 'TEXTAREA' || a.tagName === 'INPUT');
+}
+setInterval(() => { if (!document.hidden && !$('app').hidden && !typing()) boot(); }, 30000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) boot(); });
 boot();
 </script></body></html>
