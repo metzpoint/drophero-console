@@ -6,13 +6,21 @@ Static hosting for the DropHero **owner dashboard** (`index.html`) and **VA port
 
 Supabase rewrites the response headers of anything served from its shared `*.supabase.co` domain:
 `Content-Type` becomes `text/plain` and the CSP becomes `default-src 'none'; sandbox`. That is their
-anti-phishing rule for the shared origin, it applies to Edge Functions and to public Storage objects
-alike, and no setting inside either can opt out of it — so the dashboard rendered as source code
-instead of as a dashboard. These two files are the same HTML served from an origin that does not
-rewrite it.
+anti-phishing rule for the shared origin, it applies to public Storage objects exactly as it does to
+Edge Functions, and no setting inside either can opt out of it — so the dashboard rendered as source
+code instead of as a dashboard. These two files are the same HTML served from an origin that does
+not rewrite it.
 
 GitHub Pages is free for public repositories only, which is why this one is public. The application
 code, database migrations and history stay in the private `DropHero-Outreach` repository.
+
+## Enabling Pages
+
+Settings → Pages → Source: **Deploy from a branch** → branch `main`, folder `/ (root)` → Save.
+
+Deploying from a branch rather than from a workflow is deliberate: an Actions-based deploy needs a
+token that can create the Pages site, and the repository's default workflow token cannot
+(`Resource not accessible by integration`).
 
 ## What is and is not exposed here
 
