@@ -110,22 +110,33 @@
   <h2>Funnel</h2>
   <div class="card" id="funnel"></div>
 
-  <h2>Creators</h2>
+  <h2>Full funnel <small class="muted">all time</small></h2>
+  <div class="card" id="fullfunnel"><div class="muted">loading…</div></div>
+
+  <h2>Backlog &amp; generation</h2>
+  <div class="card" id="production"><div class="muted">loading…</div></div>
+
+  <h2>Creator directory</h2>
   <div class="card">
     <input id="q" type="search" placeholder="Search handle, name or email" autocomplete="off">
     <div class="chips" style="margin-top:9px">
-      <select id="f_platform"><option value="">All platforms</option>
-        <option value="tiktok">TikTok</option><option value="youtube">YouTube</option></select>
-      <select id="f_route"><option value="">All routes</option>
-        <option value="EMAIL">Email</option><option value="MANUAL_DM">Manual DM</option></select>
-      <select id="f_status"><option value="">Any status</option>
-        <option value="qualified">Qualified</option><option value="replied">Replied</option>
-        <option value="interested">Interested</option><option value="affiliate">Affiliate</option></select>
+      <select id="f_platform"><option value="">All platforms</option></select>
+      <select id="f_route"><option value="">All routes</option></select>
+      <select id="f_priority"><option value="">Any priority</option>
+        <option value="HIGH">High</option><option value="MEDIUM">Medium</option>
+        <option value="LOW">Low</option></select>
+      <select id="f_status"><option value="">Any status</option></select>
     </div>
     <div class="chips" style="margin-top:7px">
+      <select id="f_category"><option value="">All categories</option></select>
       <select id="f_country"><option value="">All countries</option></select>
       <select id="f_va"><option value="">All VAs</option></select>
-      <select id="f_source"><option value="">All sources</option></select>
+      <select id="f_interested"><option value="">Interested: any</option>
+        <option value="1">Interested only</option>
+        <option value="0">Not interested yet</option></select>
+      <select id="f_affiliate"><option value="">Affiliate: any</option>
+        <option value="1">Affiliates only</option>
+        <option value="0">Not an affiliate</option></select>
     </div>
     <div class="scroll" style="margin-top:10px"><table id="creators"></table></div>
     <div class="row"><span class="muted" id="creatorcount">—</span>
@@ -220,17 +231,21 @@ async function boot() {
   $('whoami').textContent = 'Signed in as ' + (session.user.email || '');
   renderOverview(overview);
 
-  const [funnel, attention, vas, sourcing, integrations] = await Promise.all([
-    sb.rpc('dh_owner_funnel', { p_period: period }), sb.rpc('dh_owner_attention'),
+  const [funnel, full, attention, vas, sourcing, integrations] = await Promise.all([
+    sb.rpc('dh_owner_funnel', { p_period: period }), sb.rpc('dh_owner_full_funnel'),
+    sb.rpc('dh_owner_attention'),
     sb.rpc('dh_owner_va_admin'), sb.rpc('dh_owner_sourcing_settings'), sb.rpc('dh_owner_integrations')
   ]);
   renderFunnel(funnel.data || []);
+  renderFullFunnel(full.data, full.error);
+  renderProduction(full.data);
   renderAttention(attention.data || {});
   renderVas(vas.data || {});
   renderSourcing(sourcing.data || {});
   renderBudget((sourcing.data || {}).budget || {});
   renderConfig(((attention.data || {}).config_required) || []);
   renderIntegrations(integrations.data || {});
+  fillFilterOptions();
   loadCreators();
 }
 
@@ -285,6 +300,80 @@ function renderFunnel(stages) {
       + '<span class="trk"><i style="width:' + Math.max(c ? 2 : 0, (c / top) * 100) + '%"></i></span>'
       + '<span class="num">' + n(c) + ' ' + conv + '</span></div>';
   }).join('');
+}
+
+// ---------------------------------------------------------------------------------------------
+// THE WHOLE FUNNEL, DISCOVERED TO PAYING CUSTOMER, PLUS WHERE EVERY CREATOR IS ROUTED.
+//
+// This one ignores the period chips on purpose and says so in its heading. A creator discovered in
+// May who becomes a customer in September belongs to both months, and a funnel that cuts on a date
+// range shows a conversion rate computed from two different populations.
+// ---------------------------------------------------------------------------------------------
+function renderFullFunnel(d, err) {
+  if (err) { $('fullfunnel').innerHTML = '<div class="muted">' + esc(err.message) + '</div>'; return; }
+  if (!d) { $('fullfunnel').innerHTML = '<div class="muted">no data yet</div>'; return; }
+  const stages = d.funnel || [];
+  const top = Math.max(1, Number((stages[0] || {}).count) || 0);
+  const bars = stages.map((s, i) => {
+    const c = Number(s.count) || 0;
+    const prev = i === 0 ? null : Number(stages[i - 1].count) || 0;
+    const conv = prev === null ? '' : prev === 0 ? '<em>—</em>'
+      : '<em>' + ((c / prev) * 100).toFixed(0) + '%</em>';
+    return '<div class="fnl"><span class="lbl">' + esc(s.stage) + '</span>'
+      + '<span class="trk"><i style="width:' + Math.max(c ? 2 : 0, (c / top) * 100) + '%"></i></span>'
+      + '<span class="num">' + n(c) + ' ' + conv + '</span></div>';
+  }).join('');
+
+  // Route totals are a partition of the market, not a stage of it: EMAIL and TIKTOK DM are worked,
+  // the two HOLD queues are kept. Showing them as funnel steps would imply the holds converted.
+  const routes = d.routes || {};
+  const routeRows = Object.entries(routes).map(([k, v]) =>
+    '<div class="row"><span class="muted">' + esc(k) + '</span><b>' + n(v) + '</b></div>').join('');
+
+  $('fullfunnel').innerHTML = bars
+    + '<div style="margin-top:12px"><div class="k">Routes</div>' + routeRows + '</div>';
+}
+
+// ---------------------------------------------------------------------------------------------
+// BACKLOG AND GENERATION COST. What is left to do, and what each message cost to write.
+// ---------------------------------------------------------------------------------------------
+function renderProduction(d) {
+  if (!d) { $('production').innerHTML = '<div class="muted">no data yet</div>'; return; }
+  const b = d.backlog || {}, g = d.generation || {}, s = d.sourcing || {};
+  const row = (k, v) => '<div class="row"><span class="muted">' + k + '</span><b>' + v + '</b></div>';
+  const dist = (o) => Object.keys(o || {}).length
+    ? Object.entries(o).sort().map(([k, v]) => esc(k) + ' ' + n(v)).join(' · ') : '–';
+  const usd6 = (x) => x === null || x === undefined ? '–' : '$' + Number(x).toFixed(6);
+
+  $('production').innerHTML =
+    '<div class="k">VA backlog</div>'
+    + row('Total reachable', n(b.total_reachable))
+    + row('VA ready', n(b.va_ready))
+    + row('Awaiting generation', n(b.awaiting_generation))
+    + row('Remaining to contact', n(b.remaining_to_contact))
+    + row('New creators today', n(b.new_creators_today))
+    + row('New VA-ready today', n(b.new_va_ready_today))
+    + row('Sent today / total', n(b.sent_today) + ' / ' + n(b.sent_total))
+    + row('Replies · interested', n(b.replies) + ' · ' + n(b.interested))
+    + row('Positive reply rate', pct(b.positive_reply_rate))
+    + '<div class="k" style="margin-top:12px">Message generation</div>'
+    + row('DMs generated', n(g.dms_generated))
+    + row('Validation pass rate', pct(g.validation_pass_pct))
+    + row('Regenerations', n(g.regenerations))
+    + row('Average latency', g.avg_latency_ms === null || g.avg_latency_ms === undefined
+        ? '–' : n(g.avg_latency_ms) + ' ms')
+    + row('Cost per DM', usd6(g.cost_per_dm_usd))
+    + row('Cost per 1,000 DMs', g.cost_per_1000_dms_usd === null
+        || g.cost_per_1000_dms_usd === undefined ? '–' : usd(g.cost_per_1000_dms_usd))
+    + row('Models used', dist(g.by_model))
+    + row('Personalization', dist(d.personalization))
+    + row('A/B/C split', dist(d.variants))
+    + '<div class="k" style="margin-top:12px">Sourcing economics</div>'
+    + row('Spend', usd(s.spend_usd) + ' of ' + usd(s.ceiling_usd))
+    + row('Remaining under cap', usd(s.remaining_usd))
+    + row('Cost per creator', usd6(s.cost_per_creator))
+    + row('Cost per qualified', usd6(s.cost_per_qualified))
+    + row('Cost per VA-ready', usd6(s.cost_per_va_ready));
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -384,9 +473,14 @@ function renderBudget(b) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// CREATOR TABLE. Twelve fields, nine filters, one search box. The table scrolls inside its own box.
+// CREATOR DIRECTORY. Twenty fields, nine filters, one search box, paginated on the server.
+//
+// The page never holds more than one page of creators. There are thousands of leads and there will
+// be tens of thousands: fetching them all and filtering in the browser works right up until the day
+// it silently stops, and that day arrives without an error message.
 // ---------------------------------------------------------------------------------------------
-const FILTERS = ['q', 'f_platform', 'f_route', 'f_status', 'f_country', 'f_va', 'f_source'];
+const FILTERS = ['q', 'f_platform', 'f_route', 'f_priority', 'f_status', 'f_category',
+                 'f_country', 'f_va', 'f_interested', 'f_affiliate'];
 for (const id of FILTERS) {
   $(id).addEventListener(id === 'q' ? 'input' : 'change', () => { offset = 0; debounced(); });
 }
@@ -395,15 +489,51 @@ const debounced = () => { clearTimeout(timer); timer = setTimeout(loadCreators, 
 $('prev').onclick = () => { offset = Math.max(0, offset - PAGE); loadCreators(); };
 $('next').onclick = () => { offset += PAGE; loadCreators(); };
 
+// A three-state select: blank means "do not filter on this at all", which is not the same as false.
+const tri = (id) => $(id).value === '' ? null : $(id).value === '1';
+
+const DIR_COLS = [
+  ['Creator', (r) => r.profile_url
+      ? '<a href="' + esc(r.profile_url) + '" target="_blank" rel="noopener">'
+        + esc(r.creator || r.handle || 'creator') + '</a>'
+      : esc(r.creator || r.handle || 'creator')],
+  ['Handle', (r) => r.handle ? '@' + esc(r.handle) : '—'],
+  ['Platform', (r) => esc(r.platform)],
+  ['Country', (r) => esc(r.country || '—')],
+  ['Followers', (r) => n(r.followers), 'n'],
+  ['Category', (r) => esc(r.category || '—')],
+  ['Priority', (r) => esc(r.priority || '—')],
+  ['Email', (r) => r.email_availability === 'attributable'
+      ? '<span class="pill on">yes</span>'
+      : r.email_availability === 'unattributable'
+        ? '<span class="pill warnp">unattributed</span>' : '<span class="pill off">none</span>'],
+  ['Route', (r) => esc(r.contact_route || '—')],
+  ['VA', (r) => esc(r.va || '—')],
+  ['Contact status', (r) => esc(r.contact_status || '—')],
+  ['DM', (r) => esc(r.dm_status || '—')],
+  ['Variant', (r) => esc(r.dm_variant || '—')],
+  ['Personalization', (r) => esc(r.dm_personalization || '—')],
+  ['First contacted', (r) => r.first_sent_at ? esc(new Date(r.first_sent_at).toLocaleDateString()) : '—'],
+  ['Last activity', (r) => r.last_activity ? esc(new Date(r.last_activity).toLocaleDateString()) : '—'],
+  ['Reply', (r) => esc(r.reply_status || '—')],
+  ['Interested', (r) => r.interested ? '<span class="pill on">yes</span>' : '—'],
+  ['Affiliate', (r) => esc(r.affiliate_status || '—')],
+  ['Source', (r) => esc(r.source || '—')],
+  ['Added', (r) => r.created_at ? esc(new Date(r.created_at).toLocaleDateString()) : '—']
+];
+
 async function loadCreators() {
-  const { data, error } = await sb.rpc('dh_owner_creators', {
+  const { data, error } = await sb.rpc('dh_owner_directory', {
     p_search: $('q').value.trim() || null,
     p_platform: $('f_platform').value || null,
     p_route: $('f_route').value || null,
+    p_priority: $('f_priority').value || null,
     p_status: $('f_status').value || null,
     p_va: $('f_va').value || null,
+    p_category: $('f_category').value || null,
     p_country: $('f_country').value || null,
-    p_source: $('f_source').value || null,
+    p_interested: tri('f_interested'),
+    p_affiliate: tri('f_affiliate'),
     p_limit: PAGE, p_offset: offset
   });
   if (error) { $('creators').innerHTML = ''; $('creatorcount').textContent = error.message; return; }
@@ -414,37 +544,35 @@ async function loadCreators() {
   $('prev').disabled = offset === 0;
   $('next').disabled = offset + rows.length >= Number(data.total || 0);
   $('creators').innerHTML =
-    '<tr><th>Creator</th><th>Platform</th><th>Relevance</th><th>Route</th><th>Email</th><th>VA</th>'
-    + '<th>Outreach</th><th>Reply</th><th>Affiliate</th><th>Country</th><th>Source</th>'
-    + '<th>Found</th></tr>'
-    + rows.map((r) => '<tr>'
-      + '<td>' + (r.url ? '<a href="' + esc(r.url) + '" target="_blank" rel="noopener">'
-                  + esc(r.name || 'creator') + '</a>' : esc(r.name || 'creator')) + '</td>'
-      + '<td>' + esc(r.platform) + '</td>'
-      + '<td>' + esc(r.qualification_status || '') + '</td>'
-      + '<td>' + esc(r.contact_route || '—') + '</td>'
-      + '<td>' + esc(r.email_status) + '</td>'
-      + '<td>' + esc(r.va || '—') + '</td>'
-      + '<td>' + esc(r.outreach_status || '—') + '</td>'
-      + '<td>' + (r.replied_at ? esc(new Date(r.replied_at).toLocaleDateString()) : '—') + '</td>'
-      + '<td>' + esc(r.affiliate_status || '—') + '</td>'
-      + '<td>' + esc(r.country || '—') + '</td>'
-      + '<td>' + esc(r.source || '—') + '</td>'
-      + '<td>' + esc(new Date(r.created_at).toLocaleDateString()) + '</td></tr>').join('');
-  fillFilterOptions(rows);
+    '<tr>' + DIR_COLS.map(([h, , cls]) =>
+      '<th' + (cls ? ' class="' + cls + '"' : '') + '>' + h + '</th>').join('') + '</tr>'
+    + rows.map((r) => '<tr>' + DIR_COLS.map(([, cell, cls]) =>
+        '<td' + (cls ? ' class="' + cls + '"' : '') + '>' + cell(r) + '</td>').join('') + '</tr>')
+      .join('');
 }
 
-// The country and source lists come from what has actually been discovered, so they never offer a
-// filter that would return nothing.
-function fillFilterOptions(rows) {
-  for (const [id, key] of [['f_country', 'country'], ['f_source', 'source']]) {
+// The dropdowns are filled from what actually exists in the database, once, so they never offer a
+// filter that would return nothing and never miss a value that is only on page nine.
+async function fillFilterOptions() {
+  const { data } = await sb.rpc('dh_owner_directory_facets');
+  if (!data) return;
+  const add = (id, values, label) => {
     const sel = $(id), have = new Set([...sel.options].map((o) => o.value));
-    for (const r of rows) if (r[key] && !have.has(r[key])) {
-      have.add(r[key]);
-      const o = document.createElement('option'); o.value = r[key]; o.textContent = r[key];
+    for (const v of values || []) {
+      const value = label ? v.va_id : v;
+      if (value === null || value === undefined || have.has(String(value))) continue;
+      have.add(String(value));
+      const o = document.createElement('option');
+      o.value = value; o.textContent = label ? v.name : v;
       sel.appendChild(o);
     }
-  }
+  };
+  add('f_platform', data.platforms);
+  add('f_route', data.routes);
+  add('f_status', data.statuses);
+  add('f_category', data.categories);
+  add('f_country', data.countries);
+  add('f_va', data.vas, true);
 }
 
 // ---------------------------------------------------------------------------------------------
