@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://esm.sh; style-src 'unsafe-inline'; connect-src https://aexomkitwnxvpqlmtrik.supabase.co wss://aexomkitwnxvpqlmtrik.supabase.co https://esm.sh; img-src data:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://esm.sh; style-src 'unsafe-inline'; connect-src https://aexomkitwnxvpqlmtrik.supabase.co wss://aexomkitwnxvpqlmtrik.supabase.co https://esm.sh; img-src data: blob: https://aexomkitwnxvpqlmtrik.supabase.co; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b0f14">
 <title>DropHero — Owner</title>
@@ -115,6 +115,24 @@
 
   <h2>Backlog &amp; generation</h2>
   <div class="card" id="production"><div class="muted">loading…</div></div>
+
+  <h2 id="tiktok">TikTok accounts <small class="muted">per VA</small></h2>
+  <div class="card" id="ttadmin"><div class="muted">loading…</div></div>
+
+  <h2>TikTok moderation <small class="muted">block rate by sender, 24h and 7d</small></h2>
+  <div class="card" id="modblock"><div class="muted">loading…</div></div>
+
+  <h2>First-touch templates <small class="muted">what gets sent, and what gets refused</small></h2>
+  <div class="card" id="templates"><div class="muted">loading…</div></div>
+
+  <h2 id="performance">VA performance <small class="muted">volume and quality</small></h2>
+  <div class="card" id="vaperf"><div class="muted">loading…</div></div>
+
+  <h2 id="proofs">Proof checks <small class="muted">send and reply screenshots</small></h2>
+  <div class="card" id="proofq"><div class="muted">loading…</div></div>
+
+  <h2 id="payouts">Payouts</h2>
+  <div class="card" id="payouts"><div class="muted">loading…</div></div>
 
   <h2 id="directory">Creator directory</h2>
   <div class="card">
@@ -231,11 +249,22 @@ async function boot() {
   $('whoami').textContent = 'Signed in as ' + (session.user.email || '');
   renderOverview(overview);
 
-  const [funnel, full, attention, vas, sourcing, integrations] = await Promise.all([
+  const [funnel, full, attention, vas, sourcing, integrations, tiktok,
+         perf, proofs, payouts, templates, modblock] = await Promise.all([
     sb.rpc('dh_owner_funnel', { p_period: period }), sb.rpc('dh_owner_full_funnel'),
     sb.rpc('dh_owner_attention'),
-    sb.rpc('dh_owner_va_admin'), sb.rpc('dh_owner_sourcing_settings'), sb.rpc('dh_owner_integrations')
+    sb.rpc('dh_owner_va_admin'), sb.rpc('dh_owner_sourcing_settings'), sb.rpc('dh_owner_integrations'),
+    sb.rpc('dh_tiktok_admin_overview'),
+    sb.rpc('dh_admin_va_performance'), sb.rpc('dh_admin_proof_queue', { p_limit: 60 }),
+    sb.rpc('dh_admin_payout_rows'), sb.rpc('dh_tiktok_template_metrics'),
+    sb.rpc('dh_tiktok_block_rate_by_sender')
   ]);
+  renderTikTok(tiktok.data, tiktok.error);
+  renderPerformance(perf.data, perf.error);
+  renderProofs(proofs.data, proofs.error);
+  renderPayouts(payouts.data, payouts.error);
+  renderTemplates(templates.data, templates.error);
+  renderModerationBlocks(modblock.data, modblock.error);
   renderFunnel(funnel.data || []);
   renderFullFunnel(full.data, full.error);
   renderProduction(full.data);
@@ -579,6 +608,365 @@ async function fillFilterOptions() {
 // VA MANAGEMENT. Eleven columns and the six owner actions. Payable is blank, not zero, until a rate
 // exists -- a zero would read as "earned nothing", which is a different statement.
 // ---------------------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------------------------
+// TIKTOK ACCOUNTS, PER VA.
+//
+// The thing this view has to answer at a glance is not "how many accounts are there" but "is any
+// VA about to run out of room, and is anything stopped" -- so capacity, sent and remaining lead,
+// and a paused account is the loudest row on the page.
+// ---------------------------------------------------------------------------------------------
+const TT_STATE = {
+  READY: ['on', 'ready'], COOLDOWN: ['warnp', 'waiting'],
+  DAILY_LIMIT_REACHED: ['warnp', 'day done'], PAUSED: ['off', 'paused'],
+  WAITING_APPROVAL: ['warnp', 'needs approval']
+};
+// The stored reason is a code so it can be counted and filtered; what appears on screen is the
+// sentence it stands for. Reading DM_RESTRICTION off a dashboard is a small tax on every glance.
+const TT_REASON = {
+  SPAM_WARNING: 'spam warning', CAPTCHA: 'captcha', DM_RESTRICTION: 'cannot send DMs',
+  TEMPORARY_RESTRICTION: 'temporarily restricted', ACCOUNT_WARNING: 'account warning',
+  LOGIN_ISSUE: 'cannot log in', OTHER: 'reported a problem'
+};
+
+function renderTikTok(vas, err) {
+  if (err) { $('ttadmin').innerHTML = '<div class="muted">could not load — ' + esc(err.message) + '</div>'; return; }
+  const rows = (vas || []).filter((v) => (v.accounts_total || 0) > 0);
+  if (!rows.length) {
+    $('ttadmin').innerHTML = '<div class="muted">No VA has registered a TikTok account yet.</div>';
+    return;
+  }
+
+  $('ttadmin').innerHTML = rows.map((v) =>
+    '<div style="margin-bottom:22px">'
+    + '<div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;'
+      + 'align-items:baseline"><b style="font-size:16px">' + esc(v.va_name || 'VA') + '</b>'
+      + '<span class="muted">' + v.accounts_total + ' accounts · ' + v.accounts_active + ' active · '
+      + v.accounts_paused + ' paused'
+      + (v.accounts_waiting ? ' · ' + v.accounts_waiting + ' waiting' : '') + '</span></div>'
+    + '<div class="muted" style="margin:5px 0 9px">Capacity today ' + n(v.capacity_today)
+      + ' · sent ' + n(v.sent_today) + ' · remaining ' + n(v.remaining_today)
+      + ' · personal cap ' + n(v.va_daily_cap) + '</div>'
+    + '<div class="scroll"><table>'
+      + '<tr><th>Account</th><th class="n">Level</th><th class="n">Sent</th><th>Health</th>'
+      + '<th>Controls</th></tr>'
+      + (v.accounts || []).map((a) => {
+          const [cls, word] = TT_STATE[a.display_state] || ['', a.display_state];
+          return '<tr><td>@' + esc(a.username) + '</td>'
+            + '<td class="n">' + a.level + '</td>'
+            + '<td class="n">' + a.sent_today + '/' + a.daily_limit + '</td>'
+            + '<td><span class="pill ' + cls + '">' + esc(word) + '</span>'
+              + (a.paused_reason
+                  ? ' <span class="muted">'
+                    + esc(TT_REASON[a.paused_reason] || a.paused_reason) + '</span>'
+                  : '')
+              + '</td>'
+            + '<td><div class="chips">'
+              + (a.status === 'WAITING_APPROVAL'
+                  ? '<button data-tt="APPROVE" data-id="' + esc(a.account_id) + '">Approve</button>'
+                  : '')
+              + (a.status === 'ACTIVE'
+                  ? '<button data-tt="PAUSE" data-id="' + esc(a.account_id) + '">Pause</button>'
+                  : '')
+              + (a.status === 'PAUSED'
+                  ? '<button data-tt="REACTIVATE" data-id="' + esc(a.account_id) + '">Reactivate</button>'
+                  : '')
+              + '<button data-tt="SET_LEVEL" data-id="' + esc(a.account_id) + '"'
+                + ' data-cur="' + a.level + '">Level</button>'
+              + '<button data-tt="SET_LIMIT" data-id="' + esc(a.account_id) + '"'
+                + ' data-cur="' + a.daily_limit + '">Daily limit</button>'
+              + '<button data-tthist="' + esc(a.account_id) + '">History</button>'
+            + '</div></td></tr>';
+        }).join('')
+    + '</table></div></div>').join('');
+
+  for (const b of $('ttadmin').querySelectorAll('[data-tt]')) {
+    b.onclick = async () => {
+      let value = null;
+      if (b.dataset.tt === 'SET_LEVEL' || b.dataset.tt === 'SET_LIMIT') {
+        const asked = prompt(b.dataset.tt === 'SET_LEVEL'
+          ? 'Level 1–5 (this is our own pace, not a TikTok setting)'
+          : 'Messages per day for this account', b.dataset.cur);
+        if (asked === null) return;
+        value = Number(asked);
+        if (!Number.isFinite(value)) { alert('That is not a number.'); return; }
+      }
+      b.disabled = true;
+      const { data, error } = await sb.rpc('dh_tiktok_admin_action',
+        { p_account_id: b.dataset.id, p_action: b.dataset.tt, p_value: value });
+      b.disabled = false;
+      if (error || !data || !data.ok) {
+        alert((error && error.message) || (data && data.error) || 'That did not work.');
+        return;
+      }
+      boot();
+    };
+  }
+
+  for (const b of $('ttadmin').querySelectorAll('[data-tthist]')) {
+    b.onclick = async () => {
+      const { data, error } = await sb.rpc('dh_tiktok_account_history',
+        { p_account_id: b.dataset.tthist });
+      if (error) { alert(error.message); return; }
+      const sends = (data.sends || []).slice(0, 12)
+        .map((s) => '· ' + new Date(s.sent_at).toLocaleString() + '  @' + (s.handle || '?')).join('\n');
+      const levels = (data.levels || []).slice(0, 8)
+        .map((l) => '· ' + l.day + '  level ' + l.old_level + ' → ' + l.new_level
+          + ' (' + l.sent + ' sent) — ' + l.reason).join('\n');
+      const events = (data.events || []).slice(0, 8)
+        .map((e) => '· ' + new Date(e.at).toLocaleString() + '  ' + e.kind
+          + (e.note ? ' — ' + e.note : '')).join('\n');
+      alert('SENDS (' + (data.sends || []).length + ' total)\n' + (sends || '(none)')
+        + '\n\nLEVEL CHANGES\n' + (levels || '(none)')
+        + '\n\nREPORTS AND ADMIN ACTIONS\n' + (events || '(none)'));
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// VA PERFORMANCE.
+//
+// Volume and quality side by side, deliberately. A table sorted on sends alone ranks whoever fires
+// off the most hollow messages top, and a ranking teaches the behaviour it rewards. Reply rate and
+// signup rate are the columns that say whether the sending was any good.
+// ---------------------------------------------------------------------------------------------
+const money = (cents) => '$' + (Math.floor(Number(cents) || 0) / 100).toFixed(2);
+const rate  = (v) => (v === null || v === undefined) ? '—' : Number(v).toFixed(1) + '%';
+
+/**
+ * Which first-touch template actually works, and which one gets refused.
+ *
+ * Both halves are needed to read either. A template with a high send rate and no replies is not
+ * working; a template with replies and refusals is not safe. Block rate is shown first because it
+ * is the number that costs accounts rather than opportunities.
+ */
+/**
+ * How often TikTok refuses what each sender tries to send.
+ *
+ * Per sender, never averaged. An average across accounts hides the one collecting all the refusals,
+ * and that is precisely the account that needs to stop -- so the number that matters is the one an
+ * average would erase.
+ *
+ * The empty state says which of two very different things is true: no accounts registered at all,
+ * or accounts registered and nothing refused. They look identical in a zero and are not remotely
+ * the same situation.
+ */
+function renderModerationBlocks(rows, err) {
+  if (err) { $('modblock').innerHTML = '<div class="muted">could not load — ' + esc(err.message) + '</div>'; return; }
+  if (!rows || !rows.length) {
+    $('modblock').innerHTML =
+      '<div class="warn" style="margin:0"><b>No TikTok sender accounts are registered.</b><br>'
+      + 'Nothing can be measured, and nothing can be rate-limited or paused, until at least one '
+      + 'account is added and approved. Until then the quota, cooldown, rotation and '
+      + 'blocked-message protections have nothing to act on.</div>';
+    return;
+  }
+  $('modblock').innerHTML =
+    '<div class="scroll"><table><thead><tr>'
+    + ['Sender', 'VA', 'Status', 'Tried 24h', 'Refused 24h', 'Refused % 24h',
+       'Tried 7d', 'Refused 7d', 'Refused % 7d', 'Last refusal', '']
+        .map((h) => '<th>' + h + '</th>').join('')
+    + '</tr></thead><tbody>'
+    + rows.map((r) =>
+        '<tr' + (r.at_or_over_threshold ? ' style="background:#2a1414"' : '') + '>'
+        + '<td><b>@' + esc(r.username) + '</b></td><td>' + esc(r.va_name || '—') + '</td>'
+        + '<td>' + esc(r.status) + '</td>'
+        + '<td>' + r.attempted_24h + '</td>'
+        + '<td>' + (Number(r.blocked_24h) > 0
+            ? '<b style="color:var(--bad)">' + r.blocked_24h + '</b>' : r.blocked_24h) + '</td>'
+        + '<td>' + rate(r.block_rate_24h) + '</td>'
+        + '<td>' + r.attempted_7d + '</td>'
+        + '<td>' + (Number(r.blocked_7d) > 0
+            ? '<b style="color:var(--bad)">' + r.blocked_7d + '</b>' : r.blocked_7d) + '</td>'
+        + '<td>' + rate(r.block_rate_7d) + '</td>'
+        + '<td>' + (r.last_blocked_at ? new Date(r.last_blocked_at).toLocaleString() : '—') + '</td>'
+        + '<td>' + (r.at_or_over_threshold
+            ? '<b style="color:var(--bad)">at threshold</b>'
+            : (r.status === 'REVIEW_REQUIRED' ? 'held' : '')) + '</td></tr>').join('')
+    + '</tbody></table></div>';
+}
+
+function renderTemplates(rows, err) {
+  if (err) { $('templates').innerHTML = '<div class="muted">could not load — ' + esc(err.message) + '</div>'; return; }
+  if (!rows || !rows.length) {
+    $('templates').innerHTML = '<div class="muted">no send attempts recorded yet</div>';
+    return;
+  }
+  $('templates').innerHTML =
+    '<div class="scroll"><table><thead><tr>'
+    + ['Template', 'Arm', 'Attempted', 'Sent', 'Refused', 'Refused %', 'Replies', 'Reply %',
+       'Positive', 'Negative'].map((h) => '<th>' + h + '</th>').join('')
+    + '</tr></thead><tbody>'
+    + rows.map((r) =>
+        '<tr><td><b>' + esc(r.template_version) + '</b></td><td>' + esc(r.dm_variant) + '</td>'
+        + '<td>' + r.attempted + '</td><td>' + r.sent + '</td>'
+        + '<td>' + (Number(r.blocked) > 0
+            ? '<b style="color:var(--bad)">' + r.blocked + '</b>' : r.blocked) + '</td>'
+        + '<td>' + rate(r.block_rate) + '</td>'
+        + '<td>' + r.replies + '</td><td>' + rate(r.reply_rate) + '</td>'
+        + '<td>' + r.positive_replies + '</td><td>' + r.negative_replies + '</td></tr>').join('')
+    + '</tbody></table></div>';
+}
+
+function renderPerformance(rows, err) {
+  if (err) { $('vaperf').innerHTML = '<div class="muted">could not load — ' + esc(err.message) + '</div>'; return; }
+  if (!rows || !rows.length) { $('vaperf').innerHTML = '<div class="muted">no VAs yet</div>'; return; }
+
+  $('vaperf').innerHTML =
+    '<div class="scroll"><table><thead><tr>'
+    + ['VA', 'Accounts', 'Sent today', 'Sent all time', 'Replies', 'Interested', 'Affiliates',
+       'Reply %', 'Interest %', 'Signup %', 'DMs', 'Replies', 'Affiliates', 'Owed']
+        .map((h) => '<th>' + h + '</th>').join('')
+    + '</tr></thead><tbody>'
+    + rows.map((r) =>
+        '<tr><td><b>' + esc(r.va_name || '—') + '</b></td>'
+        + '<td>' + r.accounts + ' <span class="muted">(' + r.accounts_active + ' on'
+        + (r.accounts_paused ? ', ' + r.accounts_paused + ' stopped' : '') + ')</span></td>'
+        + '<td>' + r.sent_today + '</td><td>' + r.sent_total + '</td>'
+        + '<td>' + r.replies_verified + '</td><td>' + r.interested + '</td>'
+        + '<td>' + r.affiliates + '</td>'
+        + '<td>' + rate(r.reply_rate) + '</td><td>' + rate(r.interest_rate) + '</td>'
+        + '<td>' + rate(r.signup_rate) + '</td>'
+        + '<td>' + money(r.dm_cents) + '</td><td>' + money(r.reply_cents) + '</td>'
+        + '<td>' + money(r.affiliate_cents) + '</td>'
+        + '<td><b>' + money(r.owed_cents) + '</b>'
+        + (Number(r.pending_cents) > 0
+            ? ' <span class="muted">+' + money(r.pending_cents) + ' held</span>' : '')
+        + '</td></tr>').join('')
+    + '</tbody></table></div>';
+}
+
+// ---------------------------------------------------------------------------------------------
+// PROOF REVIEW.
+//
+// The screenshot is the whole point, so it is shown rather than linked: a queue that costs a click
+// per image is a queue nobody works. Signed URLs are fetched per row because the bucket is private
+// and the images must not become public to be reviewable.
+// ---------------------------------------------------------------------------------------------
+let proofFilter = { status: 'PENDING_REVIEW', kind: null };
+
+async function renderProofs(rows, err) {
+  if (err) { $('proofq').innerHTML = '<div class="muted">could not load — ' + esc(err.message) + '</div>'; return; }
+  rows = rows || [];
+
+  const chip = (label, on, key, val) =>
+    '<button class="sm' + (on ? ' good' : '') + '" data-f="' + key + '" data-v="'
+    + (val === null ? '' : esc(val)) + '">' + label + '</button>';
+
+  const filters = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">'
+    + chip('Waiting', proofFilter.status === 'PENDING_REVIEW', 'status', 'PENDING_REVIEW')
+    + chip('Needs a look', proofFilter.status === 'NEEDS_REVIEW', 'status', 'NEEDS_REVIEW')
+    + chip('Not uploaded', proofFilter.status === 'PENDING_UPLOAD', 'status', 'PENDING_UPLOAD')
+    + chip('Rejected', proofFilter.status === 'REJECTED', 'status', 'REJECTED')
+    + chip('All', proofFilter.status === null, 'status', null)
+    + '<span style="width:12px"></span>'
+    + chip('Send', proofFilter.kind === 'SEND', 'kind', 'SEND')
+    + chip('Reply', proofFilter.kind === 'REPLY', 'kind', 'REPLY')
+    + chip('Both', proofFilter.kind === null, 'kind', null)
+    + '</div>';
+
+  const body = rows.length
+    ? rows.map((r) =>
+        '<div class="card" style="margin-bottom:10px" data-proof="' + esc(r.proof_check_id) + '">'
+        + '<div><b>' + esc(r.va_name || '—') + '</b> <span class="muted">· '
+        + esc(r.proof_kind === 'REPLY' ? 'reply' : 'send') + ' · @'
+        + esc(r.username || '—') + ' → @' + esc(r.handle || '—') + '</span></div>'
+        + '<div class="muted" style="margin:4px 0 8px">asked '
+        + new Date(r.requested_at).toLocaleString()
+        + (r.uploaded_at ? ' · sent ' + new Date(r.uploaded_at).toLocaleString()
+                         : ' · not sent yet')
+        + ' · ' + esc(r.review_status)
+        + (r.ai_verdict ? ' · machine says ' + esc(r.ai_verdict) : '') + '</div>'
+        + (r.image_path ? '<img data-img="' + esc(r.image_path) + '" alt="proof screenshot"'
+            + ' style="max-width:320px;width:100%;border-radius:10px;border:1px solid var(--line)">'
+            : '<div class="muted">no screenshot yet</div>')
+        + '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:9px">'
+        + '<button class="sm good" data-d="APPROVE">Approve</button>'
+        + '<button class="sm bad" data-d="REJECT">Reject</button>'
+        + '<button class="sm" data-d="FLAG">Flag</button>'
+        + '</div></div>').join('')
+    : '<div class="muted">nothing here</div>';
+
+  $('proofq').innerHTML = filters + body;
+
+  for (const b of $('proofq').querySelectorAll('button[data-f]')) {
+    b.onclick = async () => {
+      proofFilter[b.dataset.f] = b.dataset.v || null;
+      const { data, error } = await sb.rpc('dh_admin_proof_queue',
+        { p_status: proofFilter.status, p_kind: proofFilter.kind, p_limit: 60 });
+      renderProofs(data, error);
+    };
+  }
+
+  // A private bucket means every image needs its own short-lived URL. Done after the markup so the
+  // rows appear immediately and fill in, rather than the whole queue waiting on the slowest signature.
+  for (const img of $('proofq').querySelectorAll('img[data-img]')) {
+    sb.storage.from('proofs').createSignedUrl(img.dataset.img, 300).then(({ data }) => {
+      if (data?.signedUrl) img.src = data.signedUrl;
+      else img.replaceWith(Object.assign(document.createElement('div'),
+        { className: 'muted', textContent: 'screenshot could not be loaded' }));
+    });
+  }
+
+  for (const card of $('proofq').querySelectorAll('[data-proof]')) {
+    for (const b of card.querySelectorAll('button[data-d]')) {
+      b.onclick = async () => {
+        for (const o of card.querySelectorAll('button[data-d]')) o.disabled = true;
+        const note = b.dataset.d === 'REJECT'
+          ? (prompt('Why is this being rejected? (the VA is not paid for it)') || null) : null;
+        const { data, error } = await sb.rpc('dh_admin_proof_decide',
+          { p_proof_check_id: card.dataset.proof, p_decision: b.dataset.d, p_notes: note });
+        if (error || !data?.ok) { alert(error?.message || data?.reason || 'failed'); boot(); return; }
+        boot();
+      };
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// PAYOUTS. Paid by hand outside DropHero; this records that it happened and freezes what was in it.
+// ---------------------------------------------------------------------------------------------
+function renderPayouts(rows, err) {
+  if (err) { $('payouts').innerHTML = '<div class="muted">could not load — ' + esc(err.message) + '</div>'; return; }
+  rows = rows || [];
+  const total = rows.reduce((n, r) => n + Number(r.approved_cents || 0), 0);
+
+  $('payouts').innerHTML =
+    '<div class="scroll"><table><thead><tr>'
+    + ['VA', 'Ready to pay', 'Held for review', 'Paid before', 'Last paid', '']
+        .map((h) => '<th>' + h + '</th>').join('')
+    + '</tr></thead><tbody>'
+    + (rows.length ? rows.map((r) =>
+        '<tr data-va="' + esc(r.va_id) + '"><td><b>' + esc(r.va_name || '—') + '</b></td>'
+        + '<td><b>' + money(r.approved_cents) + '</b></td>'
+        + '<td>' + money(r.pending_cents) + '</td>'
+        + '<td>' + money(r.paid_cents) + '</td>'
+        + '<td>' + (r.last_payout_at ? new Date(r.last_payout_at).toLocaleDateString() : '—') + '</td>'
+        + '<td>' + (r.payable
+            ? '<button class="sm good" data-pay="1">Mark as paid</button>'
+            : '<span class="muted">nothing due</span>') + '</td></tr>').join('')
+       : '<tr><td colspan="6" class="muted">no VAs yet</td></tr>')
+    + '</tbody><tfoot><tr><th>Total owed</th><th>' + money(total)
+    + '</th><th colspan="4"></th></tr></tfoot></table></div>';
+
+  for (const tr of $('payouts').querySelectorAll('tr[data-va]')) {
+    const b = tr.querySelector('button[data-pay]');
+    if (!b) continue;
+    b.onclick = async () => {
+      const name = tr.querySelector('b').textContent;
+      const amount = tr.querySelectorAll('td')[1].textContent;
+      if (!confirm('Mark ' + amount + ' as paid to ' + name + '?\n\n'
+                   + 'This records the payment. It does not send any money.')) return;
+      const method = prompt('How was it paid? (e.g. Wise, PayPal)') || null;
+      const ref = prompt('Transaction reference (optional)') || null;
+      b.disabled = true;
+      const { data, error } = await sb.rpc('dh_admin_payout_mark_paid',
+        { p_va: tr.dataset.va, p_method: method, p_reference: ref });
+      if (error || !data?.ok) { alert(error?.message || data?.reason || 'failed'); b.disabled = false; return; }
+      boot();
+    };
+  }
+}
+
 function renderVas(d) {
   const rows = d.vas || [];
   window.__dm = d.dm_template ?? '';   // the Config-required card edits this same value
