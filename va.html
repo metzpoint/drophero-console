@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://esm.sh; style-src 'unsafe-inline'; connect-src https://aexomkitwnxvpqlmtrik.supabase.co wss://aexomkitwnxvpqlmtrik.supabase.co https://esm.sh; img-src data:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://esm.sh; style-src 'unsafe-inline'; connect-src https://aexomkitwnxvpqlmtrik.supabase.co wss://aexomkitwnxvpqlmtrik.supabase.co https://esm.sh; img-src data: blob: https://aexomkitwnxvpqlmtrik.supabase.co; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b0f14">
 <title>DropHero — VA</title>
@@ -41,13 +41,16 @@
          border-radius:11px;padding:11px;min-height:44px;width:100%;max-width:100%}
   textarea{min-height:64px}
   .muted{color:var(--dim);font-size:12px}
-  /* Three tabs, thumb-sized, stuck to the top: on a phone the VA is scrolling a list and still has
-     to be able to switch view without hunting for the top of the page. */
-  .tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;position:sticky;top:0;z-index:5;
+  /* Five tabs, thumb-sized, stuck to the top: on a phone the VA is scrolling a list and still has
+     to be able to switch view without hunting for the top of the page. Five across is past what a
+     narrow phone takes comfortably, so the labels are single words and the type steps down a
+     point -- the alternative was hiding a destination behind a menu, and a VA who cannot see
+     Earnings does not trust that it is being counted. */
+  .tabs{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;position:sticky;top:0;z-index:5;
         background:var(--bg);padding:8px 0 10px;margin-bottom:4px}
   .tab{font:inherit;background:#161d27;color:var(--dim);border:1px solid var(--line);
-       border-radius:11px;padding:10px 4px;min-height:52px;cursor:pointer;width:100%;
-       font-size:12px;line-height:1.25}
+       border-radius:10px;padding:9px 2px;min-height:56px;cursor:pointer;width:100%;
+       font-size:10px;line-height:1.2;overflow:hidden;text-overflow:ellipsis}
   .tab b{display:block;font-size:16px;color:var(--ink);font-weight:650}
   .tab[aria-selected="true"]{background:#1d3050;border-color:#2b4a7d;color:#cfe0ff}
   .tab[aria-selected="true"] b{color:#eaf2ff}
@@ -73,6 +76,83 @@
   #login{max-width:400px;margin:11vh auto}
   .warn{background:#3a2318;border:1px solid #6b3a1f;color:#ffcf9e;padding:12px;border-radius:11px;
         font-size:13px;margin:11px 0}
+
+  /* ---- TikTok accounts -------------------------------------------------------------------- */
+  /* The account strip sits directly above the message on every card. A VA is about to act on
+     someone else's behalf using a real account, and which one it is must never be a guess. */
+  .sendfrom{background:#131c27;border:1px solid #24405f;border-radius:13px;padding:12px 13px;
+            margin-bottom:10px}
+  .sendfrom .lbl{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+  .sendfrom .acct{font-size:18px;font-weight:650;margin-top:3px;word-break:break-all}
+  .sendfrom .nums{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:7px;
+                  font-size:13px;color:var(--dim)}
+  .state{font-size:11px;font-weight:650;padding:3px 10px;border-radius:999px;white-space:nowrap;
+         border:1px solid var(--line);color:var(--dim)}
+  .state.READY{background:#173d2e;border-color:#1e5e46;color:#b6f0d5}
+  .state.COOLDOWN{background:#4a3410;border-color:#7d5a1e;color:#ffe2ac}
+  .state.PAUSED,.state.DAILY_LIMIT_REACHED{background:#3a1d1d;border-color:#5e2020;color:#ffc9c9}
+  .state.REVIEW_REQUIRED{background:#3a2318;border-color:#6b3a1f;color:#ffcf9e}
+  .state.WAITING_APPROVAL{background:#1d3050;border-color:#2b4a7d;color:#cfe0ff}
+  /* The countdown is the answer to the only question a blocked VA has, so it is set large and in
+     tabular figures: the digits must not jiggle as the seconds tick down. */
+  .countdown{font-size:30px;font-variant-numeric:tabular-nums;font-weight:650;letter-spacing:.02em}
+  .bar{height:7px;border-radius:999px;background:#10161e;overflow:hidden;margin-top:9px}
+  .bar i{display:block;height:100%;background:#2b7d5f;border-radius:999px}
+  .bar.full i{background:#7d3030}
+  .acct-card{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:14px;
+             margin-bottom:11px}
+  .acct-card h3{margin:0;font-size:17px;font-weight:650;word-break:break-all}
+  .acct-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+  .chips{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}
+  .chip{font-size:12px;color:var(--dim);background:#10161e;border:1px solid var(--line);
+        border-radius:999px;padding:5px 11px;white-space:nowrap}
+  /* An example a VA can copy beats a naming rule they have to interpret. Two to a row rather than
+     one: at full size, six of these pushed the three confirmations and the Add button so far down
+     the sheet that the form looked like it had no way to finish. */
+  .examples{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:8px 0 2px}
+  .examples button{width:100%;min-height:38px;padding:8px 6px;font-size:12px;
+                   background:#10161e;color:var(--dim);overflow:hidden;text-overflow:ellipsis;
+                   white-space:nowrap}
+  .check{display:flex;gap:11px;align-items:flex-start;background:#10161e;border:1px solid var(--line);
+         border-radius:11px;padding:12px;margin-bottom:8px;cursor:pointer}
+  .check input{width:24px;height:24px;min-height:24px;flex:0 0 auto;margin:1px 0 0}
+  .check span{font-size:14px;line-height:1.35}
+  dialog{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:16px;
+         padding:0;width:min(520px,94vw);max-height:88vh}
+  dialog::backdrop{background:rgba(0,0,0,.65)}
+  .sheet{padding:16px;overflow-y:auto;max-height:88vh}
+
+  /* ---- Proof, replies and money ----------------------------------------------------------- */
+  /* The proof request interrupts on purpose. It is the one thing a VA must deal with before they
+     can carry on, and a dismissible banner would be read as optional. */
+  .demand{background:#4a3410;border:1px solid #7d5a1e;color:#ffe2ac;border-radius:13px;
+          padding:14px;margin-bottom:11px}
+  .demand h3{margin:0 0 5px;font-size:17px;color:#ffe2ac}
+  /* A file input styled as a button: the native control is small, unlabelled on iOS, and the least
+     tappable thing on the screen at exactly the moment we are asking for a favour. */
+  .shot{position:relative;overflow:hidden;display:block;text-align:center;background:#1e5e46;
+        border:1px solid #2b7d5f;color:#eafff5;border-radius:11px;padding:16px;font-weight:650;
+        font-size:17px;min-height:56px;cursor:pointer}
+  .shot input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer}
+  .thumb{max-width:100%;border-radius:11px;border:1px solid var(--line);margin-top:10px;
+         display:block}
+  /* Six buckets, two to a row: one tap, no dropdown, and the words are the creator's intent rather
+     than our jargon. */
+  .cls{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:9px 0}
+  .cls button{min-height:52px;font-size:13px;padding:9px 6px}
+  .cls button[aria-pressed="true"]{background:#1d3050;border-color:#2b4a7d;color:#cfe0ff}
+  .suggest{background:#10161e;border:1px solid #2b4a7d;border-radius:11px;padding:12px;
+           margin:10px 0;font-size:14px;line-height:1.5;white-space:pre-wrap}
+  .suggest .lbl{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.05em;
+                display:block;margin-bottom:5px}
+  .money{display:grid;grid-template-columns:1fr auto;gap:6px 10px;align-items:baseline;
+         font-size:15px;margin:3px 0}
+  .money .amt{font-variant-numeric:tabular-nums;font-weight:650}
+  .money .sub2{color:var(--dim);font-size:12px}
+  .total{border-top:1px solid var(--line);margin-top:11px;padding-top:11px;font-size:18px}
+  .total .amt{font-size:22px;color:var(--ok)}
+  .earnhead{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.05em;
+            margin:0 0 9px}
 </style></head><body>
 
 <div id="login" hidden>
@@ -121,11 +201,95 @@
     <button class="tab" id="tab-rep"  role="tab" aria-selected="false"
             data-tab="rep"><b id="n-rep">–</b>Check replies</button>
     <button class="tab" id="tab-conv" role="tab" aria-selected="false"
-            data-tab="conv"><b id="n-conv">–</b>Conversations</button>
+            data-tab="conv"><b id="n-conv">–</b>Chats</button>
+    <button class="tab" id="tab-tt"   role="tab" aria-selected="false"
+            data-tab="tt"><b id="n-tt">–</b>Accounts</button>
+    <button class="tab" id="tab-earn" role="tab" aria-selected="false"
+            data-tab="earn"><b id="n-earn">–</b>Earnings</button>
   </div>
 
+  <div id="demand"></div>
   <div id="card"></div>
   <div id="list" hidden></div>
+  <div id="tt" hidden></div>
+  <div id="earn" hidden></div>
+
+<dialog id="addacct"><div class="sheet">
+  <h2 style="margin:0 0 4px;font-size:20px">Add a TikTok account</h2>
+  <p class="muted" style="margin-top:0">An account you have already made yourself. We never create
+    one for you.</p>
+
+  <p class="muted" style="margin-bottom:4px">Names that work well — tap one to use it</p>
+  <div class="examples" id="egnames"></div>
+
+  <p class="muted" style="margin:12px 0 4px">Username</p>
+  <input id="a-user" placeholder="drophero.partners01" autocapitalize="none" spellcheck="false">
+  <p class="muted" style="margin:11px 0 4px">Link to the profile</p>
+  <input id="a-url" placeholder="https://www.tiktok.com/@drophero.partners01"
+         inputmode="url" autocapitalize="none" spellcheck="false">
+  <p class="muted" style="margin:11px 0 4px">When did you make it?</p>
+  <input id="a-date" type="date">
+  <p class="muted" style="margin:11px 0 4px">Country</p>
+  <input id="a-country" placeholder="Philippines">
+
+  <p class="muted" style="margin:15px 0 7px">Before we can switch it on, please confirm:</p>
+  <label class="check"><input type="checkbox" id="a-img">
+    <span>The DropHero picture is on the profile</span></label>
+  <label class="check"><input type="checkbox" id="a-bio">
+    <span>The DropHero bio is on the profile</span></label>
+  <label class="check"><input type="checkbox" id="a-vid">
+    <span>The DropHero video is posted and set to public</span></label>
+
+  <p id="a-msg" class="muted"></p>
+  <div class="acts" style="margin-top:10px">
+    <button id="a-save" class="good full">Add account</button>
+    <button id="a-cancel" class="full">Cancel</button>
+  </div>
+</div></dialog>
+
+<dialog id="probdlg"><div class="sheet">
+  <h2 style="margin:0 0 4px;font-size:20px">Report a problem</h2>
+  <p class="muted" style="margin-top:0" id="p-acct"></p>
+  <div id="p-kinds"></div>
+  <p class="muted" style="margin:11px 0 4px">Anything else worth knowing? (optional)</p>
+  <textarea id="p-note" placeholder="What did you see on screen?"></textarea>
+  <p id="p-msg" class="muted"></p>
+  <div class="acts" style="margin-top:10px">
+    <button id="p-cancel" class="full">Close</button>
+  </div>
+</div></dialog>
+
+<dialog id="proofdlg"><div class="sheet">
+  <h2 style="margin:0 0 4px;font-size:20px" id="pr-title">Quick check</h2>
+  <p class="muted" style="margin-top:0" id="pr-why"></p>
+  <label class="shot" id="pr-pick">Take or choose a photo
+    <input type="file" accept="image/*" id="pr-file">
+  </label>
+  <img id="pr-thumb" class="thumb" hidden alt="">
+  <p id="pr-msg" class="muted"></p>
+  <div class="acts" style="margin-top:10px">
+    <button id="pr-send" class="good full" disabled>Send it</button>
+    <button id="pr-cancel" class="full">Not now</button>
+  </div>
+</div></dialog>
+
+<dialog id="replydlg"><div class="sheet">
+  <h2 style="margin:0 0 4px;font-size:20px">They replied</h2>
+  <p class="muted" style="margin-top:0" id="rp-who"></p>
+  <label class="shot" id="rp-pick">Photo of the chat
+    <input type="file" accept="image/*" id="rp-file">
+  </label>
+  <img id="rp-thumb" class="thumb" hidden alt="">
+  <p class="muted" style="margin:13px 0 4px">What did they say? (helps us suggest a reply)</p>
+  <textarea id="rp-text" placeholder="Type or paste their message"></textarea>
+  <p class="muted" style="margin:13px 0 4px">How would you describe it?</p>
+  <div class="cls" id="rp-cls"></div>
+  <p id="rp-msg" class="muted"></p>
+  <div class="acts" style="margin-top:10px">
+    <button id="rp-send" class="good full" disabled>Save</button>
+    <button id="rp-cancel" class="full">Cancel</button>
+  </div>
+</div></dialog>
 
   <div class="acts" style="margin-top:22px">
     <button id="changepw">Change password</button>
@@ -253,7 +417,227 @@ async function boot() {
   $('n-new').textContent  = queue.length;
   $('n-rep').textContent  = (data.check_replies || []).length;
   $('n-conv').textContent = (data.conversations || []).length;
+  await Promise.all([loadAccounts(), loadMoney()]);
   render();
+}
+
+/**
+ * Earnings, the outstanding proof request and the answered conversations.
+ *
+ * Loaded together because all three change on the same events -- a send books money and may demand
+ * a photo; a reply books a bonus and appears in chats -- and three separate refreshes would let the
+ * screen show three different moments.
+ */
+async function loadMoney() {
+  const [{ data: money }, { data: proof }, { data: convos }] = await Promise.all([
+    sb.rpc('dh_va_earnings_summary'), sb.rpc('dh_va_pending_proof'), sb.rpc('dh_va_conversations')
+  ]);
+  view.money = money || null;
+  view.pending_proof = proof || null;
+  view.chats = convos || [];
+  $('n-earn').textContent = money ? usd(money.today_total_cents || 0) : '–';
+}
+
+/** Cents to the string a person reads. Never rounds up: nobody is pleased by a total that shrinks. */
+function usd(cents) {
+  return '$' + (Math.floor(Number(cents) || 0) / 100).toFixed(2);
+}
+
+// ---------------------------------------------------------------------------------------------
+// THE TIKTOK ACCOUNTS
+//
+// The portal never decides whether a send is allowed -- dh_tiktok_record_send does, against the
+// locked row, at the moment of writing. Everything below is presentation: it shows the VA what the
+// server will say, early enough to save them a wasted tap. When the two disagree, the server's
+// answer is the one that appears on screen.
+// ---------------------------------------------------------------------------------------------
+let tt = { accounts: [], va_sent_today: 0, va_daily_cap: 0, va_remaining: 0 };
+let sendFrom = null;        // the account the next DM will go out from, or a reason there is none
+let ticker = 0;
+
+async function loadAccounts() {
+  const [{ data: mine }, { data: pick }] = await Promise.all([
+    sb.rpc('dh_tiktok_my_accounts'), sb.rpc('dh_tiktok_pick_account')
+  ]);
+  if (mine) tt = mine;
+  sendFrom = pick || null;
+  const live = (tt.accounts || []).filter((a) => a.status !== 'RETIRED');
+  $('n-tt').textContent = live.length;
+  // Only run a clock when something is actually counting down.
+  clearInterval(ticker);
+  if (live.some((a) => a.cooldown_seconds_left > 0) || (sendFrom && !sendFrom.ok)) {
+    ticker = setInterval(tickClocks, 1000);
+  }
+}
+
+const mmss = (s) => {
+  const n = Math.max(0, Math.round(s));
+  return String(Math.floor(n / 60)).padStart(2, '0') + ':' + String(n % 60).padStart(2, '0');
+};
+
+/** Count the visible clocks down without asking the server every second. */
+function tickClocks() {
+  const clocks = document.querySelectorAll('[data-until]');
+  // NO CLOCK ON SCREEN IS NOT THE SAME AS A CLOCK THAT HAS RUN OUT.
+  //
+  // Treating the two the same reloaded the whole page once a second for as long as any account was
+  // cooling down, because the countdown lives on the Accounts tab and the VA was on New DMs. Every
+  // reload rebuilt the card mid-tap: the copy confirmation vanished before it could be read, and a
+  // half-typed note would have gone with it.
+  if (!clocks.length) return;
+
+  let anyLeft = false;
+  for (const el of clocks) {
+    const left = Math.max(0, Math.round((Number(el.dataset.until) - Date.now()) / 1000));
+    el.textContent = mmss(left);
+    if (left > 0) anyLeft = true;
+  }
+  // The moment the last visible cooldown expires the screen is out of date, so it refreshes itself
+  // rather than leaving a withdrawn button that would in fact now work.
+  if (!anyLeft) { clearInterval(ticker); boot(); }
+}
+
+const STATE_WORDS = {
+  READY: 'Ready', COOLDOWN: 'Waiting', PAUSED: 'Paused',
+  DAILY_LIMIT_REACHED: 'Done for today', WAITING_APPROVAL: 'Waiting for approval',
+  // Not "blocked" and not "banned": TikTok has not restricted this account, our own messages were
+  // turned away. A VA who reads it as a ban on their account panics about the wrong thing.
+  REVIEW_REQUIRED: 'On hold — being checked'
+};
+
+function acctCard(a) {
+  const until = Date.now() + (a.cooldown_seconds_left || 0) * 1000;
+  const pct = a.daily_limit ? Math.min(100, Math.round(a.sent_today / a.daily_limit * 100)) : 0;
+  return '<div class="acct-card">'
+    + '<div class="acct-head"><h3>@' + esc(a.username) + '</h3>'
+      + '<span class="state ' + esc(a.display_state) + '">'
+      + esc(STATE_WORDS[a.display_state] || a.display_state) + '</span></div>'
+    + '<div class="bar' + (pct >= 100 ? ' full' : '') + '"><i style="width:' + pct + '%"></i></div>'
+    + '<div class="chips">'
+      + '<span class="chip">' + a.sent_today + ' of ' + a.daily_limit + ' sent today</span>'
+      + '<span class="chip">Level ' + a.level + '</span>'
+      + (a.country ? '<span class="chip">' + esc(a.country) + '</span>' : '')
+    + '</div>'
+    + (a.display_state === 'COOLDOWN'
+        ? '<p class="muted" style="margin:12px 0 2px">Next DM in</p>'
+          + '<div class="countdown" data-until="' + until + '">'
+          + mmss(a.cooldown_seconds_left) + '</div>'
+        : '')
+    + (a.display_state === 'PAUSED'
+        ? '<div class="warn" style="margin-top:11px">Stopped after a problem was reported'
+          + (a.paused_reason ? ' (' + esc(PROBLEM_WORDS[a.paused_reason] || a.paused_reason) + ')' : '')
+          + '. Rico has to switch it back on.</div>'
+        : '')
+    + (a.display_state === 'WAITING_APPROVAL'
+        ? '<p class="muted" style="margin:11px 0 0">Rico still has to check this one before you can '
+          + 'send from it.</p>'
+        : '')
+    + '<button class="sm" data-problem="' + esc(a.account_id) + '" data-user="' + esc(a.username)
+      + '" style="margin-top:12px">Report a problem</button>'
+    + '</div>';
+}
+
+const PROBLEM_WORDS = {
+  SPAM_WARNING: 'Spam warning', CAPTCHA: 'Captcha', DM_RESTRICTION: 'Cannot send DMs',
+  TEMPORARY_RESTRICTION: 'Temporarily restricted', ACCOUNT_WARNING: 'Account warning',
+  LOGIN_ISSUE: 'Cannot log in', OTHER: 'Something else'
+};
+
+function drawAccounts() {
+  const list = tt.accounts || [];
+  $('tt').innerHTML =
+    '<div class="card top" style="margin-bottom:12px">'
+    + '<div class="acct-head"><div><div class="who">My TikTok accounts</div>'
+      + '<div class="meta">' + list.length + (list.length === 1 ? ' account' : ' accounts') + '</div></div>'
+      + '</div>'
+    + '<div class="counts" style="margin:13px 0 0">'
+      + '<div><b>' + (tt.va_sent_today ?? 0) + '</b><span>Sent today</span></div>'
+      + '<div><b>' + (tt.va_remaining ?? 0) + '</b><span>You can still send</span></div>'
+    + '</div></div>'
+    + '<button class="good full" id="addbtn" style="margin-bottom:13px">+ Add TikTok account</button>'
+    + (list.length ? list.map(acctCard).join('')
+        : '<div class="card"><p class="muted" style="margin:0">No accounts yet. Add the first one '
+          + 'and Rico will switch it on for you.</p></div>');
+
+  $('addbtn').onclick = openAdd;
+  for (const b of $('tt').querySelectorAll('[data-problem]')) {
+    b.onclick = () => openProblem(b.dataset.problem, b.dataset.user);
+  }
+}
+
+// ---- adding an account ----------------------------------------------------------------------
+
+function openAdd() {
+  $('a-msg').textContent = '';
+  $('egnames').innerHTML = (tt.example_usernames || [])
+    .map((n) => '<button data-eg="' + esc(n) + '">@' + esc(n) + '</button>').join('');
+  for (const b of $('egnames').querySelectorAll('[data-eg]')) {
+    b.onclick = () => {
+      $('a-user').value = b.dataset.eg;
+      $('a-url').value = 'https://www.tiktok.com/@' + b.dataset.eg;
+    };
+  }
+  $('addacct').showModal();
+}
+$('a-cancel').onclick = () => $('addacct').close();
+
+$('a-save').onclick = async () => {
+  const user = $('a-user').value.trim();
+  if (!user) { $('a-msg').textContent = 'The username is missing.'; return; }
+  if (!($('a-img').checked && $('a-bio').checked && $('a-vid').checked)) {
+    $('a-msg').textContent = 'Please tick all three boxes first.'; return;
+  }
+  $('a-save').disabled = true;
+  $('a-msg').textContent = 'adding…';
+  const { data, error } = await sb.rpc('dh_tiktok_add_account', {
+    p_username: user,
+    p_profile_url: $('a-url').value.trim() || ('https://www.tiktok.com/@' + user.replace(/^@/, '')),
+    p_created_on: $('a-date').value || null,
+    p_country: $('a-country').value.trim() || null,
+    p_confirm_image: true, p_confirm_bio: true, p_confirm_video: true
+  });
+  $('a-save').disabled = false;
+  if (error || !data || !data.ok) {
+    $('a-msg').textContent = (error && error.message) || (data && data.error) || 'That did not work.';
+    return;
+  }
+  $('addacct').close();
+  for (const id of ['a-user', 'a-url', 'a-date', 'a-country']) $(id).value = '';
+  for (const id of ['a-img', 'a-bio', 'a-vid']) $(id).checked = false;
+  await boot();
+};
+
+// ---- reporting a problem --------------------------------------------------------------------
+
+let problemFor = null;
+function openProblem(accountId, username) {
+  problemFor = accountId;
+  $('p-acct').textContent = '@' + username;
+  $('p-msg').textContent = '';
+  $('p-note').value = '';
+  $('p-kinds').innerHTML = Object.entries(PROBLEM_WORDS)
+    .map(([k, label]) => '<button class="full" data-kind="' + k + '" style="margin-bottom:8px">'
+      + esc(label) + '</button>').join('');
+  for (const b of $('p-kinds').querySelectorAll('[data-kind]')) b.onclick = () => sendProblem(b.dataset.kind);
+  $('probdlg').showModal();
+}
+$('p-cancel').onclick = () => $('probdlg').close();
+
+async function sendProblem(kind) {
+  for (const b of $('p-kinds').querySelectorAll('button')) b.disabled = true;
+  $('p-msg').textContent = 'sending…';
+  const { data, error } = await sb.rpc('dh_tiktok_report_problem',
+    { p_account_id: problemFor, p_kind: kind, p_note: $('p-note').value.trim() || null });
+  for (const b of $('p-kinds').querySelectorAll('button')) b.disabled = false;
+  if (error || !data || !data.ok) {
+    $('p-msg').textContent = (error && error.message) || (data && data.error) || 'That did not work.';
+    return;
+  }
+  $('probdlg').close();
+  if (data.paused) {
+    alert('Thanks — we have stopped that account straight away. Rico will look at it.');
+  }
+  await boot();
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -352,10 +736,35 @@ function render() {
     b.setAttribute('aria-selected', String(b.dataset.tab === tab));
   }
   $('card').hidden = tab !== 'new';
-  $('list').hidden = tab === 'new';
-  if (tab === 'new') { draw(); return; }
-  if (tab === 'rep') { drawReplies(); return; }
+  $('list').hidden = tab === 'new' || tab === 'tt' || tab === 'earn';
+  $('tt').hidden   = tab !== 'tt';
+  $('earn').hidden = tab !== 'earn';
+  drawDemand();
+  if (tab === 'tt')   { drawAccounts(); return; }
+  if (tab === 'earn') { drawEarnings(); return; }
+  if (tab === 'new')  { draw(); return; }
+  if (tab === 'rep')  { drawReplies(); return; }
   drawConversations();
+}
+
+// ---------------------------------------------------------------------------------------------
+// THE ONE THING THAT INTERRUPTS.
+//
+// A proof request is not a notification: until it is answered the VA cannot start another DM, so
+// showing it as a dismissible badge would leave them tapping a dead button and wondering. It sits
+// above every tab, in the warning colour, and says what it wants.
+// ---------------------------------------------------------------------------------------------
+function drawDemand() {
+  const p = view.pending_proof;
+  if (!p || !p.proof_check_id) { $('demand').innerHTML = ''; return; }
+  const who = p.handle ? ('@' + esc(p.handle)) : 'a creator';
+  $('demand').innerHTML =
+    '<div class="demand"><h3>Quick check</h3>'
+    + '<p style="margin:0 0 10px">Send us a photo of your chat with ' + who
+    + ' so we can confirm the message went out. We ask for about one in twenty.</p>'
+    + '<button class="good" id="demand-go" style="background:#7d5a1e;border-color:#a8781f;'
+    + 'color:#fff3dc">Send the photo</button></div>';
+  $('demand-go').onclick = () => openProof(p);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -392,10 +801,105 @@ function drawReplies() {
 // creator this VA has ever written to -- including the ones past the page limit and the ones marked
 // unreachable, because "can't reach" is often wrong and they answer a week later.
 // ---------------------------------------------------------------------------------------------
+/**
+ * A creator who actually answered, with what to say back.
+ *
+ * Rendered above the older history rows because it is the only part of this screen with an action
+ * attached: a suggested sentence to copy, and -- only once they have said they want it -- the
+ * signup link. Everything below is a record; this is work.
+ */
+function chatHtml(c) {
+  const who = esc(c.display_name || c.handle || 'creator');
+  const url = c.profile_url || ('https://www.tiktok.com/@' + (c.handle || ''));
+  let h = '<div class="row chat"><div class="who">' + who + '</div>'
+    + '<div class="meta">@' + esc(c.handle || '') + ' · replied ' + ago(c.reported_at)
+    + (c.username ? ' · from @' + esc(c.username) : '') + '</div>';
+
+  if (c.extracted_text) h += '<div class="quote">' + esc(c.extracted_text) + '</div>';
+
+  // The six buckets, always visible and always changeable: a VA who mis-taps must be able to fix it
+  // without hunting, and the affiliate link appears or disappears from this choice alone.
+  h += '<div class="cls" data-cls="' + esc(c.reply_event_id) + '">'
+    + CLASSES.map(([v, label]) =>
+        '<button class="sm" data-v="' + v + '" aria-pressed="'
+        + String(c.classification === v) + '">' + label + '</button>').join('')
+    + '</div>';
+
+  if (c.suggestion) {
+    h += '<div class="suggest"><span class="lbl">Suggested reply</span>' + esc(c.suggestion) + '</div>'
+      + '<button class="sm" data-copy="' + esc(c.reply_event_id) + '">Copy this reply</button>';
+  }
+
+  // SECTION M, ON SCREEN. Not shown merely because a reply exists -- only once the creator has said
+  // they are interested or asked for details. A link that appears the moment anyone answers turns
+  // every conversation into a pitch, and the question they actually asked goes unanswered.
+  if (c.affiliate_available) {
+    h += '<button class="good" style="margin-top:8px" data-invite="' + esc(c.task_id) + '">'
+      + (c.affiliate_state === 'REGISTERED' ? 'They joined — copy link again'
+                                            : 'Copy signup link') + '</button>';
+  } else if (c.classification === 'QUESTION') {
+    h += '<p class="muted" style="margin:8px 0 0">Answer their question first. The signup link '
+      + 'appears once they say they want it.</p>';
+  }
+
+  h += '<div style="margin-top:9px"><a class="open" href="' + esc(url)
+    + '" target="_blank" rel="noopener">Open the chat</a></div></div>';
+  return h;
+}
+
+const CLASSES = [
+  ['QUESTION', 'Asked a question'], ['INTERESTED', 'Keen'],
+  ['SEND_DETAILS', 'Wants the link'], ['NOT_INTERESTED', 'Not interested'],
+  ['FOLLOW_UP_LATER', 'Later'], ['OTHER', 'Something else']
+];
+
+function wireChats(rows) {
+  for (const box of document.querySelectorAll('[data-cls]')) {
+    for (const b of box.querySelectorAll('button')) {
+      b.onclick = async () => {
+        const { data, error } = await sb.rpc('dh_reply_classify',
+          { p_reply_event_id: box.dataset.cls, p_classification: b.dataset.v });
+        if (error || !data?.ok) { say('Could not save that — try again.'); return; }
+        await loadMoney(); render();
+      };
+    }
+  }
+  for (const b of document.querySelectorAll('[data-copy]')) {
+    b.onclick = () => {
+      const row = rows.find((r) => r.reply_event_id === b.dataset.copy);
+      if (row?.suggestion) { copyNow(row.suggestion); say('Reply copied — paste it in TikTok.'); }
+    };
+  }
+  for (const b of document.querySelectorAll('[data-invite]')) {
+    b.onclick = async () => {
+      b.disabled = true;
+      const { data, error } = await sb.rpc('dh_affiliate_invite_issue', { p_task_id: b.dataset.invite });
+      b.disabled = false;
+      if (error) { say('Could not make a link — try again.'); return; }
+      if (!data?.ok) {
+        // ALREADY_ATTRIBUTED is not a glitch: somebody else got there first, and the VA needs to
+        // know to stop working this creator rather than to keep tapping.
+        say(data?.reason === 'ALREADY_ATTRIBUTED'
+              ? 'This creator has already joined through someone else. Leave this one.'
+              : 'Not yet — wait until they say they want the link.');
+        return;
+      }
+      copyNow(data.url);
+      say('Signup link copied — paste it in TikTok.');
+      await loadMoney(); render();
+    };
+  }
+}
+
 function drawConversations() {
+  const chats = view.chats || [];
   const rows = search.results !== null ? search.results : (view.conversations || []);
   const box = '<input id="q" type="search" placeholder="Search name or handle"'
             + ' value="' + esc(search.q) + '" autocomplete="off" style="margin-bottom:12px">';
+  const answered = (search.results === null && chats.length)
+    ? '<p class="earnhead">Replied to you</p>' + chats.map(chatHtml).join('')
+      + '<p class="earnhead" style="margin-top:18px">Everyone else</p>'
+    : '';
   const body = rows.length
     ? '<p class="muted" style="margin:0 0 10px">' + rows.length
       + (search.results !== null ? ' found' : ' conversations') + '</p>'
@@ -407,7 +911,7 @@ function drawConversations() {
           ? 'Search looks at every creator you have written to, by name or handle.'
           : 'Creators appear here once you record a reply or set a follow-up.')
       + '</p></div>';
-  $('list').innerHTML = box + body;
+  $('list').innerHTML = box + answered + body;
 
   const q = $('q');
   // Focus is restored by hand because the input is re-created on every keystroke; without this the
@@ -419,6 +923,55 @@ function drawConversations() {
     search.timer = setTimeout(runSearch, 250);
   };
   wireRows(rows);
+  wireChats(chats);
+}
+
+// ---------------------------------------------------------------------------------------------
+// EARNINGS. Read-only, computed from the ledger, and itemised -- a number with no working shown is
+// a number a VA has to take on trust, and these are people being paid two cents at a time.
+// ---------------------------------------------------------------------------------------------
+function drawEarnings() {
+  const m = view.money;
+  if (!m) {
+    $('earn').innerHTML = '<div class="card"><div class="who">Not loaded</div>'
+      + '<p class="muted">Pull down to refresh.</p></div>';
+    return;
+  }
+  const line = (label, bucket, rate) => {
+    const b = bucket || { n: 0, cents: 0 };
+    return '<div class="money"><span>' + label
+      + '<span class="sub2"> · ' + (b.n || 0) + ' × ' + usd(rate) + '</span></span>'
+      + '<span class="amt">' + usd(b.cents || 0) + '</span></div>';
+  };
+  const t = m.today || {}, p = m.period || {}, r = m.rates || {};
+
+  $('earn').innerHTML =
+    '<div class="card"><p class="earnhead">Today</p>'
+    + line('Messages sent', t.DM_SENT, r.dm_cents)
+    + line('Replies', t.FIRST_VERIFIED_REPLY, r.reply_cents)
+    + line('New affiliates', t.AFFILIATE_SIGNUP, r.signup_cents)
+    + '<div class="money total"><span>Total today</span><span class="amt">'
+    + usd(m.today_total_cents) + '</span></div></div>'
+
+    + '<div class="card"><p class="earnhead">Not paid out yet</p>'
+    + line('Messages sent', p.DM_SENT, r.dm_cents)
+    + line('Replies', p.FIRST_VERIFIED_REPLY, r.reply_cents)
+    + line('New affiliates', p.AFFILIATE_SIGNUP, r.signup_cents)
+    + '<div class="money total"><span>Total</span><span class="amt">'
+    + usd(m.period_total_cents) + '</span></div>'
+    + '<div class="money" style="margin-top:9px"><span>Confirmed</span><span class="amt">'
+    + usd(m.approved_cents) + '</span></div>'
+    + (m.pending_cents > 0
+        ? '<div class="money"><span>Waiting on a photo check</span><span class="amt">'
+          + usd(m.pending_cents) + '</span></div>'
+        : '')
+    + '</div>'
+
+    + '<div class="card"><p class="earnhead">Already paid</p>'
+    + '<div class="money"><span>Paid to you so far</span><span class="amt">'
+    + usd(m.paid_cents) + '</span></div>'
+    + '<p class="muted" style="margin:10px 0 0">Rico pays these out by hand. Nothing here can be '
+    + 'changed from this screen — it is counted from what you actually did.</p></div>';
 }
 
 async function runSearch() {
@@ -454,6 +1007,13 @@ function rowHtml(t, opts) {
             + '<div class="muted" style="margin-top:6px">pasted ' + esc(ago(r.at)) + '</div></div>').join('')
         : '')
     + '<a class="open" href="' + esc(t.profile_url) + '" target="_blank" rel="noopener">Open profile</a>'
+    // THE ONE ACTION THAT PAYS A BONUS, GIVEN ITS OWN BUTTON ABOVE THE STATUS GRID.
+    //
+    // A reply with a photo is worth five times a sent DM, so it must not be one of eight equal
+    // buttons. Tapping it opens the camera; the grid below stays exactly as it was for the outcomes
+    // that need no evidence.
+    + '<button class="good" data-replied="' + esc(t.task_id) + '" style="margin-bottom:10px">'
+      + 'They replied — add photo</button>'
     + '<button class="sm" data-copy="1" style="margin-bottom:10px">Copy DM again</button>'
     + '<p class="muted" style="margin:4px 0 5px">Paste their reply (optional)</p>'
     + '<textarea data-reply="1" placeholder="What they wrote back"></textarea>'
@@ -469,6 +1029,149 @@ function rowHtml(t, opts) {
     + '</div></div>';
 }
 
+// ---------------------------------------------------------------------------------------------
+// SCREENSHOTS.
+//
+// The same upload path serves both kinds of proof. On a phone `accept="image/*"` gives the native
+// camera-or-library sheet, which is one tap and already familiar -- building a custom picker would
+// only get in the way of the two taps this has to cost.
+//
+// The object path is <proof_check_id>/<file>, which is what the storage policy reads to decide
+// whether this is yours to upload. It is not a naming convention; it is the authorisation.
+// ---------------------------------------------------------------------------------------------
+let proofCtx = null;    // { proof_check_id, file, bucket }
+
+function fileTooBig(f) { return f.size > 10 * 1024 * 1024; }
+
+async function uploadShot(proofId, file, bucket) {
+  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+  const path = proofId + '/' + Date.now() + '.' + ext;
+  const { error } = await sb.storage.from(bucket || 'proofs')
+    .upload(path, file, { contentType: file.type || 'image/jpeg', upsert: false });
+  if (error) return { ok: false, message: error.message };
+  const { data, error: e2 } = await sb.rpc('dh_proof_upload',
+    { p_proof_check_id: proofId, p_image_path: path });
+  if (e2) return { ok: false, message: e2.message };
+  if (!data?.ok) return { ok: false, message: data?.reason || 'could not be saved' };
+  return { ok: true };
+}
+
+function openProof(p) {
+  proofCtx = { proof_check_id: p.proof_check_id, bucket: p.bucket || 'proofs', file: null };
+  $('pr-title').textContent = p.proof_kind === 'REPLY' ? 'Photo of the reply' : 'Quick check';
+  $('pr-why').textContent = p.proof_kind === 'REPLY'
+    ? 'A photo of the chat so we can confirm the reply and release your bonus.'
+    : 'We check about one message in twenty. Send a photo of the chat showing your message, and '
+      + 'you can carry on.';
+  $('pr-thumb').hidden = true; $('pr-msg').textContent = ''; $('pr-send').disabled = true;
+  $('pr-file').value = '';
+  $('proofdlg').showModal();
+}
+
+$('pr-file').onchange = () => {
+  const f = $('pr-file').files?.[0];
+  if (!f) return;
+  if (fileTooBig(f)) { $('pr-msg').textContent = 'That photo is too large — try again.'; return; }
+  proofCtx.file = f;
+  $('pr-thumb').src = URL.createObjectURL(f);
+  $('pr-thumb').hidden = false;
+  $('pr-msg').textContent = '';
+  $('pr-send').disabled = false;
+};
+
+$('pr-send').onclick = async () => {
+  if (!proofCtx?.file) return;
+  $('pr-send').disabled = true; $('pr-msg').textContent = 'Sending…';
+  const r = await uploadShot(proofCtx.proof_check_id, proofCtx.file, proofCtx.bucket);
+  if (!r.ok) {
+    $('pr-msg').textContent = 'That did not go through. Try once more.';
+    $('pr-send').disabled = false;
+    return;
+  }
+  $('proofdlg').close();
+  say('Thanks — sent.');
+  await boot();
+};
+
+$('pr-cancel').onclick = () => $('proofdlg').close();
+
+// ---------------------------------------------------------------------------------------------
+// A CREATOR ANSWERED.
+//
+// Photo, what they said, and how to describe it -- in one sheet, because these arrive while the VA
+// is mid-conversation and a three-step flow is three chances to abandon it.
+// ---------------------------------------------------------------------------------------------
+let replyCtx = null;    // { task_id, file, classification }
+
+function openReply(taskId, who) {
+  replyCtx = { task_id: taskId, file: null, classification: null };
+  $('rp-who').textContent = who ? ('Chat with ' + who) : '';
+  $('rp-thumb').hidden = true; $('rp-msg').textContent = ''; $('rp-text').value = '';
+  $('rp-file').value = ''; $('rp-send').disabled = true;
+  $('rp-cls').innerHTML = CLASSES.map(([v, label]) =>
+    '<button class="sm" data-v="' + v + '" aria-pressed="false">' + label + '</button>').join('');
+  for (const b of $('rp-cls').querySelectorAll('button')) {
+    b.onclick = () => {
+      replyCtx.classification = b.dataset.v;
+      for (const o of $('rp-cls').querySelectorAll('button')) {
+        o.setAttribute('aria-pressed', String(o === b));
+      }
+    };
+  }
+  $('replydlg').showModal();
+}
+
+$('rp-file').onchange = () => {
+  const f = $('rp-file').files?.[0];
+  if (!f) return;
+  if (fileTooBig(f)) { $('rp-msg').textContent = 'That photo is too large — try again.'; return; }
+  replyCtx.file = f;
+  $('rp-thumb').src = URL.createObjectURL(f);
+  $('rp-thumb').hidden = false;
+  $('rp-msg').textContent = '';
+  $('rp-send').disabled = false;
+};
+
+$('rp-send').onclick = async () => {
+  if (!replyCtx?.file) return;
+  $('rp-send').disabled = true; $('rp-msg').textContent = 'Saving…';
+
+  // The reply event is created first so the proof row exists to upload against. If the upload then
+  // fails the reply is still on record awaiting its photo -- which is recoverable. The other order
+  // loses the screenshot with nothing to attach it to.
+  const { data, error } = await sb.rpc('dh_reply_report', { p_task_id: replyCtx.task_id });
+  if (error || !data?.ok) {
+    $('rp-msg').textContent = data?.reason === 'NO_SEND_TO_REPLY_TO'
+      ? 'Mark the DM as sent first, then record their reply.'
+      : 'That did not save. Try once more.';
+    $('rp-send').disabled = false;
+    return;
+  }
+
+  const up = await uploadShot(data.proof_check_id, replyCtx.file, 'proofs');
+  if (!up.ok) {
+    $('rp-msg').textContent = 'Saved, but the photo did not upload. Open the chat and try again.';
+    $('rp-send').disabled = false;
+    await boot();
+    return;
+  }
+
+  const text = $('rp-text').value.trim();
+  if (replyCtx.classification || text) {
+    await sb.rpc('dh_reply_classify', {
+      p_reply_event_id: data.reply_event_id,
+      p_classification: replyCtx.classification || 'OTHER',
+      p_text: text || null
+    });
+  }
+
+  $('replydlg').close();
+  say(data.is_first ? 'Saved — first reply from this creator.' : 'Saved.');
+  await boot();
+};
+
+$('rp-cancel').onclick = () => $('replydlg').close();
+
 function wireRows(rows) {
   const byId = new Map(rows.map((r) => [r.task_id, r]));
   for (const el of $('list').querySelectorAll('.row')) {
@@ -478,6 +1181,8 @@ function wireRows(rows) {
     copyBtn.onclick = () => {
       copyBtn.textContent = copyNow(t.dm_message) ? 'Copied' : 'Select the text above';
     };
+    const rep = el.querySelector('button[data-replied]');
+    if (rep) rep.onclick = () => openReply(t.task_id, '@' + (t.handle || ''));
     for (const b of el.querySelectorAll('button[data-s]')) {
       b.onclick = async () => {
         for (const o of el.querySelectorAll('button[data-s]')) o.disabled = true;
@@ -509,8 +1214,14 @@ function draw() {
       + 'Check replies and Conversations.</p></div>';
     return;
   }
-  $('card').innerHTML =
-    '<div class="card top">'
+  // WHICH ACCOUNT THIS DM LEAVES FROM, ABOVE THE MESSAGE ITSELF.
+  //
+  // The VA is about to act as a real account that TikTok can restrict. Which one it is, how much
+  // of its day is left, and whether it may send at all are not details to go looking for in
+  // another tab -- they sit directly above the button that does it.
+  const blocked = !(sendFrom && sendFrom.ok);
+  $('card').innerHTML = sendFromHtml()
+    + '<div class="card top">'
     + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">'
       + '<div><div class="who">' + esc(t.display_name || t.handle || 'creator') + '</div>'
       + '<div class="meta">' + esc(t.handle ? '@' + t.handle : '') + ' · ' + esc(t.platform) + '</div></div>'
@@ -522,18 +1233,26 @@ function draw() {
     // through its universal link; if the app is not installed, Safari simply loads the web profile,
     // so the fallback costs no code. window.open() would be a popup, and Safari blocks popups that
     // happen after any await -- which is exactly what copying is.
-    + '<a class="open primary" id="copyopen" href="' + esc(t.profile_url) + '"'
-      + ' target="_blank" rel="noopener">Copy DM &amp; open profile</a>'
+    // While no account may send, the action that would lead to sending is not offered at all.
+    // Leaving it live and refusing afterwards teaches a VA that the screen lies to them.
+    + (blocked
+        ? '<div class="warn" style="text-align:center">' + esc(blockedLine()) + '</div>'
+        : '<a class="open primary" id="copyopen" href="' + esc(t.profile_url) + '"'
+          + ' target="_blank" rel="noopener">Copy DM &amp; open profile</a>')
     + '<p class="muted" id="copystate" style="margin:-4px 0 10px;text-align:center">&nbsp;</p>'
-    + '<button class="sm" id="copy">Copy DM</button>'
+    + (blocked ? '' : '<button class="sm" id="copy">Copy DM</button>')
     + '<p class="muted" style="margin:13px 0 5px">Note (optional)</p>'
     + '<textarea id="note" placeholder="Anything worth remembering">' + esc(t.notes || '') + '</textarea>'
     // Only the two outcomes that can genuinely happen before a DM exists. Replied, Interested and
     // the rest moved to Check replies, where the reply box is -- offering them here invited a VA to
     // record an answer to a message they had not sent yet, and cost the outcome its reply text.
     + '<div class="acts" style="margin-top:12px">'
-      + '<button class="good full" data-s="CONTACTED">Sent DM</button>'
-      + '<button class="bad full" data-s="UNREACHABLE">Can\'t reach this profile</button>'
+      + (blocked ? '' : '<button class="good full" data-s="CONTACTED">DM sent</button>')
+      // THREE OUTCOMES, NOT TWO. "Couldn't send" and "TikTok wouldn't send it" look similar to a
+      // VA and mean completely different things to us: one is a dead profile, the other is our own
+      // copy being refused, and only the second must stop the account and the message.
+      + '<button data-s="TIKTOK_BLOCKED" class="full">TikTok wouldn\'t send it</button>'
+      + '<button class="bad full" data-s="UNREACHABLE">Couldn\'t send</button>'
     + '</div>'
     + '<p class="muted" style="margin:10px 0 0">After you send, they move to '
       + '<b>Check replies</b> so you can come back when they answer.</p>'
@@ -545,12 +1264,12 @@ function draw() {
   // moment you await the clipboard promise before navigating, the navigation is a popup and gets
   // blocked. So the copy is only STARTED here and the anchor's own default action carries on.
   // Nothing here changes the task: the VA still taps Sent DM after they have actually sent it.
-  $('copyopen').addEventListener('click', () => {
+  if ($('copyopen')) $('copyopen').addEventListener('click', () => {
     const ok = copyNow(t.dm_message);
     say(ok ? 'Copied — paste it in the DM' : 'Copy failed, select the message above');
   });
 
-  $('copy').onclick = () => {
+  if ($('copy')) $('copy').onclick = () => {
     const ok = copyNow(t.dm_message);
     $('copy').textContent = ok ? 'Copied' : 'Select the text above to copy';
     say(ok ? 'Copied' : '');
@@ -559,8 +1278,58 @@ function draw() {
   for (const b of $('card').querySelectorAll('button[data-s]')) {
     b.onclick = async () => {
       for (const o of $('card').querySelectorAll('button[data-s]')) o.disabled = true;
-      const { error } = await sb.rpc('dh_va_update_task',
-        { p_task_id: t.task_id, p_status: b.dataset.s, p_notes: $('note').value.trim() || null });
+      const note = $('note').value.trim() || null;
+      let error = null;
+
+      if (b.dataset.s === 'CONTACTED') {
+        // DM SENT AND COULDN'T SEND ARE NOT THE SAME KIND OF EVENT.
+        //
+        // Only this branch creates a send: it counts against the account's day and the VA's day,
+        // starts the cooldown and earns. The server re-checks every one of those against the
+        // locked row, so a stale screen or a second tab is refused here rather than paid for.
+        const { data, error: e } = await sb.rpc('dh_tiktok_record_send',
+          { p_task_id: t.task_id, p_notes: note });
+        error = e;
+        if (!error && data && !data.ok) {
+          alert(refusal(data));
+          await boot();               // re-read, because the screen was evidently out of date
+          return;
+        }
+        // PICKED FOR A CHECK. Asked for straight away, while the VA still has the chat open on
+        // their phone -- a screenshot requested an hour later is a screenshot nobody can take.
+        if (!error && data && data.ok && data.proof_required) {
+          await boot();
+          openProof(view.pending_proof || { proof_check_id: data.proof_check_id,
+                                            handle: t.handle, proof_kind: 'SEND' });
+          return;
+        }
+      } else if (b.dataset.s === 'TIKTOK_BLOCKED') {
+        // TIKTOK REFUSED IT. Spends no quota, starts no cooldown, earns nothing, and above all is
+        // never retried with the same words -- the server records the exact text so that the same
+        // message cannot go out again from anywhere.
+        const { data, error: e } = await sb.rpc('dh_tiktok_record_blocked',
+          { p_task_id: t.task_id, p_platform_error: note });
+        error = e;
+        if (!error && data && !data.ok) { alert(refusal(data)); await boot(); return; }
+        if (!error && data && data.ok) {
+          alert(data.account_paused_for_review
+            ? 'Thanks — recorded. This account has now had ' + data.blocked_from_this_account
+              + ' messages refused, so it is paused until Rico has looked at it. '
+              + 'Your other accounts are unaffected.'
+            : 'Thanks — recorded. Do NOT send that message again. '
+              + 'We will rewrite it and bring this creator back to you.');
+          cursor = cursor + 1;
+          await boot();
+          return;
+        }
+      } else {
+        // Couldn't send changes the task and nothing else. No quota is spent, no cooldown starts
+        // and nothing becomes payable -- a DM that did not happen must not look like one that did.
+        const { error: e } = await sb.rpc('dh_va_update_task',
+          { p_task_id: t.task_id, p_status: b.dataset.s, p_notes: note });
+        error = e;
+      }
+
       if (error) {
         alert(error.message);
         for (const o of $('card').querySelectorAll('button[data-s]')) o.disabled = false;
@@ -575,12 +1344,93 @@ function draw() {
   }
 }
 
+/** The strip above the creator card: which account, how much of its day is left, and its state. */
+function sendFromHtml() {
+  if (!sendFrom) return '';
+  if (!sendFrom.ok) {
+    return '<div class="sendfrom"><div class="lbl">Send from</div>'
+      + '<div class="acct" style="font-size:15px;font-weight:500">' + esc(blockedLine()) + '</div>'
+      + (sendFrom.reason === 'COOLDOWN' && sendFrom.next_cooldown_seconds != null
+          ? '<p class="muted" style="margin:11px 0 2px">Next DM available in</p>'
+            + '<div class="countdown" data-until="'
+            + (Date.now() + sendFrom.next_cooldown_seconds * 1000) + '">'
+            + mmss(sendFrom.next_cooldown_seconds) + '</div>'
+          : '')
+      + '</div>';
+  }
+  const pct = sendFrom.daily_limit
+    ? Math.min(100, Math.round(sendFrom.sent_today / sendFrom.daily_limit * 100)) : 0;
+  return '<div class="sendfrom">'
+    + '<div class="acct-head"><div><div class="lbl">Send from</div>'
+      + '<div class="acct">@' + esc(sendFrom.username) + '</div></div>'
+      + '<span class="state READY">Ready</span></div>'
+    + '<div class="bar"><i style="width:' + pct + '%"></i></div>'
+    + '<div class="nums"><span>' + sendFrom.sent_today + ' of ' + sendFrom.daily_limit
+      + ' sent today</span><span>·</span><span>Level ' + sendFrom.level + '</span></div>'
+    + '</div>';
+}
+
+/** Why no DM can go out right now, in words a VA can act on. */
+function blockedLine() {
+  if (!sendFrom) return 'Checking your accounts…';
+  switch (sendFrom.reason) {
+    case 'NO_ACCOUNTS':
+      return 'Add a TikTok account under Accounts to start sending.';
+    case 'VA_DAILY_CAP_REACHED':
+      return 'That is your lot for today — ' + (sendFrom.va_sent_today ?? 0) + ' sent. '
+        + 'Come back tomorrow.';
+    case 'ALL_ACCOUNTS_AT_LIMIT':
+      return 'All your accounts have sent their messages for today.';
+    case 'COOLDOWN':
+      return 'Just a moment — your account is taking a short break between messages.';
+    default:
+      return 'No account is ready to send right now. Check the Accounts tab.';
+  }
+}
+
+/** The server refused a send. Say what it said, in the VA's language. */
+function refusal(d) {
+  switch (d.reason) {
+    case 'COOLDOWN':
+      return 'Not yet — that account is taking a short break. '
+        + mmss(d.seconds_left || 0) + ' to go.';
+    case 'DAILY_LIMIT_REACHED':
+      return 'That account has sent all ' + d.daily_limit + ' of its messages for today.';
+    case 'VA_DAILY_CAP_REACHED':
+      return 'You have sent everything for today. Come back tomorrow.';
+    case 'PAUSED':
+      return 'That account is stopped until Rico has looked at it.';
+    case 'NOT_APPROVED':
+      return 'That account is still waiting to be switched on.';
+    case 'NOT_YOUR_TASK':
+    case 'NOT_YOUR_ACCOUNT':
+      return 'That one is not yours to send.';
+    case 'PROOF_REQUIRED':
+      return 'Send us the photo we asked for first, then you can carry on.';
+    case 'MESSAGE_BLOCKED':
+      return 'TikTok already refused this exact message, so it must not be sent again. '
+        + 'We are rewriting it — skip this creator for now.';
+    case 'REVIEW_REQUIRED':
+      return 'That account is on hold while Rico checks why TikTok refused its messages.';
+    default:
+      return 'That did not go through. Please try the next creator.';
+  }
+}
+
 for (const b of document.querySelectorAll('.tab')) {
-  b.onclick = () => {
+  b.onclick = async () => {
     tab = b.dataset.tab;
     // Leaving Conversations drops the search, so coming back shows the real list rather than a
     // stale result set from a query the VA has forgotten they typed.
     if (tab !== 'conv') { search.q = ''; search.results = null; search.focused = false; }
+    // A cooldown can expire, or an admin can approve or stop an account, while the VA is reading
+    // something else. Both screens that depend on that are re-read on arrival rather than showing
+    // whatever was true when the page last loaded.
+    if (tab === 'new' || tab === 'tt') await loadAccounts();
+    // Money and conversations move on the same events as everything else -- a reply approved while
+    // the VA was on another tab changes both -- so the two screens that show them re-read on
+    // arrival rather than trusting whatever was true at page load.
+    if (tab === 'earn' || tab === 'conv') await loadMoney();
     render();
   };
 }
