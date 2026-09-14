@@ -303,6 +303,29 @@
   </div>
 </main>
 
+<!-- THE PAGE MUST NEVER BE BLANK. Deliberately not a module: if the import below fails -- esm.sh
+     unreachable, a CSP that does not list it, an offline phone -- no module code runs at all, so a
+     failsafe written inside the module could not fire. Every screen starts hidden and one of them is
+     revealed by boot(); if boot() never gets that far the page is a blank rectangle with no way to
+     sign in, which is exactly what was reported. Four seconds is longer than a cold load and shorter
+     than a person's patience. -->
+<script>
+  window.addEventListener('DOMContentLoaded', function () {
+    setTimeout(function () {
+      var login = document.getElementById('login');
+      var app = document.getElementById('app');
+      var claim = document.getElementById('claim');
+      if (!login || !login.hidden || (app && !app.hidden) || (claim && !claim.hidden)) return;
+      login.hidden = false;
+      var msg = document.getElementById('loginmsg');
+      if (msg && !msg.textContent) {
+        msg.textContent = 'The portal did not finish loading. Sign in below, or reload the page. '
+          + 'If this keeps happening, tell Rico.';
+      }
+    }, 4000);
+  });
+</script>
+
 <script type="module">
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 const sb = createClient('https://aexomkitwnxvpqlmtrik.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFleG9ta2l0d254dnBxbG10cmlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2MzEzMjQsImV4cCI6MjEwMjIwNzMyNH0.RPmcFB1YFzBGGuRLWJAZUYZXiKB1ILh9FFIie_EbFkQ',
@@ -337,10 +360,21 @@ $('signin').onclick = async () => {
 const INVITE = new URLSearchParams(location.search).get('invite');
 
 async function claimEndpoint(payload) {
-  const res = await fetch('https://aexomkitwnxvpqlmtrik.supabase.co/functions/v1/claim-invite', {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
+  // fetch rejects rather than returning a response when the request never completes -- no network,
+  // DNS, a blocked origin, the function cold-starting past the timeout. Unhandled, that rejection
+  // travelled out of offerClaim and out of boot, and since every screen starts hidden the page
+  // stayed blank with no sign-in anywhere. A failed claim must fall back to the sign-in form, which
+  // is useful to anyone who already has an account, rather than to nothing at all.
+  let res;
+  try {
+    res = await fetch('https://aexomkitwnxvpqlmtrik.supabase.co/functions/v1/claim-invite', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+  } catch (e) {
+    return { ok: false, body: { error: 'Could not reach the server to check that invitation. '
+      + 'Check your connection and try the link again. (' + (e && e.message || 'network error') + ')' } };
+  }
   return { ok: res.ok, body: await res.json().catch(() => ({ error: 'no answer from the server' })) };
 }
 
@@ -393,7 +427,24 @@ $('changepw').onclick = async () => {
   alert(error ? error.message : 'Password changed. Use it the next time you sign in.');
 };
 
+/**
+ * Whatever goes wrong, end on a screen the person can act from.
+ *
+ * boot() reaches the network three times before it shows anything. Any of them throwing used to
+ * leave all three screens hidden, and a blank page with no sign-in button reads as a dead product.
+ */
 async function boot() {
+  try {
+    await bootOrThrow();
+  } catch (e) {
+    $('claim').hidden = true; $('app').hidden = true; $('login').hidden = false;
+    $('wrongacct').hidden = false;
+    $('loginmsg').textContent = 'Something went wrong loading the portal — this is a fault on our '
+      + 'side, not your account. Try signing in below. (' + (e && e.message || 'unknown error') + ')';
+  }
+}
+
+async function bootOrThrow() {
   const { data: { session } } = await sb.auth.getSession();
   if (!session) {
     $('app').hidden = true;
