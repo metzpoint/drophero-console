@@ -165,6 +165,12 @@
       <button id="signin" class="full">Sign in</button>
     </div>
     <p id="loginmsg" class="muted" style="margin-bottom:0"></p>
+    <!-- Only shown when somebody is signed in but this portal cannot serve them. The Sign out
+         button lives inside #app, which is exactly what gets hidden in that state, so without
+         this one there is no way out of the screen except clearing site data. -->
+    <div class="acts" id="wrongacct" hidden style="margin-top:13px">
+      <button id="switchacct" class="full">Sign out and use another account</button>
+    </div>
   </div>
   <p class="muted">First time? Open the invitation link your manager sent you — that is where you
     choose your password.</p>
@@ -368,6 +374,12 @@ $('claimgo').onclick = async () => {
 };
 
 $('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+// The same thing, from the screen where #app -- and therefore #signout -- is hidden. The invite
+// code is dropped on the way out: it belongs to whoever was invited, not to whoever signs in next.
+$('switchacct').onclick = async () => {
+  await sb.auth.signOut();
+  location.replace(location.pathname);
+};
 
 // A VA's first password was chosen by whoever created their account, so they get a way to replace
 // it. Password reset by email is not an option here: the confirmation redirect on this project
@@ -399,12 +411,30 @@ async function boot() {
     // sent them to look in the one place that was fine. Only the specific "no VA is linked"
     // exception means the wrong door; anything else is a fault and says so.
     $('login').hidden = false; $('app').hidden = true;
-    $('loginmsg').textContent = /no va is linked/i.test(error.message || '')
-      ? 'This account is not set up as a VA yet.'
-      : 'Signed in, but the queue could not be loaded — this is a fault on our side, not your '
+    if (/no va is linked/i.test(error.message || '')) {
+      // NAME THE ACCOUNT, BECAUSE THE USUAL CAUSE IS THE WRONG ONE.
+      //
+      // "This account is not set up as a VA yet" reads as a broken system to the one person most
+      // likely to see it: the owner, whose own login is an OWNER row with no va_id, and who has a
+      // second address for VA work. dh_current_va() requires role = 'VA', so the owner login can
+      // never act as a VA however the portal is reached -- the tab bar is hidden along with the
+      // rest of #app, and the Accounts tab with it. Saying which address is signed in turns an
+      // apparently broken portal into an obvious wrong-account.
+      const who = session.user && session.user.email;
+      $('loginmsg').textContent =
+        (who ? 'You are signed in as ' + who + '. That account is not a VA' : 'This account is not a VA')
+        + ', so it has no queue and no Accounts tab. The VA portal needs the VA login — a different '
+        + 'address from the owner one. Sign in with it below, or ask Rico for an invitation link.';
+      $('wrongacct').hidden = false;
+    } else {
+      $('loginmsg').textContent =
+        'Signed in, but the queue could not be loaded — this is a fault on our side, not your '
         + 'account. Please tell Rico. (' + (error.message || 'unknown error') + ')';
+      $('wrongacct').hidden = false;
+    }
     return;
   }
+  $('wrongacct').hidden = true;
   $('login').hidden = true; $('app').hidden = false;
   view = data;
   queue = data.new_dms || [];
