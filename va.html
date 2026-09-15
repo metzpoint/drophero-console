@@ -586,6 +586,16 @@ const STATE_WORDS = {
   REVIEW_REQUIRED: 'On hold — being checked'
 };
 
+/** "tomorrow at 00:17" rather than an ISO timestamp, which is not a time a person reads. */
+function whenNext(iso) {
+  if (!iso) return 'after the next full day';
+  const d = new Date(iso);
+  if (isNaN(d)) return 'after the next full day';
+  const days = Math.round((d - new Date(new Date().toDateString())) / 86400000);
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return (days <= 0 ? 'later today' : days === 1 ? 'tomorrow' : 'in ' + days + ' days') + ' at ' + time;
+}
+
 function acctCard(a) {
   const until = Date.now() + (a.cooldown_seconds_left || 0) * 1000;
   const pct = a.daily_limit ? Math.min(100, Math.round(a.sent_today / a.daily_limit * 100)) : 0;
@@ -596,9 +606,22 @@ function acctCard(a) {
     + '<div class="bar' + (pct >= 100 ? ' full' : '') + '"><i style="width:' + pct + '%"></i></div>'
     + '<div class="chips">'
       + '<span class="chip">' + a.sent_today + ' of ' + a.daily_limit + ' sent today</span>'
-      + '<span class="chip">Level ' + a.level + '</span>'
+      + '<span class="chip">' + esc(a.level_name || ('Level ' + a.level)) + '</span>'
       + (a.country ? '<span class="chip">' + esc(a.country) + '</span>' : '')
     + '</div>'
+    // WHERE THIS SENDER IS ON THE RAMP, AND WHAT MOVES IT. A warm-up that only shows a number
+    // tells a VA nothing about why today's ceiling is 20 and tomorrow's might be 30.
+    + (a.next_level_name
+        ? '<p class="muted" style="margin:11px 0 0">Next: <b>' + esc(a.next_level_name) + '</b> — '
+          + a.next_daily_limit + '/day, if today stays clean. Checked ' + whenNext(a.next_evaluation_at)
+          + '.</p>'
+        : '<p class="muted" style="margin:11px 0 0">Full speed — this account is at '
+          + a.daily_limit + ' a day.</p>')
+    + (a.blocked_today
+        ? '<div class="warn" style="margin-top:9px">' + a.blocked_today + ' message'
+          + (a.blocked_today === 1 ? '' : 's') + ' refused by TikTok today, so this account stays '
+          + 'on ' + esc(a.level_name || ('level ' + a.level)) + ' for now.</div>'
+        : '')
     + (a.display_state === 'COOLDOWN'
         ? '<p class="muted" style="margin:12px 0 2px">Next DM in</p>'
           + '<div class="countdown" data-until="' + until + '">'
@@ -1447,7 +1470,8 @@ function sendFromHtml() {
       + '<span class="state READY">Ready</span></div>'
     + '<div class="bar"><i style="width:' + pct + '%"></i></div>'
     + '<div class="nums"><span>' + sendFrom.sent_today + ' of ' + sendFrom.daily_limit
-      + ' sent today</span><span>·</span><span>Level ' + sendFrom.level + '</span></div>'
+      + ' sent today</span><span>·</span><span>'
+      + esc(sendFrom.level_name || ('Level ' + sendFrom.level)) + '</span></div>'
     + '</div>';
 }
 
