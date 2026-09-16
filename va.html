@@ -335,7 +335,8 @@ let queue = [];       // NEW DMS only: creators nobody has written to yet
 let cursor = 0;       // which one is on screen
 let view = {};        // the whole three-part payload from dh_va_queue
 let tab = 'work';     // 'work' | 'tt' | 'earn'
-let workSubstate = null; // which action is being shown: 'proof' | 'reply' | 'dm' | 'cooldown' | 'done'
+let workSubstate = null; // which action is being shown: 'proof' | 'reply' | 'dm' | 'cooldown' | 'done' | 'sent'
+let workReplyState = null; // { creator, replied } when handling a yes/no reply
 // results === null means "no search running, show the normal conversations list". An empty array
 // means the search ran and matched nothing, which is a different thing to say on screen.
 const search = { q: '', results: null, timer: 0, focused: false };
@@ -860,8 +861,11 @@ function render() {
 //
 // The Work tab shows the most important action first: pending proof, reply to check, next DM,
 // cooldown countdown, or done for today. After completing an action, automatically advance to
-// the next. Secondary information (recent conversations, search) appears below.
-// ---------------------------------------------------------------------------------------------
+// FINAL UX: One creator, one action. No visible DM text. Large orange button dominates.
+// Proof → replies → next DM → cooldown → done.
+// After SENT or cooldown expires: automatically advance to next creator.
+// When account reaches DAILY_LIMIT: automatically switch to next approved account.
+// =====================================================================================================
 function drawWork() {
   const replies = (view.check_replies || []).slice().sort(byDue);
   const hasProof = view.pending_proof && view.pending_proof.proof_check_id;
@@ -870,98 +874,107 @@ function drawWork() {
   const isCooldown = sendFrom && !sendFrom.ok && sendFrom.reason === 'COOLDOWN';
   const isDone = sendFrom && !sendFrom.ok && sendFrom.reason === 'DAILY_LIMIT_REACHED';
 
-  let html = '';
+  // Update tab badge: show count of due replies
+  if ($('n-work')) {
+    const replyCount = replies.length;
+    $('n-work').textContent = replyCount > 0 ? replyCount : '';
+    const tabEl = $('tab-work');
+    if (tabEl) {
+      if (replyCount > 0) {
+        let badge = tabEl.querySelector('.reply-badge');
+        if (!badge) {
+          badge = document.createElement('span');
+          badge.className = 'reply-badge';
+          badge.style.cssText = 'position:absolute;top:2px;right:2px;background:#ff6b6b;color:#fff;'
+            + 'border-radius:999px;width:20px;height:20px;display:flex;align-items:center;'
+            + 'justify-content:center;font-size:11px;font-weight:650';
+          tabEl.style.position = 'relative';
+          tabEl.appendChild(badge);
+        }
+        badge.textContent = replyCount;
+      } else {
+        const badge = tabEl.querySelector('.reply-badge');
+        if (badge) badge.remove();
+      }
+    }
+  }
 
-  // PRIMARY ACTION: show one card at the top
+  // Build work header: stats + current account
+  const acctName = sendFrom && sendFrom.username ? '@' + esc(sendFrom.username) : '—';
+  const sentToday = tt.va_sent_today ?? 0;
+  const leftToday = tt.va_remaining ?? 0;
+  const earnedToday = view.money?.today_total_cents ?? 0;
+  let html = '<div class="card top" style="margin-bottom:14px">'
+    + '<div class="counts" style="margin:0">'
+    + '<div><b>' + sentToday + '</b><span>Sent today</span></div>'
+    + '<div><b>' + leftToday + '</b><span>Left today</span></div>'
+    + '<div><b>' + usd(earnedToday) + '</b><span>Earned today</span></div>'
+    + '</div>'
+    + '<p class="muted" style="margin:10px 0 0">Sending from ' + acctName + '</p>'
+    + '</div>';
+
+  // PRIMARY ACTION: show one task/creator at a time
   if (hasProof) {
     const p = view.pending_proof;
     const who = p.handle ? ('@' + esc(p.handle)) : 'a creator';
-    html += '<div class="card top" style="margin-bottom:12px">'
-      + '<div class="who">Quick check</div>'
-      + '<p class="muted" style="margin:8px 0 0">Send us a photo of your chat with ' + who
+    html += '<div class="card top" style="margin-bottom:14px">'
+      + '<div class="who" style="font-size:18px;margin-bottom:10px">Quick check</div>'
+      + '<p class="muted" style="margin:0 0 10px">Send us a photo of your chat with ' + who
       + ' so we can confirm the message went out.</p>'
-      + '<button class="good full" id="work-proof" style="background:#7d5a1e;border-color:#a8781f;'
-      + 'color:#fff3dc;margin-top:8px">Send the photo</button></div>';
+      + '<button class="good full" id="work-proof" style="background:#e67e22;border-color:#d35400;'
+      + 'color:#fff;padding:18px;font-size:18px;min-height:64px;margin-top:10px">'
+      + 'Send the photo</button></div>';
     workSubstate = 'proof';
   } else if (hasReplies) {
     const r = replies[0];
-    const who = esc(r.display_name || r.handle || 'creator');
     const url = r.profile_url || ('https://www.tiktok.com/@' + (r.handle || ''));
-    html += '<div class="card top" style="margin-bottom:12px">'
-      + '<div class="who">They replied</div>'
-      + '<div class="meta">@' + esc(r.handle || '') + ' · ' + ago(r.follow_up_at || r.last_checked_at || r.first_sent_at)
-      + (r.username ? ' · from @' + esc(r.username) : '') + '</div>';
-    if (r.extracted_text) html += '<div class="quote">' + esc(r.extracted_text) + '</div>';
-    html += '<div class="cls" data-cls="' + esc(r.reply_event_id) + '">'
-      + CLASSES.map(([v, label]) =>
-          '<button class="sm" data-v="' + v + '" aria-pressed="'
-          + String(r.classification === v) + '">' + label + '</button>').join('')
-      + '</div>';
-    if (r.suggestion) {
-      html += '<div class="suggest"><span class="lbl">Suggested reply</span>' + esc(r.suggestion) + '</div>'
-        + '<button class="sm" id="work-copy-reply" data-copy="' + esc(r.reply_event_id) + '">Copy this reply</button>';
-    }
-    if (r.affiliate_available) {
-      html += '<button class="good full" id="work-invite" data-invite="' + esc(r.task_id) + '" '
-        + 'style="margin-top:8px">'
-        + (r.affiliate_state === 'REGISTERED' ? 'They joined — copy link again'
-                                              : 'Copy signup link') + '</button>';
-    } else if (r.classification === 'QUESTION') {
-      html += '<p class="muted" style="margin:8px 0 0">Answer their question first. The signup link '
-        + 'appears once they say they want it.</p>';
-    }
-    html += '<div style="margin-top:9px"><a class="open" href="' + esc(url)
-      + '" target="_blank" rel="noopener">Open the chat</a></div></div>';
+    html += '<div class="card top" style="margin-bottom:14px">'
+      + '<div class="who" style="font-size:20px;margin-bottom:4px">@' + esc(r.handle || '') + '</div>'
+      + '<div class="meta" style="margin-bottom:10px">' + ago(r.follow_up_at || r.last_checked_at || r.first_sent_at) + '</div>'
+      + (r.extracted_text ? '<div class="quote" style="margin:10px 0">' + esc(r.extracted_text) + '</div>' : '')
+      + '<div class="acts" style="margin-top:12px">'
+      + '<button class="full" id="work-reply-yes" style="background:#1e5e46;border-color:#2b7d5f;color:#b6f0d5">Yes</button>'
+      + '<button class="full" id="work-reply-no" style="background:#3a1d1d;border-color:#5e2020;color:#ffc9c9">No</button>'
+      + '</div>'
+      + '<a class="open" href="' + esc(url) + '" target="_blank" rel="noopener" style="margin-top:10px">'
+      + 'Open TikTok</a></div>';
     workSubstate = 'reply';
   } else if (hasNextDM) {
     const c = queue[cursor];
-    html += buildCardHtml(c);
+    html += '<div class="card top" style="margin-bottom:14px">'
+      + '<div class="who" style="font-size:24px">@' + esc(c.handle) + '</div>'
+      + '<button class="good full" id="work-copy-dm" style="background:#e67e22;border-color:#d35400;'
+      + 'color:#fff;padding:18px;font-size:18px;min-height:64px;margin-top:14px;'
+      + 'margin-bottom:8px">COPY DM & OPEN TIKTOK</button>'
+      + '<button class="full" id="work-couldnt" style="background:#3a1d1d;border-color:#5e2020;'
+      + 'color:#ffc9c9;padding:10px;font-size:14px">Couldn\'t send</button>'
+      + '<div id="copystate" class="muted" style="text-align:center;margin-top:10px;min-height:16px">&nbsp;</div>'
+      + '</div>';
     workSubstate = 'dm';
   } else if (isCooldown) {
     const acct = (tt.accounts || []).find((a) => !a.display_state || a.display_state === 'COOLDOWN');
     const cooldown = acct ? acct.cooldown_seconds_left : 0;
     const until = Date.now() + (cooldown || 0) * 1000;
-    html += '<div class="card top" style="margin-bottom:12px">'
-      + '<div class="who">Next message in</div>'
-      + '<div class="countdown" data-until="' + until + '">' + mmss(cooldown) + '</div>'
+    html += '<div class="card top" style="margin-bottom:14px">'
+      + '<div class="who" style="font-size:18px">NEXT MESSAGE</div>'
+      + '<div class="countdown" data-until="' + until + '" style="font-size:48px;margin-top:12px">'
+      + mmss(cooldown) + '</div>'
       + '<p class="muted" style="margin:12px 0 0">No action right now. Check back in a moment.</p></div>';
     workSubstate = 'cooldown';
   } else if (isDone) {
-    html += '<div class="card top" style="margin-bottom:12px">'
-      + '<div class="who">Done for today</div>'
+    html += '<div class="card top" style="margin-bottom:14px">'
+      + '<div class="who" style="font-size:18px">All done for today</div>'
       + '<p class="muted" style="margin:8px 0 0">You have hit the daily limit for all your accounts. '
       + 'Come back tomorrow!</p></div>';
     workSubstate = 'done';
   } else {
-    html += '<div class="card top" style="margin-bottom:12px">'
-      + '<div class="who">No tasks right now</div>'
+    html += '<div class="card top" style="margin-bottom:14px">'
+      + '<div class="who" style="font-size:18px">No tasks right now</div>'
       + '<p class="muted" style="margin:8px 0 0">No new creators to message and no replies to check. '
       + 'Check back later.</p></div>';
     workSubstate = null;
   }
 
-  // SECONDARY: recent conversations + search
-  const chats = view.chats || [];
-  const rows = search.results !== null ? search.results : (view.conversations || []);
-  const box = '<input id="q" type="search" placeholder="Search name or handle"'
-            + ' value="' + esc(search.q) + '" autocomplete="off" style="margin-bottom:12px;margin-top:14px">';
-  const answered = (search.results === null && chats.length)
-    ? '<p class="earnhead">Replied to you</p>' + chats.map(chatHtml).join('')
-      + '<p class="earnhead" style="margin-top:18px">Everyone else</p>'
-    : '';
-  const body = rows.length
-    ? '<p class="muted" style="margin:0 0 10px">' + rows.length
-      + (search.results !== null ? ' found' : ' conversations') + '</p>'
-      + rows.map((t) => rowHtml(t, { due: false })).join('')
-    : '<div class="card"><div class="who">'
-      + (search.results !== null ? 'No match' : 'No conversations yet')
-      + '</div><p class="muted">'
-      + (search.results !== null
-          ? 'Search looks at every creator you have written to, by name or handle.'
-          : 'Creators appear here once you record a reply or set a follow-up.')
-      + '</p></div>';
-
-  html += box + answered + body;
   $('work').innerHTML = html;
 
   // Wire up primary action buttons
@@ -969,60 +982,95 @@ function drawWork() {
     const b = $('work-proof');
     if (b) b.onclick = () => openProof(view.pending_proof);
   } else if (workSubstate === 'reply') {
-    // Wire reply classification buttons
     const r = replies[0];
-    for (const box of $('work').querySelectorAll('[data-cls]')) {
-      for (const b of box.querySelectorAll('button')) {
-        b.onclick = async () => {
-          const { data, error } = await sb.rpc('dh_reply_classify',
-            { p_reply_event_id: box.dataset.cls, p_classification: b.dataset.v });
-          if (error || !data?.ok) { say('Could not save that — try again.'); return; }
-          await loadMoney(); render();
-        };
-      }
-    }
-    const copyBtn = $('work-copy-reply');
-    if (copyBtn) {
-      copyBtn.onclick = () => {
-        if (r?.suggestion) { copyNow(r.suggestion); say('Reply copied — paste it in TikTok.'); }
+    const yesBtn = $('work-reply-yes');
+    const noBtn = $('work-reply-no');
+
+    if (yesBtn) {
+      yesBtn.onclick = () => {
+        workReplyState = { creator: r, replied: true };
+        openReplyCapture(r);
       };
     }
-    const inviteBtn = $('work-invite');
-    if (inviteBtn) {
-      inviteBtn.onclick = async () => {
-        inviteBtn.disabled = true;
-        const { data, error } = await sb.rpc('dh_affiliate_invite_issue', { p_task_id: inviteBtn.dataset.invite });
-        inviteBtn.disabled = false;
-        if (error) { say('Could not make a link — try again.'); return; }
-        if (!data?.ok) {
-          say(data?.reason === 'ALREADY_ATTRIBUTED'
-                ? 'This creator has already joined through someone else. Leave this one.'
-                : 'Not yet — wait until they say they want the link.');
-          return;
-        }
-        copyNow(data.url);
-        say('Signup link copied — paste it in TikTok.');
-        await loadMoney(); render();
+    if (noBtn) {
+      noBtn.onclick = async () => {
+        const { data, error } = await sb.rpc('dh_reply_classify',
+          { p_reply_event_id: r.reply_event_id, p_classification: 'NO_REPLY' });
+        if (error || !data?.ok) { return; }
+        await loadMoney();
+        render();
       };
     }
   } else if (workSubstate === 'dm') {
-    // Wire up the DM card buttons
     const t = queue[cursor];
-    if (t) wireCardButtons(t, 'work');
+    const copyBtn = $('work-copy-dm');
+    const couldntBtn = $('work-couldnt');
+
+    if (copyBtn) {
+      copyBtn.onclick = () => {
+        if (t?.dm_message) {
+          copyNow(t.dm_message);
+          say('Copied — paste it in TikTok.');
+          redirectToTikTok(t);
+        }
+      };
+    }
+    if (couldntBtn) {
+      couldntBtn.onclick = async () => {
+        couldntBtn.disabled = true;
+        const { data, error } = await sb.rpc('dh_tiktok_record_send',
+          { p_task_id: t.task_id, p_notes: 'UNREACHABLE' });
+        couldntBtn.disabled = false;
+        if (error || !data?.ok) return;
+        cursor = (cursor + 1) % Math.max(1, queue.length);
+        await loadAccounts();
+        await boot();
+      };
+    }
+  }
+}
+
+/** Redirect to TikTok profile and record send after brief delay. */
+function redirectToTikTok(creator) {
+  const url = creator.profile_url || ('https://www.tiktok.com/@' + creator.handle);
+  setTimeout(() => {
+    recordDMSent(creator);
+    window.open(url, '_blank');
+  }, 100);
+}
+
+/** Record DM as sent and advance to next. */
+let dmSentTimeout = null;
+async function recordDMSent(creator) {
+  clearTimeout(dmSentTimeout);
+  dmSentTimeout = null;
+
+  const { data, error } = await sb.rpc('dh_tiktok_record_send',
+    { p_task_id: creator.task_id, p_notes: null });
+
+  if (error || !data?.ok) return;
+
+  // Mark DM as sent
+  workSubstate = 'sent';
+  const workEl = $('work');
+  if (workEl) {
+    workEl.innerHTML = '<div class="card top" style="margin-bottom:14px">'
+      + '<button class="good full" style="background:#1e5e46;border-color:#2b7d5f;'
+      + 'color:#b6f0d5;padding:18px;font-size:18px;min-height:64px;'
+      + 'cursor:default;opacity:0.8">DM SENT</button></div>';
   }
 
-  // Wire search and conversation list
-  const q = $('q');
-  if (q) {
-    if (search.focused) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
-    q.oninput = () => {
-      search.q = q.value; search.focused = true;
-      clearTimeout(search.timer);
-      search.timer = setTimeout(runSearch, 250);
-    };
-  }
-  wireRows(rows);
-  wireChats(chats);
+  // Start cooldown and auto-advance
+  const cooldown = data.cooldown_seconds || 30;
+  dmSentTimeout = setTimeout(async () => {
+    // Check if we need to switch accounts
+    if (data.daily_limit && data.sent_today >= data.daily_limit) {
+      await loadAccounts();
+    }
+    cursor = (cursor + 1) % Math.max(1, queue.length);
+    await loadAccounts();
+    await boot();
+  }, Math.max(1000, cooldown * 1000));
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1388,6 +1436,23 @@ $('pr-send').onclick = async () => {
 };
 
 $('pr-cancel').onclick = () => $('proofdlg').close();
+
+// Reply capture for the simplified flow
+function openReplyCapture(creator) {
+  proofCtx = { proof_check_id: creator.reply_event_id, bucket: 'proofs', file: null };
+  $('pr-title').textContent = 'Screenshot of their reply';
+  $('pr-why').textContent = 'Upload a photo of their reply so we can confirm and release your bonus.';
+  $('pr-thumb').hidden = true; $('pr-msg').textContent = ''; $('pr-send').disabled = true;
+  $('pr-file').value = '';
+
+  // Store callback to handle classification after upload
+  proofCtx.onSuccess = async () => {
+    // Load reply classification and show simplified flow
+    await loadMoney();
+    render();
+  };
+  $('proofdlg').showModal();
+}
 
 // ---------------------------------------------------------------------------------------------
 // A CREATOR ANSWERED.
