@@ -22,6 +22,10 @@
   .pill{font-size:11px;padding:3px 9px;border-radius:999px;border:1px solid var(--line);
         color:var(--dim);white-space:nowrap}
   .HIGH{color:var(--ok);border-color:#1e5e46} .MEDIUM{color:var(--warn);border-color:#5e4620}
+  /* Tier 1 sits BESIDE the priority pill rather than replacing it: HIGH still means what it
+     always meant, and other logic that reads it is unaffected. Filled rather than outlined so the
+     band is findable at a glance in a list where nearly everything is HIGH. */
+  .tier1{background:#3a2a5e;border-color:#5b47a0;color:#d8ccff;font-weight:650}
   a.open{display:block;text-align:center;background:#1d3050;border:1px solid #2b4a7d;color:#cfe0ff;
          border-radius:11px;padding:15px;margin:13px 0;text-decoration:none;font-weight:650;
          font-size:17px;min-height:52px}
@@ -491,8 +495,16 @@ async function bootOrThrow() {
   queue = data.new_dms || [];
   cursor = Math.min(cursor, Math.max(0, queue.length - 1));
   $('hello').textContent = 'Hi ' + ((data.va && data.va.name) || '');
-  $('sub').textContent = queue.length ? queue.length + ' creators waiting for a first DM'
-                                      : 'no new creators right now';
+  // THE TIER 1 COUNT, NAMED RATHER THAN INFERRED.
+  //
+  // The queue is ordered Tier 1 first, so "how many of these are the band I am working" is the
+  // first thing a VA needs and the last thing they can work out from a list of HIGH pills.
+  const tier = data.tier_1 || {};
+  const tierReady = Number(tier.ready || 0);
+  $('sub').textContent = queue.length
+    ? queue.length + ' creators waiting for a first DM'
+      + (tierReady ? ' · Tier 1 ready: ' + tierReady : '')
+    : 'no new creators right now';
   $('remaining').textContent = data.remaining_today ?? 0;
   $('done').textContent = data.completed_today ?? 0;
   $('n-new').textContent  = queue.length;
@@ -1091,6 +1103,20 @@ async function runSearch() {
  * page: who they are, when the DM went out, exactly what was sent, whatever they wrote back, and
  * a profile link that is always present -- a conversation you cannot open is not much use.
  */
+/**
+ * The Tier 1 badge, beside the priority pill rather than instead of it.
+ *
+ * Nearly every task in the queue is HIGH, so HIGH alone no longer tells a VA which creators are the
+ * 10k-50k band they are meant to work first. The follower count is shown with it because "TIER 1"
+ * on its own is a label you have to have been told the meaning of.
+ */
+function tierPill(t) {
+  if (!t || !t.tier_1) return '';
+  const n = Number(t.followers);
+  const k = Number.isFinite(n) ? ' · ' + Math.round(n / 1000) + 'K' : '';
+  return '<span class="pill tier1">TIER 1' + esc(k) + '</span>';
+}
+
 function rowHtml(t, opts) {
   const due = t.follow_up_at || t.last_checked_at || t.first_sent_at;
   return '<div class="row" data-task="' + esc(t.task_id) + '">'
@@ -1098,7 +1124,9 @@ function rowHtml(t, opts) {
       + '<div><div class="who">' + esc(t.display_name || t.handle || 'creator') + '</div>'
       + '<div class="meta">' + esc(t.handle ? '@' + t.handle : '') + ' · ' + esc(t.platform) + '</div>'
       + badgeFor(t) + '</div>'
-      + '<span class="pill ' + esc(t.priority) + '">' + esc(t.priority) + '</span></div>'
+      + '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end">'
+        + tierPill(t)
+        + '<span class="pill ' + esc(t.priority) + '">' + esc(t.priority) + '</span></div></div>'
     + '<p class="muted" style="margin:10px 0 0">Sent ' + esc(when(t.first_sent_at))
       + ' (' + esc(ago(t.first_sent_at)) + ')'
       + (t.last_checked_at ? ' · last checked ' + esc(ago(t.last_checked_at)) : '')
@@ -1329,7 +1357,9 @@ function draw() {
     + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">'
       + '<div><div class="who">' + esc(t.display_name || t.handle || 'creator') + '</div>'
       + '<div class="meta">' + esc(t.handle ? '@' + t.handle : '') + ' · ' + esc(t.platform) + '</div></div>'
-      + '<span class="pill ' + esc(t.priority) + '">' + esc(t.priority) + '</span></div>'
+      + '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end">'
+        + tierPill(t)
+        + '<span class="pill ' + esc(t.priority) + '">' + esc(t.priority) + '</span></div></div>'
     + '<p class="muted" style="margin:13px 0 5px">Personalized message</p>'
     + '<div class="script" id="script">' + esc(t.dm_message) + '</div>'
     // THE PRIMARY ACTION IS AN ANCHOR, NOT A BUTTON, AND THAT IS THE WHOLE TRICK ON IOS.
