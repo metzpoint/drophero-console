@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://esm.sh; style-src 'unsafe-inline'; connect-src https://example.test wss://example.test https://esm.sh; img-src data: blob: https://example.test; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://esm.sh; style-src 'unsafe-inline'; connect-src https://aexomkitwnxvpqlmtrik.supabase.co wss://aexomkitwnxvpqlmtrik.supabase.co https://esm.sh; img-src data: blob: https://aexomkitwnxvpqlmtrik.supabase.co; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b0f14">
 <title>DropHero — VA</title>
@@ -324,7 +324,7 @@
 
 <script type="module">
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
-const sb = createClient('https://example.test', 'test-key',
+const sb = createClient('https://aexomkitwnxvpqlmtrik.supabase.co', 'sb_publishable_Y88uWkdq3igd5dMkT1c8JA_qMB_ZB7d',
   { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
 
 const $ = (id) => document.getElementById(id);
@@ -365,7 +365,7 @@ async function claimEndpoint(payload) {
   // is useful to anyone who already has an account, rather than to nothing at all.
   let res;
   try {
-    res = await fetch('https://example.test/functions/v1/claim-invite', {
+    res = await fetch('https://aexomkitwnxvpqlmtrik.supabase.co/functions/v1/claim-invite', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload)
     });

@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://esm.sh; style-src 'unsafe-inline'; connect-src https://example.test wss://example.test https://esm.sh; img-src data: blob: https://example.test; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://esm.sh; style-src 'unsafe-inline'; connect-src https://aexomkitwnxvpqlmtrik.supabase.co wss://aexomkitwnxvpqlmtrik.supabase.co https://esm.sh; img-src data: blob: https://aexomkitwnxvpqlmtrik.supabase.co; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b0f14">
 <title>DropHero — Owner</title>
@@ -194,7 +194,7 @@
 
 <script type="module">
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
-const sb = createClient('https://example.test', 'test-key',
+const sb = createClient('https://aexomkitwnxvpqlmtrik.supabase.co', 'sb_publishable_Y88uWkdq3igd5dMkT1c8JA_qMB_ZB7d',
   // The session is kept and silently renewed, so opening the page on a phone tomorrow does not ask
   // for the password again.
   { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
@@ -609,10 +609,9 @@ function renderInterested(rows, err) {
   // Wire up screenshot images with signed URLs
   for (const img of $('interested').querySelectorAll('img[data-path]')) {
     const path = img.dataset.path;
-    const taskId = img.dataset.task;
-    if (path && taskId) {
-      sb.storage.from('proofs').getPublicUrl(path).then((res) => {
-        if (res.data) img.src = res.data.publicUrl;
+    if (path) {
+      sb.storage.from('proofs').createSignedUrl(path, 300).then((res) => {
+        if (res.data?.signedUrl) img.src = res.data.signedUrl;
       });
     }
   }
