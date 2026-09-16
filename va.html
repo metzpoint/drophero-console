@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://esm.sh; style-src 'unsafe-inline'; connect-src https://aexomkitwnxvpqlmtrik.supabase.co wss://aexomkitwnxvpqlmtrik.supabase.co https://esm.sh; img-src data: blob: https://aexomkitwnxvpqlmtrik.supabase.co; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://esm.sh; style-src 'unsafe-inline'; connect-src https://example.test wss://example.test https://esm.sh; img-src data: blob: https://example.test; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b0f14">
 <title>DropHero — VA</title>
@@ -293,9 +293,9 @@
   </div>
 </div></dialog>
 
-  <div class="acts" style="margin-top:22px">
-    <button id="changepw">Change password</button>
-    <button id="signout">Sign out</button>
+  <div class="acts" style="margin-top:22px;gap:4px">
+    <button id="changepw" class="sm" style="font-size:12px">Change password</button>
+    <button id="signout" class="sm" style="font-size:12px">Sign out</button>
   </div>
 </main>
 
@@ -324,7 +324,7 @@
 
 <script type="module">
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
-const sb = createClient('https://aexomkitwnxvpqlmtrik.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFleG9ta2l0d254dnBxbG10cmlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2MzEzMjQsImV4cCI6MjEwMjIwNzMyNH0.RPmcFB1YFzBGGuRLWJAZUYZXiKB1ILh9FFIie_EbFkQ',
+const sb = createClient('https://example.test', 'test-key',
   { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
 
 const $ = (id) => document.getElementById(id);
@@ -365,7 +365,7 @@ async function claimEndpoint(payload) {
   // is useful to anyone who already has an account, rather than to nothing at all.
   let res;
   try {
-    res = await fetch('https://aexomkitwnxvpqlmtrik.supabase.co/functions/v1/claim-invite', {
+    res = await fetch('https://example.test/functions/v1/claim-invite', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload)
     });
@@ -767,6 +767,16 @@ function ago(iso) {
   return future ? 'in ' + n : n + ' ago';
 }
 
+function formatSentTime(iso) {
+  if (!iso) return 'Sent long ago';
+  const secs = (Date.now() - new Date(iso).getTime()) / 1000;
+  const s = Math.abs(secs);
+  if (s < 3600) return 'Sent ' + Math.max(1, Math.round(s / 60)) + ' minutes ago';
+  if (s < 86400) return 'Sent ' + Math.round(s / 3600) + ' hours ago';
+  const days = Math.round(s / 86400);
+  return 'Sent ' + days + ' day' + (days === 1 ? '' : 's') + ' ago';
+}
+
 function when(iso) {
   if (!iso) return 'unknown';
   const d = new Date(iso);
@@ -928,16 +938,18 @@ function drawWork() {
   } else if (hasReplies) {
     const r = replies[0];
     const url = r.profile_url || ('https://www.tiktok.com/@' + (r.handle || ''));
+    const sentText = formatSentTime(r.follow_up_at || r.last_checked_at || r.first_sent_at);
     html += '<div class="card top" style="margin-bottom:14px">'
       + '<div class="who" style="font-size:20px;margin-bottom:4px">@' + esc(r.handle || '') + '</div>'
-      + '<div class="meta" style="margin-bottom:10px">' + ago(r.follow_up_at || r.last_checked_at || r.first_sent_at) + '</div>'
+      + '<div class="meta" style="margin-bottom:12px">' + esc(sentText) + '</div>'
+      + '<a href="' + esc(url) + '" target="_blank" rel="noopener" class="good full" style="background:#e67e22;'
+      + 'border-color:#d35400;color:#fff;padding:18px;font-size:18px;min-height:64px;margin-bottom:10px;'
+      + 'display:block;text-align:center;text-decoration:none">OPEN TIKTOK</a>'
       + (r.extracted_text ? '<div class="quote" style="margin:10px 0">' + esc(r.extracted_text) + '</div>' : '')
       + '<div class="acts" style="margin-top:12px">'
-      + '<button class="full" id="work-reply-yes" style="background:#1e5e46;border-color:#2b7d5f;color:#b6f0d5">Yes</button>'
-      + '<button class="full" id="work-reply-no" style="background:#3a1d1d;border-color:#5e2020;color:#ffc9c9">No</button>'
-      + '</div>'
-      + '<a class="open" href="' + esc(url) + '" target="_blank" rel="noopener" style="margin-top:10px">'
-      + 'Open TikTok</a></div>';
+      + '<button class="full" id="work-reply-yes" style="background:#1e5e46;border-color:#2b7d5f;color:#b6f0d5">Yes, they replied</button>'
+      + '<button class="full" id="work-reply-no" style="background:#3a1d1d;border-color:#5e2020;color:#ffc9c9">No reply</button>'
+      + '</div></div>';
     workSubstate = 'reply';
   } else if (hasNextDM) {
     const c = queue[cursor];

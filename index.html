@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://esm.sh; style-src 'unsafe-inline'; connect-src https://aexomkitwnxvpqlmtrik.supabase.co wss://aexomkitwnxvpqlmtrik.supabase.co https://esm.sh; img-src data: blob: https://aexomkitwnxvpqlmtrik.supabase.co; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://esm.sh; style-src 'unsafe-inline'; connect-src https://example.test wss://example.test https://esm.sh; img-src data: blob: https://example.test; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b0f14">
 <title>DropHero — Owner</title>
@@ -191,7 +191,7 @@
 
 <script type="module">
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
-const sb = createClient('https://aexomkitwnxvpqlmtrik.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFleG9ta2l0d254dnBxbG10cmlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2MzEzMjQsImV4cCI6MjEwMjIwNzMyNH0.RPmcFB1YFzBGGuRLWJAZUYZXiKB1ILh9FFIie_EbFkQ',
+const sb = createClient('https://example.test', 'test-key',
   // The session is kept and silently renewed, so opening the page on a phone tomorrow does not ask
   // for the password again.
   { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
