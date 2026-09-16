@@ -109,6 +109,9 @@
   <h2>Needs your attention</h2>
   <div class="card" id="attention"><div class="muted">loading…</div></div>
 
+  <h2>Interested creators <small class="muted">awaiting your follow-up</small></h2>
+  <div class="card" id="interested"><div class="muted">loading…</div></div>
+
   <h2>Overview</h2>
   <div class="grid" id="kpis"></div>
 
@@ -260,10 +263,10 @@ async function boot() {
   $('whoami').textContent = 'Signed in as ' + (session.user.email || '');
   renderOverview(overview);
 
-  const [funnel, full, attention, vas, sourcing, integrations, tiktok,
+  const [funnel, full, attention, interested, vas, sourcing, integrations, tiktok,
          perf, proofs, payouts, templates, modblock, supply] = await Promise.all([
     sb.rpc('dh_owner_funnel', { p_period: period }), sb.rpc('dh_owner_full_funnel'),
-    sb.rpc('dh_owner_attention'),
+    sb.rpc('dh_owner_attention'), sb.rpc('dh_owner_interested_creators'),
     sb.rpc('dh_owner_va_admin'), sb.rpc('dh_owner_sourcing_settings'), sb.rpc('dh_owner_integrations'),
     sb.rpc('dh_tiktok_admin_overview'),
     sb.rpc('dh_admin_va_performance'), sb.rpc('dh_admin_proof_queue', { p_limit: 60 }),
@@ -282,6 +285,7 @@ async function boot() {
   renderFullFunnel(full.data, full.error);
   renderProduction(full.data);
   renderAttention(attention.data || {});
+  renderInterested(interested.data || [], interested.error);
   renderVas(vas.data || {});
   renderSourcing(sourcing.data || {});
   renderBudget((sourcing.data || {}).budget || {});
@@ -557,6 +561,73 @@ function renderAttention(a) {
 
   $('attention').innerHTML = out.length ? out.join('')
     : '<div class="muted">Nothing needs you right now.</div>';
+}
+
+// ---------------------------------------------------------------------------------------------
+// INTERESTED CREATORS. VAs have found creators who replied INTERESTED. Owner can open their
+// TikTok profile and mark them HANDLED to remove from the active queue.
+// ---------------------------------------------------------------------------------------------
+function renderInterested(rows, err) {
+  if (err) { $('interested').innerHTML = '<div class="muted">' + esc(err.message) + '</div>'; return; }
+  if (!rows || !rows.length) {
+    $('interested').innerHTML = '<div class="muted">No interested creators waiting.</div>'; return;
+  }
+
+  const html = rows.map((r) => {
+    const url = r.profile_url || ('https://www.tiktok.com/@' + (r.handle || ''));
+    const va_name = r.va_name || 'unknown VA';
+    const when_text = r.replied_at ? new Date(r.replied_at).toLocaleDateString() : 'unknown date';
+    let thumb = '';
+
+    if (r.storage_path) {
+      const signed_url = 'data:image/jpeg;base64,'; // Placeholder — actual signed URL from storage
+      thumb = '<img style="width:80px;height:80px;border-radius:8px;object-fit:cover;margin-right:10px" '
+        + 'src="' + esc(signed_url) + '" alt="reply" data-path="' + esc(r.storage_path)
+        + '" data-task="' + esc(r.task_id) + '">';
+    }
+
+    return '<div class="row" style="align-items:flex-start;min-height:100px">'
+      + '<div style="display:flex;gap:10px;flex:1;min-width:0">'
+      + thumb
+      + '<div style="flex:1;min-width:0">'
+      + '<div style="font-weight:650">@' + esc(r.handle || 'creator') + '</div>'
+      + '<div class="muted" style="font-size:12px;margin-top:2px">VA: ' + esc(va_name) + ' · ' + when_text + '</div>'
+      + '</div>'
+      + '</div>'
+      + '<div style="display:flex;gap:6px;flex-direction:column">'
+      + '<a href="' + esc(url) + '" target="_blank" rel="noopener" '
+      + 'style="padding:8px 12px;background:#e67e22;border-radius:8px;color:#fff;text-decoration:none;text-align:center;font-size:13px;font-weight:600">'
+      + 'OPEN TIKTOK</a>'
+      + '<button class="sm" data-task="' + esc(r.task_id) + '" '
+      + 'style="padding:8px 12px;background:#1d2836;border:1px solid var(--line);border-radius:8px">Mark handled</button>'
+      + '</div>'
+      + '</div>';
+  }).join('');
+
+  $('interested').innerHTML = html;
+
+  // Wire up screenshot images with signed URLs
+  for (const img of $('interested').querySelectorAll('img[data-path]')) {
+    const path = img.dataset.path;
+    const taskId = img.dataset.task;
+    if (path && taskId) {
+      sb.storage.from('proofs').getPublicUrl(path).then((res) => {
+        if (res.data) img.src = res.data.publicUrl;
+      });
+    }
+  }
+
+  // Wire up MARK HANDLED buttons
+  for (const btn of $('interested').querySelectorAll('button[data-task]')) {
+    btn.onclick = async () => {
+      const task_id = btn.dataset.task;
+      btn.disabled = true;
+      const { error } = await sb.rpc('dh_owner_mark_interested_handled', { p_task_id: task_id });
+      btn.disabled = false;
+      if (error) { alert('Could not mark as handled: ' + error.message); return; }
+      boot(); // Reload to refresh the list
+    };
+  }
 }
 
 // ---------------------------------------------------------------------------------------------
