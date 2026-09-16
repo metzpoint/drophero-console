@@ -45,12 +45,9 @@
          border-radius:11px;padding:11px;min-height:44px;width:100%;max-width:100%}
   textarea{min-height:64px}
   .muted{color:var(--dim);font-size:12px}
-  /* Five tabs, thumb-sized, stuck to the top: on a phone the VA is scrolling a list and still has
-     to be able to switch view without hunting for the top of the page. Five across is past what a
-     narrow phone takes comfortably, so the labels are single words and the type steps down a
-     point -- the alternative was hiding a destination behind a menu, and a VA who cannot see
-     Earnings does not trust that it is being counted. */
-  .tabs{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;position:sticky;top:0;z-index:5;
+  /* Three tabs, thumb-sized, stuck to the top. The Work tab consolidates New DMs, Check replies,
+     and Chats — showing the most important action first. */
+  .tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;position:sticky;top:0;z-index:5;
         background:var(--bg);padding:8px 0 10px;margin-bottom:4px}
   .tab{font:inherit;background:#161d27;color:var(--dim);border:1px solid var(--line);
        border-radius:10px;padding:9px 2px;min-height:56px;cursor:pointer;width:100%;
@@ -206,12 +203,8 @@
   </div>
 
   <div class="tabs" role="tablist">
-    <button class="tab" id="tab-new"  role="tab" aria-selected="true"
-            data-tab="new"><b id="n-new">–</b>New DMs</button>
-    <button class="tab" id="tab-rep"  role="tab" aria-selected="false"
-            data-tab="rep"><b id="n-rep">–</b>Check replies</button>
-    <button class="tab" id="tab-conv" role="tab" aria-selected="false"
-            data-tab="conv"><b id="n-conv">–</b>Chats</button>
+    <button class="tab" id="tab-work" role="tab" aria-selected="true"
+            data-tab="work"><b id="n-work">–</b>Work</button>
     <button class="tab" id="tab-tt"   role="tab" aria-selected="false"
             data-tab="tt"><b id="n-tt">–</b>Accounts</button>
     <button class="tab" id="tab-earn" role="tab" aria-selected="false"
@@ -219,8 +212,7 @@
   </div>
 
   <div id="demand"></div>
-  <div id="card"></div>
-  <div id="list" hidden></div>
+  <div id="work"></div>
   <div id="tt" hidden></div>
   <div id="earn" hidden></div>
 
@@ -342,7 +334,8 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
 let queue = [];       // NEW DMS only: creators nobody has written to yet
 let cursor = 0;       // which one is on screen
 let view = {};        // the whole three-part payload from dh_va_queue
-let tab = 'new';      // 'new' | 'rep' | 'conv'
+let tab = 'work';     // 'work' | 'tt' | 'earn'
+let workSubstate = null; // which action is being shown: 'proof' | 'reply' | 'dm' | 'cooldown' | 'done'
 // results === null means "no search running, show the normal conversations list". An empty array
 // means the search ran and matched nothing, which is a different thing to say on screen.
 const search = { q: '', results: null, timer: 0, focused: false };
@@ -507,9 +500,11 @@ async function bootOrThrow() {
     : 'no new creators right now';
   $('remaining').textContent = data.remaining_today ?? 0;
   $('done').textContent = data.completed_today ?? 0;
-  $('n-new').textContent  = queue.length;
-  $('n-rep').textContent  = (data.check_replies || []).length;
-  $('n-conv').textContent = (data.conversations || []).length;
+  // Count tasks for the work tab: new DMs + replies to check
+  const workTasks = queue.length + ((data.check_replies || []).length);
+  if ($('n-work')) $('n-work').textContent = workTasks;
+  if ($('n-tt')) $('n-tt').textContent = (tt.accounts || []).filter((a) => a.status !== 'RETIRED').length;
+  if ($('n-earn')) $('n-earn').textContent = (data.va ? '→' : '–');
   await Promise.all([loadAccounts(), loadMoney()]);
   render();
 }
@@ -846,21 +841,188 @@ function legacyCopy(text) {
 // ONE CARD. Finishing a lead advances to the next immediately -- the VA never returns to a list to
 // choose, which is what makes the queue actually get worked from the top.
 // ---------------------------------------------------------------------------------------------
-/** Which of the three views is on screen. Only the first is a one-card-at-a-time queue. */
+/** Route to the correct view based on the active tab. */
 function render() {
   for (const b of document.querySelectorAll('.tab')) {
     b.setAttribute('aria-selected', String(b.dataset.tab === tab));
   }
-  $('card').hidden = tab !== 'new';
-  $('list').hidden = tab === 'new' || tab === 'tt' || tab === 'earn';
+  $('work').hidden = tab !== 'work';
   $('tt').hidden   = tab !== 'tt';
   $('earn').hidden = tab !== 'earn';
   drawDemand();
   if (tab === 'tt')   { drawAccounts(); return; }
   if (tab === 'earn') { drawEarnings(); return; }
-  if (tab === 'new')  { draw(); return; }
-  if (tab === 'rep')  { drawReplies(); return; }
-  drawConversations();
+  if (tab === 'work') { drawWork(); return; }
+}
+
+// ---------------------------------------------------------------------------------------------
+// WORK TAB: ACTION-FIRST CONSOLIDATION.
+//
+// The Work tab shows the most important action first: pending proof, reply to check, next DM,
+// cooldown countdown, or done for today. After completing an action, automatically advance to
+// the next. Secondary information (recent conversations, search) appears below.
+// ---------------------------------------------------------------------------------------------
+function drawWork() {
+  const replies = (view.check_replies || []).slice().sort(byDue);
+  const hasProof = view.pending_proof && view.pending_proof.proof_check_id;
+  const hasReplies = replies.length > 0;
+  const hasNextDM = queue.length > 0 && sendFrom && sendFrom.ok;
+  const isCooldown = sendFrom && !sendFrom.ok && sendFrom.reason === 'COOLDOWN';
+  const isDone = sendFrom && !sendFrom.ok && sendFrom.reason === 'DAILY_LIMIT_REACHED';
+
+  let html = '';
+
+  // PRIMARY ACTION: show one card at the top
+  if (hasProof) {
+    const p = view.pending_proof;
+    const who = p.handle ? ('@' + esc(p.handle)) : 'a creator';
+    html += '<div class="card top" style="margin-bottom:12px">'
+      + '<div class="who">Quick check</div>'
+      + '<p class="muted" style="margin:8px 0 0">Send us a photo of your chat with ' + who
+      + ' so we can confirm the message went out.</p>'
+      + '<button class="good full" id="work-proof" style="background:#7d5a1e;border-color:#a8781f;'
+      + 'color:#fff3dc;margin-top:8px">Send the photo</button></div>';
+    workSubstate = 'proof';
+  } else if (hasReplies) {
+    const r = replies[0];
+    const who = esc(r.display_name || r.handle || 'creator');
+    const url = r.profile_url || ('https://www.tiktok.com/@' + (r.handle || ''));
+    html += '<div class="card top" style="margin-bottom:12px">'
+      + '<div class="who">They replied</div>'
+      + '<div class="meta">@' + esc(r.handle || '') + ' · ' + ago(r.follow_up_at || r.last_checked_at || r.first_sent_at)
+      + (r.username ? ' · from @' + esc(r.username) : '') + '</div>';
+    if (r.extracted_text) html += '<div class="quote">' + esc(r.extracted_text) + '</div>';
+    html += '<div class="cls" data-cls="' + esc(r.reply_event_id) + '">'
+      + CLASSES.map(([v, label]) =>
+          '<button class="sm" data-v="' + v + '" aria-pressed="'
+          + String(r.classification === v) + '">' + label + '</button>').join('')
+      + '</div>';
+    if (r.suggestion) {
+      html += '<div class="suggest"><span class="lbl">Suggested reply</span>' + esc(r.suggestion) + '</div>'
+        + '<button class="sm" id="work-copy-reply" data-copy="' + esc(r.reply_event_id) + '">Copy this reply</button>';
+    }
+    if (r.affiliate_available) {
+      html += '<button class="good full" id="work-invite" data-invite="' + esc(r.task_id) + '" '
+        + 'style="margin-top:8px">'
+        + (r.affiliate_state === 'REGISTERED' ? 'They joined — copy link again'
+                                              : 'Copy signup link') + '</button>';
+    } else if (r.classification === 'QUESTION') {
+      html += '<p class="muted" style="margin:8px 0 0">Answer their question first. The signup link '
+        + 'appears once they say they want it.</p>';
+    }
+    html += '<div style="margin-top:9px"><a class="open" href="' + esc(url)
+      + '" target="_blank" rel="noopener">Open the chat</a></div></div>';
+    workSubstate = 'reply';
+  } else if (hasNextDM) {
+    const c = queue[cursor];
+    html += buildCardHtml(c);
+    workSubstate = 'dm';
+  } else if (isCooldown) {
+    const acct = (tt.accounts || []).find((a) => !a.display_state || a.display_state === 'COOLDOWN');
+    const cooldown = acct ? acct.cooldown_seconds_left : 0;
+    const until = Date.now() + (cooldown || 0) * 1000;
+    html += '<div class="card top" style="margin-bottom:12px">'
+      + '<div class="who">Next message in</div>'
+      + '<div class="countdown" data-until="' + until + '">' + mmss(cooldown) + '</div>'
+      + '<p class="muted" style="margin:12px 0 0">No action right now. Check back in a moment.</p></div>';
+    workSubstate = 'cooldown';
+  } else if (isDone) {
+    html += '<div class="card top" style="margin-bottom:12px">'
+      + '<div class="who">Done for today</div>'
+      + '<p class="muted" style="margin:8px 0 0">You have hit the daily limit for all your accounts. '
+      + 'Come back tomorrow!</p></div>';
+    workSubstate = 'done';
+  } else {
+    html += '<div class="card top" style="margin-bottom:12px">'
+      + '<div class="who">No tasks right now</div>'
+      + '<p class="muted" style="margin:8px 0 0">No new creators to message and no replies to check. '
+      + 'Check back later.</p></div>';
+    workSubstate = null;
+  }
+
+  // SECONDARY: recent conversations + search
+  const chats = view.chats || [];
+  const rows = search.results !== null ? search.results : (view.conversations || []);
+  const box = '<input id="q" type="search" placeholder="Search name or handle"'
+            + ' value="' + esc(search.q) + '" autocomplete="off" style="margin-bottom:12px;margin-top:14px">';
+  const answered = (search.results === null && chats.length)
+    ? '<p class="earnhead">Replied to you</p>' + chats.map(chatHtml).join('')
+      + '<p class="earnhead" style="margin-top:18px">Everyone else</p>'
+    : '';
+  const body = rows.length
+    ? '<p class="muted" style="margin:0 0 10px">' + rows.length
+      + (search.results !== null ? ' found' : ' conversations') + '</p>'
+      + rows.map((t) => rowHtml(t, { due: false })).join('')
+    : '<div class="card"><div class="who">'
+      + (search.results !== null ? 'No match' : 'No conversations yet')
+      + '</div><p class="muted">'
+      + (search.results !== null
+          ? 'Search looks at every creator you have written to, by name or handle.'
+          : 'Creators appear here once you record a reply or set a follow-up.')
+      + '</p></div>';
+
+  html += box + answered + body;
+  $('work').innerHTML = html;
+
+  // Wire up primary action buttons
+  if (workSubstate === 'proof') {
+    const b = $('work-proof');
+    if (b) b.onclick = () => openProof(view.pending_proof);
+  } else if (workSubstate === 'reply') {
+    // Wire reply classification buttons
+    const r = replies[0];
+    for (const box of $('work').querySelectorAll('[data-cls]')) {
+      for (const b of box.querySelectorAll('button')) {
+        b.onclick = async () => {
+          const { data, error } = await sb.rpc('dh_reply_classify',
+            { p_reply_event_id: box.dataset.cls, p_classification: b.dataset.v });
+          if (error || !data?.ok) { say('Could not save that — try again.'); return; }
+          await loadMoney(); render();
+        };
+      }
+    }
+    const copyBtn = $('work-copy-reply');
+    if (copyBtn) {
+      copyBtn.onclick = () => {
+        if (r?.suggestion) { copyNow(r.suggestion); say('Reply copied — paste it in TikTok.'); }
+      };
+    }
+    const inviteBtn = $('work-invite');
+    if (inviteBtn) {
+      inviteBtn.onclick = async () => {
+        inviteBtn.disabled = true;
+        const { data, error } = await sb.rpc('dh_affiliate_invite_issue', { p_task_id: inviteBtn.dataset.invite });
+        inviteBtn.disabled = false;
+        if (error) { say('Could not make a link — try again.'); return; }
+        if (!data?.ok) {
+          say(data?.reason === 'ALREADY_ATTRIBUTED'
+                ? 'This creator has already joined through someone else. Leave this one.'
+                : 'Not yet — wait until they say they want the link.');
+          return;
+        }
+        copyNow(data.url);
+        say('Signup link copied — paste it in TikTok.');
+        await loadMoney(); render();
+      };
+    }
+  } else if (workSubstate === 'dm') {
+    // Wire up the DM card buttons
+    const t = queue[cursor];
+    if (t) wireCardButtons(t, 'work');
+  }
+
+  // Wire search and conversation list
+  const q = $('q');
+  if (q) {
+    if (search.focused) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
+    q.oninput = () => {
+      search.q = q.value; search.focused = true;
+      clearTimeout(search.timer);
+      search.timer = setTimeout(runSearch, 250);
+    };
+  }
+  wireRows(rows);
+  wireChats(chats);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1092,10 +1254,10 @@ function drawEarnings() {
 
 async function runSearch() {
   const q = search.q.trim();
-  if (q.length < 2) { search.results = null; drawConversations(); return; }
+  if (q.length < 2) { search.results = null; render(); return; }
   const { data, error } = await sb.rpc('dh_va_search', { p_q: q });
   search.results = error ? [] : (data || []);
-  drawConversations();
+  render();
 }
 
 /**
@@ -1306,7 +1468,9 @@ $('rp-cancel').onclick = () => $('replydlg').close();
 
 function wireRows(rows) {
   const byId = new Map(rows.map((r) => [r.task_id, r]));
-  for (const el of $('list').querySelectorAll('.row')) {
+  const container = $('list') || $('work');
+  if (!container) return;
+  for (const el of container.querySelectorAll('.row')) {
     const t = byId.get(el.dataset.task);
     if (!t) continue;
     const copyBtn = el.querySelector('button[data-copy]');
@@ -1338,21 +1502,9 @@ function wireRows(rows) {
   }
 }
 
-function draw() {
-  const t = queue[cursor];
-  if (!t) {
-    $('card').innerHTML = '<div class="card"><div class="who">All caught up</div>'
-      + '<p class="muted">No new creators to write to. Anyone you have already messaged is under '
-      + 'Check replies and Conversations.</p></div>';
-    return;
-  }
-  // WHICH ACCOUNT THIS DM LEAVES FROM, ABOVE THE MESSAGE ITSELF.
-  //
-  // The VA is about to act as a real account that TikTok can restrict. Which one it is, how much
-  // of its day is left, and whether it may send at all are not details to go looking for in
-  // another tab -- they sit directly above the button that does it.
+function buildCardHtml(t) {
   const blocked = !(sendFrom && sendFrom.ok);
-  $('card').innerHTML = sendFromHtml()
+  return sendFromHtml()
     + '<div class="card top">'
     + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">'
       + '<div><div class="who">' + esc(t.display_name || t.handle || 'creator') + '</div>'
@@ -1362,13 +1514,6 @@ function draw() {
         + '<span class="pill ' + esc(t.priority) + '">' + esc(t.priority) + '</span></div></div>'
     + '<p class="muted" style="margin:13px 0 5px">Personalized message</p>'
     + '<div class="script" id="script">' + esc(t.dm_message) + '</div>'
-    // THE PRIMARY ACTION IS AN ANCHOR, NOT A BUTTON, AND THAT IS THE WHOLE TRICK ON IOS.
-    // Tapping a real link to https://www.tiktok.com/@handle lets iOS hand off to the TikTok app
-    // through its universal link; if the app is not installed, Safari simply loads the web profile,
-    // so the fallback costs no code. window.open() would be a popup, and Safari blocks popups that
-    // happen after any await -- which is exactly what copying is.
-    // While no account may send, the action that would lead to sending is not offered at all.
-    // Leaving it live and refusing afterwards teaches a VA that the screen lies to them.
     + (blocked
         ? '<div class="warn" style="text-align:center">' + esc(blockedLine()) + '</div>'
         : '<a class="open primary" id="copyopen" href="' + esc(t.profile_url) + '"'
@@ -1377,14 +1522,8 @@ function draw() {
     + (blocked ? '' : '<button class="sm" id="copy">Copy DM</button>')
     + '<p class="muted" style="margin:13px 0 5px">Note (optional)</p>'
     + '<textarea id="note" placeholder="Anything worth remembering">' + esc(t.notes || '') + '</textarea>'
-    // Only the two outcomes that can genuinely happen before a DM exists. Replied, Interested and
-    // the rest moved to Check replies, where the reply box is -- offering them here invited a VA to
-    // record an answer to a message they had not sent yet, and cost the outcome its reply text.
     + '<div class="acts" style="margin-top:12px">'
       + (blocked ? '' : '<button class="good full" data-s="CONTACTED">DM sent</button>')
-      // THREE OUTCOMES, NOT TWO. "Couldn't send" and "TikTok wouldn't send it" look similar to a
-      // VA and mean completely different things to us: one is a dead profile, the other is our own
-      // copy being refused, and only the second must stop the account and the message.
       + '<button data-s="TIKTOK_BLOCKED" class="full">TikTok wouldn\'t send it</button>'
       + '<button class="bad full" data-s="UNREACHABLE">Couldn\'t send</button>'
     + '</div>'
@@ -1392,45 +1531,35 @@ function draw() {
       + '<b>Check replies</b> so you can come back when they answer.</p>'
     + '<p class="muted" style="margin-bottom:0">' + (cursor + 1) + ' of ' + queue.length + '</p>'
     + '</div>';
+}
 
-  // COPY, CONFIRM, THEN LET THE LINK DO ITS JOB -- in that order, with nothing awaited in between.
-  // Safari treats the tap as a user gesture only for the synchronous part of the handler; the
-  // moment you await the clipboard promise before navigating, the navigation is a popup and gets
-  // blocked. So the copy is only STARTED here and the anchor's own default action carries on.
-  // Nothing here changes the task: the VA still taps Sent DM after they have actually sent it.
+function wireCardButtons(t, containerId) {
+  const container = $(containerId);
+  if (!container) return;
   if ($('copyopen')) $('copyopen').addEventListener('click', () => {
     const ok = copyNow(t.dm_message);
     say(ok ? 'Copied — paste it in the DM' : 'Copy failed, select the message above');
   });
-
   if ($('copy')) $('copy').onclick = () => {
     const ok = copyNow(t.dm_message);
     $('copy').textContent = ok ? 'Copied' : 'Select the text above to copy';
     say(ok ? 'Copied' : '');
   };
-
-  for (const b of $('card').querySelectorAll('button[data-s]')) {
+  for (const b of container.querySelectorAll('button[data-s]')) {
     b.onclick = async () => {
-      for (const o of $('card').querySelectorAll('button[data-s]')) o.disabled = true;
+      for (const o of container.querySelectorAll('button[data-s]')) o.disabled = true;
       const note = $('note').value.trim() || null;
       let error = null;
 
       if (b.dataset.s === 'CONTACTED') {
-        // DM SENT AND COULDN'T SEND ARE NOT THE SAME KIND OF EVENT.
-        //
-        // Only this branch creates a send: it counts against the account's day and the VA's day,
-        // starts the cooldown and earns. The server re-checks every one of those against the
-        // locked row, so a stale screen or a second tab is refused here rather than paid for.
         const { data, error: e } = await sb.rpc('dh_tiktok_record_send',
           { p_task_id: t.task_id, p_notes: note });
         error = e;
         if (!error && data && !data.ok) {
           alert(refusal(data));
-          await boot();               // re-read, because the screen was evidently out of date
+          await boot();
           return;
         }
-        // PICKED FOR A CHECK. Asked for straight away, while the VA still has the chat open on
-        // their phone -- a screenshot requested an hour later is a screenshot nobody can take.
         if (!error && data && data.ok && data.proof_required) {
           await boot();
           openProof(view.pending_proof || { proof_check_id: data.proof_check_id,
@@ -1438,9 +1567,6 @@ function draw() {
           return;
         }
       } else if (b.dataset.s === 'TIKTOK_BLOCKED') {
-        // TIKTOK REFUSED IT. Spends no quota, starts no cooldown, earns nothing, and above all is
-        // never retried with the same words -- the server records the exact text so that the same
-        // message cannot go out again from anywhere.
         const { data, error: e } = await sb.rpc('dh_tiktok_record_blocked',
           { p_task_id: t.task_id, p_platform_error: note });
         error = e;
@@ -1457,8 +1583,6 @@ function draw() {
           return;
         }
       } else {
-        // Couldn't send changes the task and nothing else. No quota is spent, no cooldown starts
-        // and nothing becomes payable -- a DM that did not happen must not look like one that did.
         const { error: e } = await sb.rpc('dh_va_update_task',
           { p_task_id: t.task_id, p_status: b.dataset.s, p_notes: note });
         error = e;
@@ -1466,16 +1590,25 @@ function draw() {
 
       if (error) {
         alert(error.message);
-        for (const o of $('card').querySelectorAll('button[data-s]')) o.disabled = false;
+        for (const o of container.querySelectorAll('button[data-s]')) o.disabled = false;
         return;
       }
-      // Straight to the next lead. boot() re-reads the queue so a status that removes the lead
-      // (not interested, unreachable) drops it, clamps the cursor to what is left, and moves both
-      // counters at the same time.
       cursor = cursor + 1;
       boot();
     };
   }
+}
+
+function draw() {
+  const t = queue[cursor];
+  if (!t) {
+    $('card').innerHTML = '<div class="card"><div class="who">All caught up</div>'
+      + '<p class="muted">No new creators to write to. Anyone you have already messaged is under '
+      + 'Check replies and Conversations.</p></div>';
+    return;
+  }
+  $('card').innerHTML = buildCardHtml(t);
+  wireCardButtons(t, 'card');
 }
 
 /** The strip above the creator card: which account, how much of its day is left, and its state. */

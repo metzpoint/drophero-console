@@ -61,6 +61,14 @@
   .fnl .trk>i{display:block;height:100%;background:linear-gradient(90deg,#2b5c96,#6aa6ff)}
   .fnl .num{width:96px;flex:none;text-align:right;font-variant-numeric:tabular-nums;font-size:13px}
   .fnl .num em{font-style:normal;color:var(--dim);font-size:11px}
+  /* The supply stage names are sentences, not words ("Needs personalization"), so they get more
+     room than the 96px the generic funnel labels use. Below 560px the bar is the first thing to
+     go: the number still reads, which is what the stage is actually for. */
+  #supply .fnl .lbl{width:168px}
+  #supply .supply-head{font-size:15px;padding:2px 0 9px;display:flex;align-items:center;
+    gap:8px;flex-wrap:wrap}
+  #supply .supply-head b{font-size:19px}
+  @media(max-width:560px){#supply .fnl .lbl{width:124px}#supply .fnl .trk{display:none}}
   .att{border-left:3px solid var(--warn);padding-left:10px;margin:10px 0}
   .att.crit{border-left-color:var(--bad)}
   .att h3{font-size:13px;margin:0 0 4px}
@@ -106,6 +114,9 @@
 
   <h2>Budget</h2>
   <div class="card" id="budget"></div>
+
+  <h2>Supply pipeline <small class="muted">discovery to READY, continuous</small></h2>
+  <div class="card" id="supply"><div class="muted">loading…</div></div>
 
   <h2>Funnel</h2>
   <div class="card" id="funnel"></div>
@@ -250,15 +261,17 @@ async function boot() {
   renderOverview(overview);
 
   const [funnel, full, attention, vas, sourcing, integrations, tiktok,
-         perf, proofs, payouts, templates, modblock] = await Promise.all([
+         perf, proofs, payouts, templates, modblock, supply] = await Promise.all([
     sb.rpc('dh_owner_funnel', { p_period: period }), sb.rpc('dh_owner_full_funnel'),
     sb.rpc('dh_owner_attention'),
     sb.rpc('dh_owner_va_admin'), sb.rpc('dh_owner_sourcing_settings'), sb.rpc('dh_owner_integrations'),
     sb.rpc('dh_tiktok_admin_overview'),
     sb.rpc('dh_admin_va_performance'), sb.rpc('dh_admin_proof_queue', { p_limit: 60 }),
     sb.rpc('dh_admin_payout_rows'), sb.rpc('dh_tiktok_template_metrics'),
-    sb.rpc('dh_tiktok_block_rate_by_sender')
+    sb.rpc('dh_tiktok_block_rate_by_sender'),
+    sb.rpc('dh_owner_supply_pipeline')
   ]);
+  renderSupply(supply.data, supply.error);
   renderTikTok(tiktok.data, tiktok.error);
   renderPerformance(perf.data, perf.error);
   renderProofs(proofs.data, proofs.error);
@@ -317,6 +330,87 @@ function renderOverview(d) {
 // FUNNEL. Each bar is scaled against the first stage, and the percentage under it is conversion
 // from the stage above -- which is the number that tells you where people are actually lost.
 // ---------------------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------------------------
+// THE CONTINUOUS SUPPLY PIPELINE.
+//
+// The number an owner actually needs is not READY, it is how long READY lasts. 921 tasks sounds
+// like plenty until you divide by what the VAs can send, and 921 at 2,200 DMs/day is half a
+// morning. So days-remaining is the headline and the raw count is the supporting detail.
+//
+// Days-remaining is computed from the ACTIVE senders' real warm-up limits, not from a planned
+// fleet, which is why it currently reads 20 DM/day rather than an aspirational number. With no
+// ACTIVE sender there is no rate to divide by, and the panel says so instead of printing infinity.
+//
+// Spend is per provider and never averaged. One actor returns a Google redirect for three quarters
+// of what it finds; another returns a resolvable profile every time. A blended cost-per-creator
+// across those two describes nothing that exists. Where the sourcing ledger has no row for an
+// actor the cell reads "not attributed" rather than "$0.00" -- the curated import genuinely was
+// not billed through the ledger, and zero would read as free.
+// ---------------------------------------------------------------------------------------------
+function renderSupply(d, err) {
+  if (err) { $('supply').innerHTML = '<div class="muted">' + esc(err.message) + '</div>'; return; }
+  if (!d) { $('supply').innerHTML = '<div class="muted">no data yet</div>'; return; }
+
+  const s = d.stages || {}, inv = d.inventory || {}, enr = d.enrichment || {};
+  const cap = Number(inv.daily_send_capacity) || 0;
+
+  const stateLabel = { SOURCE_MORE: 'source more', NORMAL: 'healthy',
+                       PAUSE_PAID_SOURCING: 'hold paid sourcing' }[inv.state] || inv.state || '—';
+
+  const head = '<div class="supply-head">'
+    + (cap > 0
+        ? '<b>' + esc(String(inv.days_remaining)) + ' days</b> of READY inventory '
+          + '<span class="muted">at ' + n(cap) + ' DM/day</span>'
+        : '<b>—</b> <span class="muted">no ACTIVE sender, so nothing is being consumed</span>')
+    + ' <span class="pill">' + esc(stateLabel) + '</span></div>';
+
+  const rows = [
+    ['Raw discoveries',      s.raw_discoveries],
+    ['Valid profiles',       s.valid_profiles],
+    ['Waiting for enrichment', s.waiting_enrichment],
+    ['Qualified',            s.qualified],
+    ['Rejected',             s.rejected],
+    ['Needs personalization', s.needs_personalization],
+    ['READY',                s.ready],
+    ['Tier-1 READY',         s.tier_1_ready],
+    ['Sent',                 s.sent],
+    ['Replied',              s.replied]
+  ];
+  const top = Math.max(1, Number(s.raw_discoveries) || 0);
+  const bars = rows.map(([label, v]) => {
+    const c = Number(v) || 0;
+    return '<div class="fnl"><span class="lbl">' + esc(label) + '</span>'
+      + '<span class="trk"><i style="width:' + Math.max(c ? 2 : 0, (c / top) * 100) + '%"></i></span>'
+      + '<span class="num">' + n(c) + '</span></div>';
+  }).join('');
+
+  const prov = (d.providers || []).map((p) => {
+    const ready = Number(p.ready) || 0;
+    const spend = p.spend_usd === null || p.spend_usd === undefined ? null : Number(p.spend_usd);
+    const perReady = spend !== null && ready > 0 ? '$' + (spend / ready).toFixed(3) : '—';
+    return '<tr><td>' + esc(p.actor) + '</td><td>' + n(p.discovered) + '</td><td>'
+      + n(p.valid_profile) + '</td><td>' + n(p.qualified) + '</td><td>' + n(p.tier_1)
+      + '</td><td>' + n(ready) + '</td><td>'
+      + (spend === null ? '<span class="muted">not attributed</span>' : '$' + spend.toFixed(2))
+      + '</td><td>' + perReady + '</td></tr>';
+  }).join('');
+
+  const table = prov
+    ? '<table><thead><tr><th>provider</th><th>discovered</th><th>valid</th><th>qualified</th>'
+      + '<th>tier 1</th><th>READY</th><th>spend</th><th>per READY</th></tr></thead><tbody>'
+      + prov + '</tbody></table>'
+    : '<div class="muted">no provider data</div>';
+
+  const tick = (d.last_tick || {}).at;
+  const foot = '<div class="muted" style="margin-top:9px">'
+    + 'enrichment queue: ' + n(enr.profiles_queued) + ' profiles in ' + n(enr.pending_batches)
+    + ' pending batch(es), ' + n(enr.running_batches) + ' running'
+    + ' · last pipeline tick: ' + (tick ? esc(String(tick).slice(0, 16)).replace('T', ' ')
+                                        : '<b>never run unattended</b>') + '</div>';
+
+  $('supply').innerHTML = head + '<div style="margin:9px 0">' + bars + '</div>' + table + foot;
+}
+
 function renderFunnel(stages) {
   if (!stages.length) { $('funnel').innerHTML = '<div class="muted">no data yet</div>'; return; }
   const top = Math.max(1, Number(stages[0].count) || 0);
