@@ -1192,7 +1192,14 @@ function drawWork() {
           : 'We could not copy it for you — if you sent it by hand, say so below.') + '</p>'
       + (c.pending_copy_ok ? '' :
           '<textarea readonly id="manual-copy-text" style="width:100%;min-height:88px;margin-bottom:12px" '
-          + 'onclick="this.select()">' + esc(c.dm_message || '') + '</textarea>')
+          + 'onclick="this.select()">' + esc(c.dm_message || '') + '</textarea>'
+          // THE BUG THIS FIXES. When the automatic copy failed the page stayed put -- correctly, so
+          // the VA could copy the message by hand -- but then offered them nothing to do with it.
+          // The only route to the creator was the one button that had just failed, on a card that
+          // had already moved past it. They could copy the DM and have nowhere to paste it.
+          + '<button class="good full" id="work-open-tiktok" style="background:#e67e22;'
+          + 'border-color:#d35400;color:#fff;padding:18px;font-size:18px;min-height:64px;'
+          + 'margin-bottom:12px">OPEN TIKTOK</button>')
       + '<div class="acts">'
       + '<button class="full" id="work-sent" style="background:#1e5e46;border-color:#2b7d5f;color:#b6f0d5;'
       + 'min-height:56px;font-size:16px">I SENT THE DM</button>'
@@ -1361,6 +1368,16 @@ function wireWorkButtons() {
     const couldntBtn = $('work-couldnt');
     const msg = $('dm-msg');
     if (!c) return;
+
+    // Only rendered on the manual-copy fallback. It goes to the same creator the pending entry
+    // names -- the persisted profile_url, or their handle when the URL was never recorded -- so a
+    // reload cannot send the VA to whoever happens to be at the top of the queue now.
+    const openBtn = $('work-open-tiktok');
+    if (openBtn) {
+      openBtn.onclick = () => {
+        leaveForTikTok(c.profile_url || ('https://www.tiktok.com/@' + (c.handle || '')));
+      };
+    }
 
     if (sentBtn) {
       sentBtn.onclick = async () => {
