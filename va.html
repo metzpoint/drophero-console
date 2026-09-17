@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://esm.sh; style-src 'unsafe-inline'; connect-src https://aexomkitwnxvpqlmtrik.supabase.co wss://aexomkitwnxvpqlmtrik.supabase.co https://esm.sh; img-src data: blob: https://aexomkitwnxvpqlmtrik.supabase.co; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' https://esm.sh; style-src 'unsafe-inline'; connect-src https://aexomkitwnxvpqlmtrik.supabase.co wss://aexomkitwnxvpqlmtrik.supabase.co https://esm.sh; img-src data: blob: https://aexomkitwnxvpqlmtrik.supabase.co; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b0f14">
 <title>DropHero — VA</title>
@@ -55,6 +55,9 @@
   .tab b{display:block;font-size:16px;color:var(--ink);font-weight:650}
   .tab[aria-selected="true"]{background:#1d3050;border-color:#2b4a7d;color:#cfe0ff}
   .tab[aria-selected="true"] b{color:#eaf2ff}
+  /* One indicator, not a second number stacked on the first. The count itself already lives in
+     <b id="n-work">; this is only a colour, present exactly when a reply is overdue. */
+  .tab.urgent b{color:var(--bad)}
   /* Every row in the two history views is itself a card, so a long list stays scannable. */
   .row{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:13px;
        margin-bottom:10px}
@@ -69,7 +72,17 @@
                        min-height:32px}
   .quote{background:#0e1620;border-left:3px solid #2b4a7d;border-radius:0 9px 9px 0;
          padding:9px 11px;margin:8px 0;font-size:13px;white-space:pre-wrap;line-height:1.5}
-  .counts{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:14px}
+  /* Three stats, three columns, always -- the two-column grid clipped or duplicated the third
+     number depending on width. min-width:0 stops a long value from forcing the row wider than the
+     phone; the numbers shrink before they wrap. */
+  .counts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-bottom:14px}
+  .counts div{min-width:0}
+  .counts b{display:block;overflow-wrap:anywhere}
+  @media(max-width:360px){.counts{gap:4px}.counts b{font-size:22px}}
+  button:disabled{opacity:.55;cursor:default}
+  .fieldmsg{font-size:13px;margin:6px 0 0}
+  .fieldmsg.bad{color:var(--bad)}
+  .fieldmsg.good{color:var(--ok)}
   .counts div{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:12px;
               text-align:center}
   .counts b{display:block;font-size:26px;font-variant-numeric:tabular-nums;line-height:1.2}
@@ -255,9 +268,25 @@
   <div id="p-kinds"></div>
   <p class="muted" style="margin:11px 0 4px">Anything else worth knowing? (optional)</p>
   <textarea id="p-note" placeholder="What did you see on screen?"></textarea>
-  <p id="p-msg" class="muted"></p>
+  <p class="muted" id="p-pausewarn" style="margin:9px 0 0"></p>
+  <p id="p-msg" class="fieldmsg"></p>
   <div class="acts" style="margin-top:10px">
+    <button id="p-submit" class="bad full" disabled>Submit problem</button>
     <button id="p-cancel" class="full">Close</button>
+  </div>
+</div></dialog>
+
+<dialog id="pwdlg"><div class="sheet">
+  <h2 style="margin:0 0 4px;font-size:20px">Change password</h2>
+  <p class="muted" style="margin-top:0">At least 8 characters. You will use this the next time you sign in.</p>
+  <p class="muted" style="margin:13px 0 4px">New password</p>
+  <input id="pw-new" type="password" autocomplete="new-password">
+  <p class="muted" style="margin:11px 0 4px">Confirm new password</p>
+  <input id="pw-confirm" type="password" autocomplete="new-password">
+  <p id="pw-msg" class="fieldmsg"></p>
+  <div class="acts" style="margin-top:10px">
+    <button id="pw-save" class="good full">Change password</button>
+    <button id="pw-cancel" class="full">Cancel</button>
   </div>
 </div></dialog>
 
@@ -324,6 +353,11 @@
 
 <script type="module">
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
+import {
+  computeCapacity, sentLabel, checkedLabel, followUpLabel,
+  normalizeRpc, safeLogLine, copyText, createSequencer
+} from './va-portal-logic.mjs';
+
 const sb = createClient('https://aexomkitwnxvpqlmtrik.supabase.co', 'sb_publishable_Y88uWkdq3igd5dMkT1c8JA_qMB_ZB7d',
   { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
 
@@ -335,11 +369,68 @@ let queue = [];       // NEW DMS only: creators nobody has written to yet
 let cursor = 0;       // which one is on screen
 let view = {};        // the whole three-part payload from dh_va_queue
 let tab = 'work';     // 'work' | 'tt' | 'earn'
-let workSubstate = null; // which action is being shown: 'proof' | 'reply' | 'dm' | 'cooldown' | 'done' | 'sent'
-let workReplyState = null; // { creator, replied } when handling a yes/no reply
+let workSubstate = null; // which action is being shown: 'proof' | 'reply' | 'dm' | 'copied' | 'cooldown' | 'done' | 'sent'
+let capacity = null;  // last dh_va_capacity() answer -- the one number the Work header trusts
+
+// THE TWO-PHASE SEND. Phase 1 (copy + open) commits nothing: no RPC, no queue advance, no earning.
+// Only an explicit "I SENT THE DM" in phase 2 calls dh_tiktok_record_send. copiedFor holds the task
+// currently in phase 2, or null when no DM has been copied yet.
+let copiedFor = null;
+
+// A screenshot just uploaded through the simplified reply flow is excluded from the reply-check
+// list on this screen from that moment on. The backend still legitimately shows the task until the
+// model classifies it -- reply_status stays NULL until then -- but re-asking "did they reply?" about
+// a photo the VA handed over ninety seconds ago reads as the app not having noticed. Keyed by
+// task_id and never persisted: a reload is the natural retry path if classification genuinely stalls.
+const justUploadedReply = new Set();
+
 // results === null means "no search running, show the normal conversations list". An empty array
 // means the search ran and matched nothing, which is a different thing to say on screen.
 const search = { q: '', results: null, timer: 0, focused: false };
+
+const seq = createSequencer();
+
+/**
+ * One place every RPC-backed button goes through. Disables the button, makes the call, re-enables
+ * it, and turns a transport failure or an {ok:false} into a message a VA can read -- the pattern
+ * every simplified action skipped, which is why a refused send or an expired session used to look
+ * exactly like nothing happening.
+ *
+ * `after` is where the caller does the (rare) side effects that must NOT run on failure: advancing
+ * cursor, closing a dialog, showing a success line. It only runs when res.ok.
+ */
+async function withButton(btn, action, ids, call, after) {
+  if (btn) btn.disabled = true;
+  let res;
+  try {
+    const { data, error } = await call();
+    res = normalizeRpc({ data, error });
+  } catch (e) {
+    res = normalizeRpc({ error: e });
+  }
+  if (!res.ok) {
+    // Only a failure re-opens the button. A failed action changed nothing, so retrying is the
+    // right thing to offer.
+    if (btn) btn.disabled = false;
+    console.error(safeLogLine(action, res, ids));
+    return res;
+  }
+  // THE WINDOW THIS CLOSES. The re-enable used to sit here, before `after`. For a confirmed send
+  // `after` advances the cursor, waits out the cooldown and re-boots -- roughly two seconds during
+  // which the button was live again and still pointed at the task just recorded. A second tap in
+  // that window sent a second dh_tiktok_record_send for the same task. The database refuses to pay
+  // twice (dh_va_earnings_one_dm_per_task), so no money was ever at stake, but the VA saw a error
+  // for having tapped a button the page had handed back to them. The button now stays disabled for
+  // as long as the success path is still running.
+  try {
+    if (after) await after(res);
+  } finally {
+    // The success path normally redraws this card and the button goes with it. If it is somehow
+    // still in the document, re-enable it rather than leave a dead control on screen.
+    if (btn && btn.isConnected) btn.disabled = false;
+  }
+  return res;
+}
 
 $('signin').onclick = async () => {
   $('loginmsg').textContent = 'signing in…';
@@ -417,12 +508,38 @@ $('switchacct').onclick = async () => {
 // it. Password reset by email is not an option here: the confirmation redirect on this project
 // points at a Site URL that does not resolve, and a reset link that lands nowhere is worse than no
 // reset link at all.
-$('changepw').onclick = async () => {
-  const pw = prompt('New password — at least 8 characters.');
-  if (pw === null) return;
-  if (pw.length < 8) { alert('That is too short.'); return; }
-  const { error } = await sb.auth.updateUser({ password: pw });
-  alert(error ? error.message : 'Password changed. Use it the next time you sign in.');
+// ---------------------------------------------------------------------------------------------
+// CHANGE PASSWORD. A modal, not window.prompt() -- prompt() cannot mask input, cannot show two
+// fields to confirm a match, and alert() is the only way it can report back, which is what let a
+// mistyped password vanish with a single native dialog and no way to see what was typed.
+// ---------------------------------------------------------------------------------------------
+$('changepw').onclick = () => {
+  $('pw-new').value = ''; $('pw-confirm').value = '';
+  $('pw-msg').textContent = ''; $('pw-msg').className = 'fieldmsg';
+  $('pwdlg').showModal();
+};
+$('pw-cancel').onclick = () => $('pwdlg').close();
+
+// Fields hold a real password only while the dialog is open. Clearing them on every close --
+// cancelled, saved, or the VA pressing Esc -- means nothing sensitive sits in the DOM afterwards.
+$('pwdlg').addEventListener('close', () => { $('pw-new').value = ''; $('pw-confirm').value = ''; });
+
+$('pw-save').onclick = async () => {
+  const a = $('pw-new').value, b = $('pw-confirm').value;
+  const msg = $('pw-msg');
+  if (a.length < 8) { msg.textContent = 'At least 8 characters, please.'; msg.className = 'fieldmsg bad'; return; }
+  if (a !== b) { msg.textContent = 'The two passwords do not match.'; msg.className = 'fieldmsg bad'; return; }
+
+  $('pw-save').disabled = true; msg.textContent = 'Saving…'; msg.className = 'fieldmsg';
+  // Never logged: supabase-js's own error objects do not carry the password, and none of this
+  // repository's error handling (safeLogLine, console.error) is given the field values -- only the
+  // update() call sees them, and only to send them to Supabase auth over TLS.
+  const { error } = await sb.auth.updateUser({ password: a });
+  $('pw-save').disabled = false;
+  if (error) { msg.textContent = error.message; msg.className = 'fieldmsg bad'; return; }
+
+  msg.textContent = 'Password changed.'; msg.className = 'fieldmsg good';
+  setTimeout(() => $('pwdlg').close(), 900);
 };
 
 /**
@@ -485,6 +602,12 @@ async function bootOrThrow() {
   }
   $('wrongacct').hidden = true;
   $('login').hidden = true; $('app').hidden = false;
+
+  // A slow boot() racing a faster later one must not let the slow one win. bootOrThrow can be
+  // re-entered (visibilitychange, an action's own refresh, a second tap) faster than a request
+  // returns; without this, an old response landing last silently rewound the screen.
+  const token = seq.begin('boot');
+
   view = data;
   queue = data.new_dms || [];
   cursor = Math.min(cursor, Math.max(0, queue.length - 1));
@@ -499,15 +622,31 @@ async function bootOrThrow() {
     ? queue.length + ' creators waiting for a first DM'
       + (tierReady ? ' · Tier 1 ready: ' + tierReady : '')
     : 'no new creators right now';
-  $('remaining').textContent = data.remaining_today ?? 0;
   $('done').textContent = data.completed_today ?? 0;
-  // Count tasks for the work tab: new DMs + replies to check
-  const workTasks = queue.length + ((data.check_replies || []).length);
-  if ($('n-work')) $('n-work').textContent = workTasks;
-  if ($('n-tt')) $('n-tt').textContent = (tt.accounts || []).filter((a) => a.status !== 'RETIRED').length;
   if ($('n-earn')) $('n-earn').textContent = (data.va ? '→' : '–');
-  await Promise.all([loadAccounts(), loadMoney()]);
+
+  // ONE NUMBER FOR "HOW MANY CAN I STILL SEND TODAY", COMPUTED SERVER-SIDE.
+  //
+  // dh_va_queue's own remaining_today only ever compared the VA's personal cap against the ready
+  // queue -- it never looked at the sending accounts at all. dh_va_capacity is the fix: it takes
+  // the smallest of the VA cap, the combined room left across every ACTIVE account, and the ready
+  // queue, and names which one is binding. This is the single source $('remaining') and the Work
+  // header both read from now; neither computes its own version.
+  const { data: cap, error: capErr } = await sb.rpc('dh_va_capacity');
+  if (!seq.isCurrent('boot', token)) return; // a newer boot() already landed; drop this one
+  if (capErr || !cap?.ok) {
+    console.error(safeLogLine('capacity', normalizeRpc({ data: cap, error: capErr })));
+    capacity = null;
+    $('remaining').textContent = '—';
+  } else {
+    capacity = cap;
+    $('remaining').textContent = cap.sendable_now;
+  }
+
+  const [accountsRes, moneyRes] = await Promise.all([loadAccounts(), loadMoney()]);
+  if (!seq.isCurrent('boot', token)) return;
   render();
+  return { accountsOk: accountsRes.ok, moneyOk: moneyRes.ok };
 }
 
 /**
@@ -516,15 +655,44 @@ async function bootOrThrow() {
  * Loaded together because all three change on the same events -- a send books money and may demand
  * a photo; a reply books a bonus and appears in chats -- and three separate refreshes would let the
  * screen show three different moments.
+ *
+ * THE BUG THIS REPLACES. Errors from all three RPCs were ignored (`{ data: money }` with no error
+ * destructured), so a failed refresh silently left $('n-earn') showing whatever the last successful
+ * load put there -- or, on first load, printed "$0.00" for a VA who had genuinely earned money that
+ * request simply failed to fetch. Neither is the truth; both look like it.
  */
 async function loadMoney() {
-  const [{ data: money }, { data: proof }, { data: convos }] = await Promise.all([
+  const token = seq.begin('money');
+  const [moneyRes, proofRes, convosRes] = await Promise.all([
     sb.rpc('dh_va_earnings_summary'), sb.rpc('dh_va_pending_proof'), sb.rpc('dh_va_conversations')
   ]);
-  view.money = money || null;
-  view.pending_proof = proof || null;
-  view.chats = convos || [];
-  $('n-earn').textContent = money ? usd(money.today_total_cents || 0) : '–';
+  if (!seq.isCurrent('money', token)) return { ok: false, stale: true };
+
+  // WHICH NULLS ARE FAILURES. Only the earnings summary always returns an object, so only it may be
+  // judged by normalizeRpc's "no data means the call failed" rule. dh_va_pending_proof returns SQL
+  // NULL whenever nothing is outstanding -- the ordinary case for almost every VA, almost all the
+  // time -- and dh_va_conversations returns NULL rather than an empty array when there are no
+  // answered chats. Running either through normalizeRpc turned the quiet, correct answer into a
+  // load failure, which short-circuited the whole function: view.money was never assigned and the
+  // earnings figure never refreshed for any VA who simply had no proof request waiting. For those
+  // two, only a transport error is a failure; an absent row is an answer.
+  const optional = (res) => (res.error ? normalizeRpc(res) : { ok: true });
+  const results = [normalizeRpc(moneyRes), optional(proofRes), optional(convosRes)];
+  const failed = results.find((r) => !r.ok);
+  if (failed) {
+    console.error(safeLogLine('load_money', failed));
+    // A failed refresh keeps whatever figure was already on screen rather than blanking it or
+    // dropping it to zero -- both of which would be read as "you have earned nothing", which is
+    // untrue. It is simply marked as not just confirmed.
+    if (view.money) $('n-earn').title = 'Could not refresh just now — showing the last known total.';
+    return { ok: false };
+  }
+  view.money = moneyRes.data || null;
+  view.pending_proof = proofRes.data || null;
+  view.chats = convosRes.data || [];
+  $('n-earn').title = '';
+  $('n-earn').textContent = view.money ? usd(view.money.today_total_cents || 0) : '–';
+  return { ok: true };
 }
 
 /** Cents to the string a person reads. Never rounds up: nobody is pleased by a total that shrinks. */
@@ -544,12 +712,31 @@ let tt = { accounts: [], va_sent_today: 0, va_daily_cap: 0, va_remaining: 0 };
 let sendFrom = null;        // the account the next DM will go out from, or a reason there is none
 let ticker = 0;
 
+/**
+ * THE BUG THIS REPLACES. `const [{ data: mine }, { data: pick }] = ...` discarded both errors. A
+ * failed dh_tiktok_my_accounts left `tt` holding whatever it held before -- stale data presented as
+ * current, with nothing on screen to say it was not just refreshed.
+ */
 async function loadAccounts() {
-  const [{ data: mine }, { data: pick }] = await Promise.all([
+  const token = seq.begin('accounts');
+  const [mineRes, pickRes] = await Promise.all([
     sb.rpc('dh_tiktok_my_accounts'), sb.rpc('dh_tiktok_pick_account')
   ]);
-  if (mine) tt = mine;
-  sendFrom = pick || null;
+  if (!seq.isCurrent('accounts', token)) return { ok: false, stale: true };
+
+  const mine = normalizeRpc(mineRes);
+  if (!mine.ok) {
+    console.error(safeLogLine('load_accounts', mine));
+    $('n-tt').title = 'Could not refresh just now — showing the last known accounts.';
+    return { ok: false };
+  }
+  tt = mineRes.data;
+  // dh_tiktok_pick_account answers "which account would the next send use", not "did accounts
+  // load" -- its failure is informational (drawWork falls back to a generic message) and must not
+  // mask a successful tt refresh.
+  sendFrom = pickRes.error ? null : (pickRes.data || null);
+
+  $('n-tt').title = '';
   const live = (tt.accounts || []).filter((a) => a.status !== 'RETIRED');
   $('n-tt').textContent = live.length;
   // Only run a clock when something is actually counting down.
@@ -557,6 +744,7 @@ async function loadAccounts() {
   if (live.some((a) => a.cooldown_seconds_left > 0) || (sendFrom && !sendFrom.ok)) {
     ticker = setInterval(tickClocks, 1000);
   }
+  return { ok: true };
 }
 
 const mmss = (s) => {
@@ -663,8 +851,8 @@ function drawAccounts() {
       + '<div class="meta">' + list.length + (list.length === 1 ? ' account' : ' accounts') + '</div></div>'
       + '</div>'
     + '<div class="counts" style="margin:13px 0 0">'
-      + '<div><b>' + (tt.va_sent_today ?? 0) + '</b><span>Sent today</span></div>'
-      + '<div><b>' + (tt.va_remaining ?? 0) + '</b><span>You can still send</span></div>'
+      + '<div><b>' + (capacity ? capacity.va_sent_today : (tt.va_sent_today ?? '—')) + '</b><span>Sent today</span></div>'
+      + '<div><b>' + (capacity ? capacity.sendable_now : '—') + '</b><span>You can still send</span></div>'
     + '</div></div>'
     + '<button class="good full" id="addbtn" style="margin-bottom:13px">+ Add TikTok account</button>'
     + (list.length ? list.map(acctCard).join('')
@@ -720,37 +908,64 @@ $('a-save').onclick = async () => {
 };
 
 // ---- reporting a problem --------------------------------------------------------------------
+//
+// THE BUG THIS REPLACES. Tapping a category button sent the report immediately -- there was no
+// point between picking a reason and it being submitted, no way to add what was seen on screen
+// before it went, and no warning that four of the seven reasons stop the account on the spot. A
+// mis-tap paused a real sending account with no chance to reconsider.
+//
+// Selecting a category now only selects it. dh_tiktok_report_problem's own rule (SPAM_WARNING,
+// DM_RESTRICTION, TEMPORARY_RESTRICTION, ACCOUNT_WARNING pause; the other three do not) is mirrored
+// here so the warning is accurate rather than a blanket "this might pause it" -- and submitting one
+// of the four still asks the VA to confirm before it happens.
+
+const PAUSES_ACCOUNT = new Set(['SPAM_WARNING', 'DM_RESTRICTION', 'TEMPORARY_RESTRICTION', 'ACCOUNT_WARNING']);
 
 let problemFor = null;
+let problemKind = null;
 function openProblem(accountId, username) {
   problemFor = accountId;
+  problemKind = null;
   $('p-acct').textContent = '@' + username;
-  $('p-msg').textContent = '';
+  $('p-msg').textContent = ''; $('p-msg').className = 'fieldmsg';
+  $('p-pausewarn').textContent = '';
   $('p-note').value = '';
+  $('p-submit').disabled = true;
   $('p-kinds').innerHTML = Object.entries(PROBLEM_WORDS)
-    .map(([k, label]) => '<button class="full" data-kind="' + k + '" style="margin-bottom:8px">'
-      + esc(label) + '</button>').join('');
-  for (const b of $('p-kinds').querySelectorAll('[data-kind]')) b.onclick = () => sendProblem(b.dataset.kind);
+    .map(([k, label]) => '<button class="full" data-kind="' + k + '" aria-pressed="false" '
+      + 'style="margin-bottom:8px">' + esc(label) + '</button>').join('');
+  for (const b of $('p-kinds').querySelectorAll('[data-kind]')) {
+    b.onclick = () => {
+      problemKind = b.dataset.kind;
+      for (const o of $('p-kinds').querySelectorAll('[data-kind]')) {
+        o.setAttribute('aria-pressed', String(o === b));
+      }
+      $('p-pausewarn').textContent = PAUSES_ACCOUNT.has(problemKind)
+        ? 'This stops the account from sending right away, until Rico looks at it.' : '';
+      $('p-submit').disabled = false;
+    };
+  }
   $('probdlg').showModal();
 }
 $('p-cancel').onclick = () => $('probdlg').close();
 
-async function sendProblem(kind) {
-  for (const b of $('p-kinds').querySelectorAll('button')) b.disabled = true;
-  $('p-msg').textContent = 'sending…';
-  const { data, error } = await sb.rpc('dh_tiktok_report_problem',
-    { p_account_id: problemFor, p_kind: kind, p_note: $('p-note').value.trim() || null });
-  for (const b of $('p-kinds').querySelectorAll('button')) b.disabled = false;
-  if (error || !data || !data.ok) {
-    $('p-msg').textContent = (error && error.message) || (data && data.error) || 'That did not work.';
-    return;
-  }
-  $('probdlg').close();
-  if (data.paused) {
-    alert('Thanks — we have stopped that account straight away. Rico will look at it.');
-  }
-  await boot();
-}
+$('p-submit').onclick = async () => {
+  if (!problemKind) return;
+  if (PAUSES_ACCOUNT.has(problemKind)
+      && !confirm('This stops the account from sending right away. Send the report?')) return;
+
+  const msg = $('p-msg');
+  const res = await withButton($('p-submit'), 'report_problem',
+    { account: problemFor, kind: problemKind },
+    () => sb.rpc('dh_tiktok_report_problem',
+      { p_account_id: problemFor, p_kind: problemKind, p_note: $('p-note').value.trim() || null }),
+    async (r) => {
+      $('probdlg').close();
+      if (r.data?.paused) alert('Thanks — we have stopped that account straight away. Rico will look at it.');
+      await boot();
+    });
+  if (!res.ok) { msg.textContent = res.message; msg.className = 'fieldmsg bad'; }
+};
 
 // ---------------------------------------------------------------------------------------------
 // TIME, THE WAY SOMEONE WORKING A QUEUE READS IT. "3d ago" answers "is this worth checking yet";
@@ -805,24 +1020,19 @@ function say(text) {
 }
 
 /**
- * Copy without awaiting, so the tap that triggered it can still navigate.
+ * Copy, and only say so once the write is confirmed.
  *
- * navigator.clipboard.writeText returns a promise, but the write is authorised at the moment it is
- * CALLED, inside the gesture -- so it is started and deliberately not awaited. Awaiting it before
- * the anchor navigates is what makes Safari treat the navigation as a popup and block it.
+ * THE BUG THIS REPLACES. copyNow used to start navigator.clipboard.writeText, not await it, and
+ * return true immediately -- so "Copied — paste it in TikTok." printed whether or not the browser
+ * actually granted the write. A denied permission left the VA pasting an empty clipboard into a
+ * real conversation with a real creator.
  *
- * The execCommand path is the fallback for anything older or any context where the async API is
- * missing. On iOS it needs a real selection range, not just .select(), which is why the range is
- * built by hand.
+ * This can still be called from inside a click handler without losing the gesture: it is the
+ * subsequent window.open() that needs to be synchronous and inside the same handler, not this call
+ * -- see the two-phase send below, which opens TikTok before awaiting the copy result.
  */
-function copyNow(text) {
-  try {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).catch(() => legacyCopy(text));
-      return true;
-    }
-  } catch { /* fall through to the old way */ }
-  return legacyCopy(text);
+async function copyNow(text) {
+  return copyText(text, { navigator, legacyCopy });
 }
 
 function legacyCopy(text) {
@@ -870,49 +1080,47 @@ function render() {
 // WORK TAB: ACTION-FIRST CONSOLIDATION.
 //
 // The Work tab shows the most important action first: pending proof, reply to check, next DM,
-// cooldown countdown, or done for today. After completing an action, automatically advance to
-// FINAL UX: One creator, one action. No visible DM text. Large orange button dominates.
-// Proof → replies → next DM → cooldown → done.
-// After SENT or cooldown expires: automatically advance to next creator.
-// When account reaches DAILY_LIMIT: automatically switch to next approved account.
+// cooldown countdown, or done for today. One creator, one action, no visible DM text.
+//
+// THE DM SEND IS TWO PHASES, DELIBERATELY. Phase 1 (COPY DM & OPEN TIKTOK) commits nothing: it
+// copies the message and opens the profile, synchronously, inside the tap -- and calls no RPC. Only
+// phase 2, an explicit "I SENT THE DM" the VA presses after actually pasting and sending, calls
+// dh_tiktok_record_send. THE BUG THIS REPLACES: the old flow called dh_tiktok_record_send from a
+// setTimeout after window.open, unconditionally -- a blocked popup, a VA who never pasted, or a
+// message that failed to send still minted a real send and a real $0.02 earning. Nothing here
+// advances the queue or touches money until the VA has said, after the fact, that it went out.
 // =====================================================================================================
 function drawWork() {
-  const replies = (view.check_replies || []).slice().sort(byDue);
+  const replies = (view.check_replies || []).filter((r) => !justUploadedReply.has(r.task_id))
+                                             .slice().sort(byDue);
   const hasProof = view.pending_proof && view.pending_proof.proof_check_id;
   const hasReplies = replies.length > 0;
   const hasNextDM = queue.length > 0 && sendFrom && sendFrom.ok;
   const isCooldown = sendFrom && !sendFrom.ok && sendFrom.reason === 'COOLDOWN';
   const isDone = sendFrom && !sendFrom.ok && sendFrom.reason === 'DAILY_LIMIT_REACHED';
 
-  // Update tab badge: show count of due replies
-  if ($('n-work')) {
-    const replyCount = replies.length;
-    $('n-work').textContent = replyCount > 0 ? replyCount : '';
-    const tabEl = $('tab-work');
-    if (tabEl) {
-      if (replyCount > 0) {
-        let badge = tabEl.querySelector('.reply-badge');
-        if (!badge) {
-          badge = document.createElement('span');
-          badge.className = 'reply-badge';
-          badge.style.cssText = 'position:absolute;top:2px;right:2px;background:#ff6b6b;color:#fff;'
-            + 'border-radius:999px;width:20px;height:20px;display:flex;align-items:center;'
-            + 'justify-content:center;font-size:11px;font-weight:650';
-          tabEl.style.position = 'relative';
-          tabEl.appendChild(badge);
-        }
-        badge.textContent = replyCount;
-      } else {
-        const badge = tabEl.querySelector('.reply-badge');
-        if (badge) badge.remove();
-      }
-    }
+  // ONE NUMBER ON THE TAB, NOT TWO. The old code wrote the tab chip's own text (new DMs + replies)
+  // in boot(), then drawWork() overwrote the same element with just the reply count AND stacked a
+  // second, separately-numbered red circle on top of it -- two badges, sometimes disagreeing,
+  // depending on which of the two writers ran last. There is exactly one element and one count now:
+  // total actionable items (new DMs ready to send + replies due), red only when a reply is overdue.
+  const newDmCount = queue.length;
+  const replyCount = replies.length;
+  const totalWork = newDmCount + replyCount;
+  if ($('n-work')) $('n-work').textContent = totalWork > 0 ? String(totalWork) : '0';
+  const tabEl = $('tab-work');
+  if (tabEl) {
+    const existing = tabEl.querySelector('.reply-badge');
+    if (existing) existing.remove(); // the duplicate this replaces
+    tabEl.classList.toggle('urgent', replyCount > 0);
   }
 
-  // Build work header: stats + current account
+  // WORK HEADER. sendableNow is the one figure dh_va_capacity computed server-side against the VA
+  // cap, the combined room across every ACTIVE account and the ready queue -- never a client-side
+  // guess, and never the account-blind number dh_va_queue used to return.
   const acctName = sendFrom && sendFrom.username ? '@' + esc(sendFrom.username) : '—';
-  const sentToday = tt.va_sent_today ?? 0;
-  const leftToday = tt.va_remaining ?? 0;
+  const sentToday = capacity ? capacity.va_sent_today : (tt.va_sent_today ?? '—');
+  const leftToday = capacity ? capacity.sendable_now : '—';
   const earnedToday = view.money?.today_total_cents ?? 0;
   let html = '<div class="card top" style="margin-bottom:14px">'
     + '<div class="counts" style="margin:0">'
@@ -921,6 +1129,10 @@ function drawWork() {
     + '<div><b>' + usd(earnedToday) + '</b><span>Earned today</span></div>'
     + '</div>'
     + '<p class="muted" style="margin:10px 0 0">Sending from ' + acctName + '</p>'
+    + (capacity && capacity.sendable_now === 0 && capacity.limiting_factor === 'ACCOUNT_CAPACITY'
+        ? '<p class="muted" style="margin:4px 0 0">Your TikTok accounts have hit their limit for today.</p>'
+        : capacity && capacity.limiting_factor === 'NO_APPROVED_ACCOUNT'
+        ? '<p class="muted" style="margin:4px 0 0">No approved TikTok account can send yet.</p>' : '')
     + '</div>';
 
   // PRIMARY ACTION: show one task/creator at a time
@@ -938,10 +1150,18 @@ function drawWork() {
   } else if (hasReplies) {
     const r = replies[0];
     const url = r.profile_url || ('https://www.tiktok.com/@' + (r.handle || ''));
-    const sentText = formatSentTime(r.follow_up_at || r.last_checked_at || r.first_sent_at);
+    // THE BUG THIS REPLACES: this line used to be
+    //   formatSentTime(r.follow_up_at || r.last_checked_at || r.first_sent_at)
+    // under the label "Sent...". follow_up_at is usually in the FUTURE and formatSentTime took
+    // Math.abs of the gap, so a follow-up due in two days read as "Sent 2 days ago" -- the exact
+    // opposite of true, on the one card a VA uses to decide whether to chase someone. Each fact now
+    // has its own field and its own label, and a future time always says "in", never "ago".
+    const timeLine = r.follow_up_at ? followUpLabel(r.follow_up_at)
+                    : r.last_checked_at ? checkedLabel(r.last_checked_at)
+                    : sentLabel(r.first_sent_at);
     html += '<div class="card top" style="margin-bottom:14px">'
       + '<div class="who" style="font-size:20px;margin-bottom:4px">@' + esc(r.handle || '') + '</div>'
-      + '<div class="meta" style="margin-bottom:12px">' + esc(sentText) + '</div>'
+      + '<div class="meta" style="margin-bottom:12px">' + esc(timeLine) + '</div>'
       + '<a href="' + esc(url) + '" target="_blank" rel="noopener" class="good full" style="background:#e67e22;'
       + 'border-color:#d35400;color:#fff;padding:18px;font-size:18px;min-height:64px;margin-bottom:10px;'
       + 'display:block;text-align:center;text-decoration:none">OPEN TIKTOK</a>'
@@ -949,8 +1169,26 @@ function drawWork() {
       + '<div class="acts" style="margin-top:12px">'
       + '<button class="full" id="work-reply-yes" style="background:#1e5e46;border-color:#2b7d5f;color:#b6f0d5">Yes, they replied</button>'
       + '<button class="full" id="work-reply-no" style="background:#3a1d1d;border-color:#5e2020;color:#ffc9c9">No reply</button>'
-      + '</div></div>';
+      + '</div><p id="reply-msg" class="fieldmsg"></p></div>';
     workSubstate = 'reply';
+  } else if (copiedFor && queue[cursor] && queue[cursor].task_id === copiedFor.task_id) {
+    // PHASE 2. The DM has been copied and TikTok opened; nothing has been recorded yet.
+    const c = copiedFor;
+    html += '<div class="card top" style="margin-bottom:14px">'
+      + '<div class="who" style="font-size:20px">@' + esc(c.handle) + '</div>'
+      + '<p class="muted" id="copystate" style="margin:8px 0 14px">' + esc(c.copyMessage || '') + '</p>'
+      + (c.copyFailed
+          ? '<textarea readonly id="manual-copy-text" style="width:100%;min-height:88px;margin-bottom:12px" '
+            + 'onclick="this.select()">' + esc(c.dm_message || '') + '</textarea>'
+            + '<p class="muted" style="margin:0 0 10px">Tap the message above to select it, then copy by hand.</p>'
+          : '')
+      + '<div class="acts">'
+      + '<button class="full" id="work-sent" style="background:#1e5e46;border-color:#2b7d5f;color:#b6f0d5;'
+      + 'min-height:56px;font-size:16px">I SENT THE DM</button>'
+      + '<button class="full" id="work-couldnt" style="background:#3a1d1d;border-color:#5e2020;color:#ffc9c9;'
+      + 'min-height:56px;font-size:16px">COULDN\'T SEND</button>'
+      + '</div><p id="dm-msg" class="fieldmsg"></p></div>';
+    workSubstate = 'copied';
   } else if (hasNextDM) {
     const c = queue[cursor];
     html += '<div class="card top" style="margin-bottom:14px">'
@@ -958,9 +1196,6 @@ function drawWork() {
       + '<button class="good full" id="work-copy-dm" style="background:#e67e22;border-color:#d35400;'
       + 'color:#fff;padding:18px;font-size:18px;min-height:64px;margin-top:14px;'
       + 'margin-bottom:8px">COPY DM & OPEN TIKTOK</button>'
-      + '<button class="full" id="work-couldnt" style="background:#3a1d1d;border-color:#5e2020;'
-      + 'color:#ffc9c9;padding:10px;font-size:14px">Couldn\'t send</button>'
-      + '<div id="copystate" class="muted" style="text-align:center;margin-top:10px;min-height:16px">&nbsp;</div>'
       + '</div>';
     workSubstate = 'dm';
   } else if (isCooldown) {
@@ -988,101 +1223,122 @@ function drawWork() {
   }
 
   $('work').innerHTML = html;
+  wireWorkButtons(replies);
+}
 
-  // Wire up primary action buttons
+/** Every button drawWork can render, wired in one place so none of them is forgotten. */
+function wireWorkButtons(replies) {
   if (workSubstate === 'proof') {
     const b = $('work-proof');
     if (b) b.onclick = () => openProof(view.pending_proof);
-  } else if (workSubstate === 'reply') {
+    return;
+  }
+
+  if (workSubstate === 'reply') {
     const r = replies[0];
     const yesBtn = $('work-reply-yes');
     const noBtn = $('work-reply-no');
+    const msg = $('reply-msg');
 
-    if (yesBtn) {
-      yesBtn.onclick = () => {
-        workReplyState = { creator: r, replied: true };
-        openReplyCapture(r);
-      };
-    }
+    if (yesBtn) yesBtn.onclick = () => beginReplyCapture(r);
     if (noBtn) {
       noBtn.onclick = async () => {
-        const { data, error } = await sb.rpc('dh_reply_classify',
-          { p_reply_event_id: r.reply_event_id, p_classification: 'NO_REPLY' });
-        if (error || !data?.ok) { return; }
-        await loadMoney();
-        render();
+        const res = await withButton(noBtn, 'no_reply', { task: r.task_id },
+          () => sb.rpc('dh_va_update_task', { p_task_id: r.task_id, p_status: 'NO_REPLY' }),
+          async () => { await Promise.all([loadAccounts(), loadMoney()]); await boot(); });
+        if (!res.ok && msg) { msg.textContent = res.message; msg.className = 'fieldmsg bad'; }
       };
     }
-  } else if (workSubstate === 'dm') {
-    const t = queue[cursor];
-    const copyBtn = $('work-copy-dm');
-    const couldntBtn = $('work-couldnt');
+    return;
+  }
 
-    if (copyBtn) {
-      copyBtn.onclick = () => {
-        if (t?.dm_message) {
-          copyNow(t.dm_message);
-          say('Copied — paste it in TikTok.');
-          redirectToTikTok(t);
+  if (workSubstate === 'copied') {
+    const c = copiedFor;
+    const sentBtn = $('work-sent');
+    const couldntBtn = $('work-couldnt');
+    const msg = $('dm-msg');
+
+    if (sentBtn) {
+      sentBtn.onclick = async () => {
+        if (couldntBtn) couldntBtn.disabled = true;
+        const res = await withButton(sentBtn, 'record_send', { task: c.task_id },
+          () => sb.rpc('dh_tiktok_record_send', { p_task_id: c.task_id, p_notes: null }),
+          async (r) => {
+            copiedFor = null;
+            const workEl = $('work');
+            if (workEl) {
+              workEl.innerHTML = '<div class="card top" style="margin-bottom:14px">'
+                + '<button class="good full" style="background:#1e5e46;border-color:#2b7d5f;'
+                + 'color:#b6f0d5;padding:18px;font-size:18px;min-height:64px;'
+                + 'cursor:default;opacity:0.8">DM SENT</button></div>';
+            }
+            cursor = (cursor + 1) % Math.max(1, queue.length);
+            const cooldown = r.data?.cooldown_seconds || 30;
+            await new Promise((res2) => setTimeout(res2, Math.max(300, Math.min(cooldown, 2) * 1000)));
+            await Promise.all([loadAccounts(), loadMoney()]);
+            await boot();
+          });
+        // The sibling follows the same rule as the button itself: only a failure re-opens it.
+        // Re-enabling it on success would leave COULDN'T SEND live over a task already recorded.
+        if (!res.ok) {
+          if (couldntBtn) couldntBtn.disabled = false;
+          if (msg) { msg.textContent = res.message; msg.className = 'fieldmsg bad'; }
         }
       };
     }
     if (couldntBtn) {
       couldntBtn.onclick = async () => {
-        couldntBtn.disabled = true;
-        const { data, error } = await sb.rpc('dh_tiktok_record_send',
-          { p_task_id: t.task_id, p_notes: 'UNREACHABLE' });
-        couldntBtn.disabled = false;
-        if (error || !data?.ok) return;
-        cursor = (cursor + 1) % Math.max(1, queue.length);
-        await loadAccounts();
-        await boot();
+        if (sentBtn) sentBtn.disabled = true;
+        const res = await withButton(couldntBtn, 'couldnt_send', { task: c.task_id },
+          () => sb.rpc('dh_va_update_task', { p_task_id: c.task_id, p_status: 'UNREACHABLE' }),
+          async () => {
+            copiedFor = null;
+            cursor = (cursor + 1) % Math.max(1, queue.length);
+            await loadAccounts();
+            await boot();
+          });
+        if (!res.ok) {
+          if (sentBtn) sentBtn.disabled = false;
+          if (msg) { msg.textContent = res.message; msg.className = 'fieldmsg bad'; }
+        }
       };
     }
-  }
-}
-
-/** Redirect to TikTok profile and record send after brief delay. */
-function redirectToTikTok(creator) {
-  const url = creator.profile_url || ('https://www.tiktok.com/@' + creator.handle);
-  setTimeout(() => {
-    recordDMSent(creator);
-    window.open(url, '_blank');
-  }, 100);
-}
-
-/** Record DM as sent and advance to next. */
-let dmSentTimeout = null;
-async function recordDMSent(creator) {
-  clearTimeout(dmSentTimeout);
-  dmSentTimeout = null;
-
-  const { data, error } = await sb.rpc('dh_tiktok_record_send',
-    { p_task_id: creator.task_id, p_notes: null });
-
-  if (error || !data?.ok) return;
-
-  // Mark DM as sent
-  workSubstate = 'sent';
-  const workEl = $('work');
-  if (workEl) {
-    workEl.innerHTML = '<div class="card top" style="margin-bottom:14px">'
-      + '<button class="good full" style="background:#1e5e46;border-color:#2b7d5f;'
-      + 'color:#b6f0d5;padding:18px;font-size:18px;min-height:64px;'
-      + 'cursor:default;opacity:0.8">DM SENT</button></div>';
+    return;
   }
 
-  // Start cooldown and auto-advance
-  const cooldown = data.cooldown_seconds || 30;
-  dmSentTimeout = setTimeout(async () => {
-    // Check if we need to switch accounts
-    if (data.daily_limit && data.sent_today >= data.daily_limit) {
-      await loadAccounts();
-    }
-    cursor = (cursor + 1) % Math.max(1, queue.length);
-    await loadAccounts();
-    await boot();
-  }, Math.max(1000, cooldown * 1000));
+  if (workSubstate === 'dm') {
+    const t = queue[cursor];
+    const copyBtn = $('work-copy-dm');
+    if (!copyBtn) return;
+
+    // PHASE 1. Everything here is reversible and nothing calls the server.
+    copyBtn.onclick = async () => {
+      if (!t?.dm_message) return;
+      copyBtn.disabled = true;
+
+      // window.open FIRST and SYNCHRONOUSLY, still inside the click gesture -- this is what a
+      // browser will allow without treating it as a popup. Anything awaited before this line is
+      // exactly what breaks it.
+      const url = t.profile_url || ('https://www.tiktok.com/@' + t.handle);
+      const win = window.open(url, '_blank');
+      const openedOk = Boolean(win);
+
+      const cr = await copyNow(t.dm_message);
+      copyBtn.disabled = false;
+
+      copiedFor = {
+        task_id: t.task_id, handle: t.handle, dm_message: t.dm_message,
+        profile_url: t.profile_url,
+        copyFailed: !cr.ok,
+        copyMessage: !openedOk
+            ? 'Your browser blocked the TikTok tab. Open it yourself, then paste the message below.'
+          : cr.ok ? 'Copied — paste it in TikTok, then tell us what happened.'
+          : 'Could not copy automatically — copy the message below by hand, then paste it in TikTok.'
+      };
+      render();
+    };
+    return;
+  }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1203,9 +1459,14 @@ function wireChats(rows) {
     }
   }
   for (const b of document.querySelectorAll('[data-copy]')) {
-    b.onclick = () => {
+    b.onclick = async () => {
       const row = rows.find((r) => r.reply_event_id === b.dataset.copy);
-      if (row?.suggestion) { copyNow(row.suggestion); say('Reply copied — paste it in TikTok.'); }
+      if (!row?.suggestion) return;
+      b.disabled = true;
+      const r = await copyNow(row.suggestion);
+      b.disabled = false;
+      say(r.ok ? 'Reply copied — paste it in TikTok.'
+              : 'Could not copy — select the text and copy it by hand.');
     };
   }
   for (const b of document.querySelectorAll('[data-invite]')) {
@@ -1222,8 +1483,8 @@ function wireChats(rows) {
               : 'Not yet — wait until they say they want the link.');
         return;
       }
-      copyNow(data.url);
-      say('Signup link copied — paste it in TikTok.');
+      const cr = await copyNow(data.url);
+      say(cr.ok ? 'Signup link copied — paste it in TikTok.' : 'Could not copy the link — try again.');
       await loadMoney(); render();
     };
   }
@@ -1397,16 +1658,42 @@ let proofCtx = null;    // { proof_check_id, file, bucket }
 
 function fileTooBig(f) { return f.size > 10 * 1024 * 1024; }
 
+/**
+ * THE BUG THIS REPLACES. This was the one RPC path that did not go through normalizeRpc, and it
+ * showed. A refusal was surfaced as `data.reason` -- the raw database enum, so the VA read
+ * "NOT_YOUR_PROOF" or "ALREADY_DECIDED" on the screen where they send the photo that releases their
+ * bonus -- and a storage failure was surfaced as the provider's own error string. Neither says
+ * whether to try again.
+ */
 async function uploadShot(proofId, file, bucket) {
   const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
   const path = proofId + '/' + Date.now() + '.' + ext;
-  const { error } = await sb.storage.from(bucket || 'proofs')
-    .upload(path, file, { contentType: file.type || 'image/jpeg', upsert: false });
-  if (error) return { ok: false, message: error.message };
-  const { data, error: e2 } = await sb.rpc('dh_proof_upload',
-    { p_proof_check_id: proofId, p_image_path: path });
-  if (e2) return { ok: false, message: e2.message };
-  if (!data?.ok) return { ok: false, message: data?.reason || 'could not be saved' };
+
+  let up;
+  try {
+    up = await sb.storage.from(bucket || 'proofs')
+      .upload(path, file, { contentType: file.type || 'image/jpeg', upsert: false });
+  } catch (e) {
+    up = { error: e };
+  }
+  if (up.error) {
+    console.error(safeLogLine('proof_storage_upload', { ok: false, kind: 'TRANSPORT', reason: null },
+                              { proof: proofId }));
+    return { ok: false, message: 'The photo did not upload. Check your connection and try again.' };
+  }
+
+  let res;
+  try {
+    const { data, error } = await sb.rpc('dh_proof_upload',
+      { p_proof_check_id: proofId, p_image_path: path });
+    res = normalizeRpc({ data, error });
+  } catch (e) {
+    res = normalizeRpc({ error: e });
+  }
+  if (!res.ok) {
+    console.error(safeLogLine('proof_upload', res, { proof: proofId }));
+    return { ok: false, message: res.message };
+  }
   return { ok: true };
 }
 
@@ -1433,35 +1720,80 @@ $('pr-file').onchange = () => {
   $('pr-send').disabled = false;
 };
 
+/**
+ * THE BUG THIS REPLACES. A failed upload showed a generic "try once more" regardless of why it
+ * failed (too large, network gone, the proof already decided), and success never called
+ * proofCtx.onSuccess -- the callback openReplyCapture set was written and never read, so nothing
+ * the simplified reply flow needed after a successful upload ever ran.
+ */
 $('pr-send').onclick = async () => {
   if (!proofCtx?.file) return;
-  $('pr-send').disabled = true; $('pr-msg').textContent = 'Sending…';
+  $('pr-send').disabled = true; $('pr-msg').textContent = 'Sending…'; $('pr-msg').className = 'fieldmsg';
   const r = await uploadShot(proofCtx.proof_check_id, proofCtx.file, proofCtx.bucket);
   if (!r.ok) {
-    $('pr-msg').textContent = 'That did not go through. Try once more.';
+    $('pr-msg').textContent = r.message || 'That did not go through. Try once more.';
+    $('pr-msg').className = 'fieldmsg bad';
     $('pr-send').disabled = false;
-    return;
+    return; // the dialog stays open with the same file selected -- retrying reuses the same
+            // proof_check_id, and dh_proof_upload is safe to call again on an undecided proof
   }
+  const onSuccess = proofCtx.onSuccess;
   $('proofdlg').close();
   say('Thanks — sent.');
-  await boot();
+  if (onSuccess) await onSuccess(); else await boot();
 };
 
 $('pr-cancel').onclick = () => $('proofdlg').close();
 
-// Reply capture for the simplified flow
-function openReplyCapture(creator) {
-  proofCtx = { proof_check_id: creator.reply_event_id, bucket: 'proofs', file: null };
+// ---------------------------------------------------------------------------------------------
+// "YES, THEY REPLIED" -- THE SIMPLIFIED FLOW'S ENTRY INTO THE REAL PROOF SYSTEM.
+//
+// THE BUG THIS REPLACES. The old openReplyCapture set proofCtx.proof_check_id to
+// creator.reply_event_id -- the id of a different row in a different table, one that check_replies
+// does not even carry (it has no reply_event_id column at all). Every upload through this path
+// silently attached itself to nothing real: no proof_checks row existed at that id, so
+// dh_proof_upload always returned NO_SUCH_PROOF, and being ignored (the old handler's generic
+// "try once more") is the only reason nobody had already noticed.
+//
+// dh_reply_report(task_id) is the function that actually creates the reply event AND its proof_check
+// row together, and returns both ids. Calling it a second time for the same task creates a SECOND
+// reply event (reply_seq increments) -- a real double-reply, not a re-read -- so replyReports caches
+// the result per task_id the first time it succeeds, and every retry (a failed upload, closing and
+// reopening the dialog) reuses that same proof_check_id rather than asking the database for a new one.
+// ---------------------------------------------------------------------------------------------
+const replyReports = new Map(); // task_id -> { reply_event_id, proof_check_id }
+
+async function beginReplyCapture(r) {
+  const btn = $('work-reply-yes');
+  let report = replyReports.get(r.task_id);
+  if (!report) {
+    const res = await withButton(btn, 'reply_report', { task: r.task_id },
+      () => sb.rpc('dh_reply_report', { p_task_id: r.task_id }));
+    if (!res.ok) {
+      const msg = $('reply-msg');
+      if (msg) { msg.textContent = res.message; msg.className = 'fieldmsg bad'; }
+      return;
+    }
+    report = { reply_event_id: res.data.reply_event_id, proof_check_id: res.data.proof_check_id };
+    replyReports.set(r.task_id, report);
+  }
+
+  proofCtx = { proof_check_id: report.proof_check_id, bucket: 'proofs', file: null };
   $('pr-title').textContent = 'Screenshot of their reply';
   $('pr-why').textContent = 'Upload a photo of their reply so we can confirm and release your bonus.';
-  $('pr-thumb').hidden = true; $('pr-msg').textContent = ''; $('pr-send').disabled = true;
+  $('pr-thumb').hidden = true; $('pr-msg').textContent = ''; $('pr-msg').className = 'fieldmsg';
+  $('pr-send').disabled = true;
   $('pr-file').value = '';
 
-  // Store callback to handle classification after upload
   proofCtx.onSuccess = async () => {
-    // Load reply classification and show simplified flow
-    await loadMoney();
-    render();
+    // The task stays in the backend's check_replies list until the model (or an admin) actually
+    // classifies the reply -- reply_status is still NULL the instant the upload lands. Hiding it
+    // here is what keeps the VA from being asked "did they reply?" again about a photo they just
+    // handed over; a reload is the honest retry path if classification never completes.
+    justUploadedReply.add(r.task_id);
+    replyReports.delete(r.task_id);
+    await Promise.all([loadAccounts(), loadMoney()]);
+    await boot();
   };
   $('proofdlg').showModal();
 }
@@ -1551,8 +1883,11 @@ function wireRows(rows) {
     const t = byId.get(el.dataset.task);
     if (!t) continue;
     const copyBtn = el.querySelector('button[data-copy]');
-    copyBtn.onclick = () => {
-      copyBtn.textContent = copyNow(t.dm_message) ? 'Copied' : 'Select the text above';
+    copyBtn.onclick = async () => {
+      copyBtn.disabled = true;
+      const r = await copyNow(t.dm_message);
+      copyBtn.disabled = false;
+      copyBtn.textContent = r.ok ? 'Copied' : 'Select the text above';
     };
     const rep = el.querySelector('button[data-replied]');
     if (rep) rep.onclick = () => openReply(t.task_id, '@' + (t.handle || ''));
@@ -1613,14 +1948,14 @@ function buildCardHtml(t) {
 function wireCardButtons(t, containerId) {
   const container = $(containerId);
   if (!container) return;
-  if ($('copyopen')) $('copyopen').addEventListener('click', () => {
-    const ok = copyNow(t.dm_message);
-    say(ok ? 'Copied — paste it in the DM' : 'Copy failed, select the message above');
+  if ($('copyopen')) $('copyopen').addEventListener('click', async () => {
+    const r = await copyNow(t.dm_message);
+    say(r.ok ? 'Copied — paste it in the DM' : 'Copy failed, select the message above');
   });
-  if ($('copy')) $('copy').onclick = () => {
-    const ok = copyNow(t.dm_message);
-    $('copy').textContent = ok ? 'Copied' : 'Select the text above to copy';
-    say(ok ? 'Copied' : '');
+  if ($('copy')) $('copy').onclick = async () => {
+    const r = await copyNow(t.dm_message);
+    $('copy').textContent = r.ok ? 'Copied' : 'Select the text above to copy';
+    say(r.ok ? 'Copied' : '');
   };
   for (const b of container.querySelectorAll('button[data-s]')) {
     b.onclick = async () => {
@@ -1762,20 +2097,30 @@ function refusal(d) {
   }
 }
 
+/**
+ * THE BUG THIS REPLACES. tab was reassigned and then render() was only called after an await --
+ * so tapping Accounts left the Work screen fully interactive, buttons and all, for however long the
+ * network took, with nothing on screen acknowledging the tap had registered.
+ *
+ * render() now runs synchronously on every click, before any request: aria-selected, the
+ * hidden/shown panels and whatever data is already cached all update in the same frame as the tap.
+ * tabLoading marks which tab has a refresh in flight so its panel can say so, and the request that
+ * lands is gated by the same key the tab was clicked with -- a second, faster tap always wins.
+ */
+let tabLoading = null;
 for (const b of document.querySelectorAll('.tab')) {
   b.onclick = async () => {
     tab = b.dataset.tab;
-    // Leaving Conversations drops the search, so coming back shows the real list rather than a
-    // stale result set from a query the VA has forgotten they typed.
     if (tab !== 'conv') { search.q = ''; search.results = null; search.focused = false; }
-    // A cooldown can expire, or an admin can approve or stop an account, while the VA is reading
-    // something else. Both screens that depend on that are re-read on arrival rather than showing
-    // whatever was true when the page last loaded.
+    const token = seq.begin('tab');
+    tabLoading = tab;
+    render(); // the switch itself, instantly -- nothing below this line may block it
+
     if (tab === 'new' || tab === 'tt') await loadAccounts();
-    // Money and conversations move on the same events as everything else -- a reply approved while
-    // the VA was on another tab changes both -- so the two screens that show them re-read on
-    // arrival rather than trusting whatever was true at page load.
     if (tab === 'earn' || tab === 'conv') await loadMoney();
+
+    if (!seq.isCurrent('tab', token)) return; // a faster later tap already redrew the screen
+    tabLoading = null;
     render();
   };
 }
