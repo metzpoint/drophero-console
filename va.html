@@ -355,7 +355,9 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 import {
   computeCapacity, sentLabel, checkedLabel, followUpLabel,
-  normalizeRpc, safeLogLine, copyText, createSequencer
+  normalizeRpc, safeLogLine, copyText, createSequencer,
+  savePending, loadPending, clearPending, workState, senderState,
+  AWAITING_SEND, AWAITING_REPLY
 } from './va-portal-logic.mjs';
 
 const sb = createClient('https://aexomkitwnxvpqlmtrik.supabase.co', 'sb_publishable_Y88uWkdq3igd5dMkT1c8JA_qMB_ZB7d',
@@ -373,9 +375,26 @@ let workSubstate = null; // which action is being shown: 'proof' | 'reply' | 'dm
 let capacity = null;  // last dh_va_capacity() answer -- the one number the Work header trusts
 
 // THE TWO-PHASE SEND. Phase 1 (copy + open) commits nothing: no RPC, no queue advance, no earning.
-// Only an explicit "I SENT THE DM" in phase 2 calls dh_tiktok_record_send. copiedFor holds the task
-// currently in phase 2, or null when no DM has been copied yet.
-let copiedFor = null;
+// Only an explicit "I SENT THE DM" in phase 2 calls dh_tiktok_record_send.
+//
+// THE BUG THIS REPLACES. Phase 2 lived in a plain JS variable. On iOS, leaving for TikTok and
+// coming back is frequently not a "return" at all: Safari discards and reloads the page, or the
+// home-screen PWA restarts. The variable came back undefined, the portal drew the ordinary phase-1
+// card, and the DM the VA had just pasted and sent had no way to be confirmed -- their only visible
+// option was to send it again. The pending action is written to sessionStorage BEFORE the tab
+// leaves and read back on every boot, so it survives a reload, a tab switch and an app restart.
+let pending = null;   // { task_id, handle, profile_url, dm_message, state, copy_ok } | null
+
+/** Persist and mirror in one place, so the variable and the storage can never disagree. */
+function setPending(entry) {
+  pending = entry;
+  if (entry) savePending(entry); else clearPending();
+}
+
+// Whatever the Work state machine last decided the VA is acting on. The handlers read this rather
+// than indexing into the queue, because after a reload the pending task may not be in the queue at
+// all -- and if it is, it is rarely at the same position.
+let currentWorkTask = null;
 
 // A screenshot just uploaded through the simplified reply flow is excluded from the reply-check
 // list on this screen from that moment on. The backend still legitimately shows the task until the
@@ -1093,11 +1112,21 @@ function render() {
 function drawWork() {
   const replies = (view.check_replies || []).filter((r) => !justUploadedReply.has(r.task_id))
                                              .slice().sort(byDue);
-  const hasProof = view.pending_proof && view.pending_proof.proof_check_id;
-  const hasReplies = replies.length > 0;
-  const hasNextDM = queue.length > 0 && sendFrom && sendFrom.ok;
-  const isCooldown = sendFrom && !sendFrom.ok && sendFrom.reason === 'COOLDOWN';
-  const isDone = sendFrom && !sendFrom.ok && sendFrom.reason === 'DAILY_LIMIT_REACHED';
+  // ONE STATE MACHINE, NOT FIVE BOOLEANS.
+  //
+  // THE BUG THIS REPLACES. This used to be `hasNextDM = queue.length > 0 && sendFrom.ok` plus two
+  // hand-written reason checks (COOLDOWN, DAILY_LIMIT_REACHED). Every other reason the backend can
+  // return -- PAUSED, WAITING_APPROVAL, REVIEW_REQUIRED, NO_ACCOUNTS, NO_APPROVED_ACCOUNT,
+  // NO_ELIGIBLE_ACCOUNT, ALL_ACCOUNTS_AT_LIMIT, VA_DAILY_CAP_REACHED -- fell through every branch
+  // and landed on "No tasks right now", shown to a VA with a full queue whose only real problem was
+  // an account waiting to be switched on. workState() decides; every reason has a screen.
+  const ws = workState({
+    pending,
+    proof: view.pending_proof,
+    replies,
+    queue,
+    sendFrom
+  });
 
   // ONE NUMBER ON THE TAB, NOT TWO. The old code wrote the tab chip's own text (new DMs + replies)
   // in boot(), then drawWork() overwrote the same element with just the reply count AND stacked a
@@ -1135,9 +1164,12 @@ function drawWork() {
         ? '<p class="muted" style="margin:4px 0 0">No approved TikTok account can send yet.</p>' : '')
     + '</div>';
 
-  // PRIMARY ACTION: show one task/creator at a time
-  if (hasProof) {
-    const p = view.pending_proof;
+  // PRIMARY ACTION: exactly one card, chosen by the state machine above. Every branch here is
+  // reachable, and every reason the backend can return lands on one of them.
+  workSubstate = ws.state;
+
+  if (ws.state === 'proof') {
+    const p = ws.task;
     const who = p.handle ? ('@' + esc(p.handle)) : 'a creator';
     html += '<div class="card top" style="margin-bottom:14px">'
       + '<div class="who" style="font-size:18px;margin-bottom:10px">Quick check</div>'
@@ -1146,117 +1178,189 @@ function drawWork() {
       + '<button class="good full" id="work-proof" style="background:#e67e22;border-color:#d35400;'
       + 'color:#fff;padding:18px;font-size:18px;min-height:64px;margin-top:10px">'
       + 'Send the photo</button></div>';
-    workSubstate = 'proof';
-  } else if (hasReplies) {
-    const r = replies[0];
-    const url = r.profile_url || ('https://www.tiktok.com/@' + (r.handle || ''));
-    // THE BUG THIS REPLACES: this line used to be
-    //   formatSentTime(r.follow_up_at || r.last_checked_at || r.first_sent_at)
-    // under the label "Sent...". follow_up_at is usually in the FUTURE and formatSentTime took
-    // Math.abs of the gap, so a follow-up due in two days read as "Sent 2 days ago" -- the exact
-    // opposite of true, on the one card a VA uses to decide whether to chase someone. Each fact now
-    // has its own field and its own label, and a future time always says "in", never "ago".
-    const timeLine = r.follow_up_at ? followUpLabel(r.follow_up_at)
-                    : r.last_checked_at ? checkedLabel(r.last_checked_at)
-                    : sentLabel(r.first_sent_at);
+
+  } else if (ws.state === 'awaiting_send') {
+    // PHASE 2, RESTORED FROM STORAGE. Reached whether the VA switched back to this tab or the page
+    // was reloaded from scratch while they were in TikTok. The task is the one the pending entry
+    // names, found by task_id -- never queue[cursor], which a refreshed queue has already moved on.
+    const c = ws.task;
     html += '<div class="card top" style="margin-bottom:14px">'
-      + '<div class="who" style="font-size:20px;margin-bottom:4px">@' + esc(r.handle || '') + '</div>'
-      + '<div class="meta" style="margin-bottom:12px">' + esc(timeLine) + '</div>'
-      + '<a href="' + esc(url) + '" target="_blank" rel="noopener" class="good full" style="background:#e67e22;'
-      + 'border-color:#d35400;color:#fff;padding:18px;font-size:18px;min-height:64px;margin-bottom:10px;'
-      + 'display:block;text-align:center;text-decoration:none">OPEN TIKTOK</a>'
-      + (r.extracted_text ? '<div class="quote" style="margin:10px 0">' + esc(r.extracted_text) + '</div>' : '')
-      + '<div class="acts" style="margin-top:12px">'
-      + '<button class="full" id="work-reply-yes" style="background:#1e5e46;border-color:#2b7d5f;color:#b6f0d5">Yes, they replied</button>'
-      + '<button class="full" id="work-reply-no" style="background:#3a1d1d;border-color:#5e2020;color:#ffc9c9">No reply</button>'
-      + '</div><p id="reply-msg" class="fieldmsg"></p></div>';
-    workSubstate = 'reply';
-  } else if (copiedFor && queue[cursor] && queue[cursor].task_id === copiedFor.task_id) {
-    // PHASE 2. The DM has been copied and TikTok opened; nothing has been recorded yet.
-    const c = copiedFor;
-    html += '<div class="card top" style="margin-bottom:14px">'
-      + '<div class="who" style="font-size:20px">@' + esc(c.handle) + '</div>'
-      + '<p class="muted" id="copystate" style="margin:8px 0 14px">' + esc(c.copyMessage || '') + '</p>'
-      + (c.copyFailed
-          ? '<textarea readonly id="manual-copy-text" style="width:100%;min-height:88px;margin-bottom:12px" '
-            + 'onclick="this.select()">' + esc(c.dm_message || '') + '</textarea>'
-            + '<p class="muted" style="margin:0 0 10px">Tap the message above to select it, then copy by hand.</p>'
-          : '')
+      + '<div class="who" style="font-size:20px">@' + esc(c.handle || '') + '</div>'
+      + '<p class="muted" id="copystate" style="margin:8px 0 14px">'
+      + (c.pending_copy_ok
+          ? 'Did that message go out?'
+          : 'We could not copy it for you — if you sent it by hand, say so below.') + '</p>'
+      + (c.pending_copy_ok ? '' :
+          '<textarea readonly id="manual-copy-text" style="width:100%;min-height:88px;margin-bottom:12px" '
+          + 'onclick="this.select()">' + esc(c.dm_message || '') + '</textarea>')
       + '<div class="acts">'
       + '<button class="full" id="work-sent" style="background:#1e5e46;border-color:#2b7d5f;color:#b6f0d5;'
       + 'min-height:56px;font-size:16px">I SENT THE DM</button>'
       + '<button class="full" id="work-couldnt" style="background:#3a1d1d;border-color:#5e2020;color:#ffc9c9;'
       + 'min-height:56px;font-size:16px">COULDN\'T SEND</button>'
       + '</div><p id="dm-msg" class="fieldmsg"></p></div>';
-    workSubstate = 'copied';
-  } else if (hasNextDM) {
-    const c = queue[cursor];
+
+  } else if (ws.state === 'awaiting_reply') {
+    // The reply equivalent: the VA has opened the creator in TikTok and come back.
+    const r = ws.task;
+    html += '<div class="card top" style="margin-bottom:14px">'
+      + '<div class="who" style="font-size:20px">@' + esc(r.handle || '') + '</div>'
+      + '<p class="muted" style="margin:8px 0 14px">Did they answer you?</p>'
+      + '<div class="acts">'
+      + '<button class="full" id="work-reply-yes" style="background:#1e5e46;border-color:#2b7d5f;color:#b6f0d5;'
+      + 'min-height:56px;font-size:16px">YES, THEY REPLIED</button>'
+      + '<button class="full" id="work-reply-no" style="background:#3a1d1d;border-color:#5e2020;color:#ffc9c9;'
+      + 'min-height:56px;font-size:16px">NO REPLY</button>'
+      + '</div><p id="reply-msg" class="fieldmsg"></p></div>';
+
+  } else if (ws.state === 'reply') {
+    const r = ws.task;
+    // THE BUG THIS REPLACES: this line used to be
+    //   formatSentTime(r.follow_up_at || r.last_checked_at || r.first_sent_at)
+    // under the label "Sent...". follow_up_at is usually in the FUTURE and formatSentTime took
+    // Math.abs of the gap, so a follow-up due in two days read as "Sent 2 days ago".
+    const timeLine = r.follow_up_at ? followUpLabel(r.follow_up_at)
+                    : r.last_checked_at ? checkedLabel(r.last_checked_at)
+                    : sentLabel(r.first_sent_at);
+    html += '<div class="card top" style="margin-bottom:14px">'
+      + '<div class="who" style="font-size:20px;margin-bottom:4px">@' + esc(r.handle || '') + '</div>'
+      + '<div class="meta" style="margin-bottom:12px">' + esc(timeLine) + '</div>'
+      + (r.extracted_text ? '<div class="quote" style="margin:10px 0">' + esc(r.extracted_text) + '</div>' : '')
+      + '<button class="good full" id="work-reply-open" style="background:#e67e22;border-color:#d35400;'
+      + 'color:#fff;padding:18px;font-size:18px;min-height:64px;margin-top:4px">OPEN TIKTOK</button>'
+      + '<p class="muted" style="margin:10px 0 0">Look at the chat, then come back here and tell us '
+      + 'what you found.</p>'
+      + '<p id="reply-msg" class="fieldmsg"></p></div>';
+
+  } else if (ws.state === 'dm') {
+    const c = ws.task;
     html += '<div class="card top" style="margin-bottom:14px">'
       + '<div class="who" style="font-size:24px">@' + esc(c.handle) + '</div>'
       + '<button class="good full" id="work-copy-dm" style="background:#e67e22;border-color:#d35400;'
       + 'color:#fff;padding:18px;font-size:18px;min-height:64px;margin-top:14px;'
-      + 'margin-bottom:8px">COPY DM & OPEN TIKTOK</button>'
+      + 'margin-bottom:8px">COPY DM &amp; OPEN TIKTOK</button>'
+      + '<p id="dm-msg" class="fieldmsg"></p>'
       + '</div>';
-    workSubstate = 'dm';
-  } else if (isCooldown) {
-    const acct = (tt.accounts || []).find((a) => !a.display_state || a.display_state === 'COOLDOWN');
-    const cooldown = acct ? acct.cooldown_seconds_left : 0;
-    const until = Date.now() + (cooldown || 0) * 1000;
+
+  } else if (ws.state === 'blocked') {
+    // NOT "no tasks". There is work; the sender is what is stopping it, and the reason says which.
+    const s = ws.sender;
+    const cooldownSecs = s.reason === 'COOLDOWN'
+      ? (sendFrom && (sendFrom.next_cooldown_seconds ?? sendFrom.seconds_left)) || 0 : 0;
     html += '<div class="card top" style="margin-bottom:14px">'
-      + '<div class="who" style="font-size:18px">NEXT MESSAGE</div>'
-      + '<div class="countdown" data-until="' + until + '" style="font-size:48px;margin-top:12px">'
-      + mmss(cooldown) + '</div>'
-      + '<p class="muted" style="margin:12px 0 0">No action right now. Check back in a moment.</p></div>';
-    workSubstate = 'cooldown';
-  } else if (isDone) {
-    html += '<div class="card top" style="margin-bottom:14px">'
-      + '<div class="who" style="font-size:18px">All done for today</div>'
-      + '<p class="muted" style="margin:8px 0 0">You have hit the daily limit for all your accounts. '
-      + 'Come back tomorrow!</p></div>';
-    workSubstate = 'done';
+      + '<div class="who" style="font-size:18px">' + esc(s.title) + '</div>'
+      + (cooldownSecs > 0
+          ? '<div class="countdown" data-until="' + (Date.now() + cooldownSecs * 1000)
+            + '" style="font-size:48px;margin-top:12px">' + mmss(cooldownSecs) + '</div>'
+          : '')
+      + '<p class="muted" style="margin:12px 0 0">' + esc(s.detail) + '</p>'
+      + (queue.length > 0
+          ? '<p class="muted" style="margin:8px 0 0">' + queue.length
+            + ' creator' + (queue.length === 1 ? ' is' : 's are') + ' waiting for you — '
+            + 'nothing is lost, they stay in your queue.</p>'
+          : '')
+      + (s.action === 'accounts'
+          ? '<button class="sm full" id="work-go-accounts" style="margin-top:12px">Open Accounts</button>'
+          : '')
+      + '</div>';
+
   } else {
+    // GENUINELY EMPTY: no creator queued, no reply due, no proof outstanding, nothing half-done.
     html += '<div class="card top" style="margin-bottom:14px">'
       + '<div class="who" style="font-size:18px">No tasks right now</div>'
       + '<p class="muted" style="margin:8px 0 0">No new creators to message and no replies to check. '
       + 'Check back later.</p></div>';
-    workSubstate = null;
   }
 
+  // The task the handlers act on is the one the state machine chose, never queue[cursor]. After a
+  // reload the queue has been rebuilt and reordered; the pending task may not even be in it.
+  currentWorkTask = ws.task;
   $('work').innerHTML = html;
-  wireWorkButtons(replies);
+  wireWorkButtons();
 }
 
 /** Every button drawWork can render, wired in one place so none of them is forgotten. */
-function wireWorkButtons(replies) {
+/**
+ * Every button drawWork can render, wired in one place so none of them is forgotten.
+ *
+ * There is one Work state machine and one set of handlers. The old buildCardHtml/wireCardButtons
+ * pair -- a second, independent Work UI with its own "DM sent" button calling dh_tiktok_record_send
+ * directly -- has been deleted rather than left dormant: it rendered into an element (#card) that no
+ * longer exists in this document, so it was invisible, but it was still a live send path one stray
+ * call away from booking money outside the two-phase flow.
+ */
+function wireWorkButtons() {
   if (workSubstate === 'proof') {
     const b = $('work-proof');
     if (b) b.onclick = () => openProof(view.pending_proof);
     return;
   }
 
-  if (workSubstate === 'reply') {
-    const r = replies[0];
-    const yesBtn = $('work-reply-yes');
-    const noBtn = $('work-reply-no');
-    const msg = $('reply-msg');
-
-    if (yesBtn) yesBtn.onclick = () => beginReplyCapture(r);
-    if (noBtn) {
-      noBtn.onclick = async () => {
-        const res = await withButton(noBtn, 'no_reply', { task: r.task_id },
-          () => sb.rpc('dh_va_update_task', { p_task_id: r.task_id, p_status: 'NO_REPLY' }),
-          async () => { await Promise.all([loadAccounts(), loadMoney()]); await boot(); });
-        if (!res.ok && msg) { msg.textContent = res.message; msg.className = 'fieldmsg bad'; }
-      };
-    }
+  if (workSubstate === 'blocked') {
+    const b = $('work-go-accounts');
+    if (b) b.onclick = () => selectTab('tt');
     return;
   }
 
-  if (workSubstate === 'copied') {
-    const c = copiedFor;
+  // ---------------------------------------------------------------------------------------------
+  // PHASE 1 OF THE SEND: COPY FIRST, LEAVE SECOND.
+  //
+  // THE BUG THIS REPLACES. window.open() ran before the clipboard write. On iOS that hands focus to
+  // the TikTok tab immediately, and a clipboard write from a document that has just lost focus is
+  // unreliable -- it rejects, or returns a promise that never settles at all. The VA arrived in the
+  // chat with an empty clipboard, or with the button still spinning behind them.
+  //
+  // The order is now: synchronous copy inside the tap (execCommand, which needs the gesture but not
+  // focus, and completes before anything can steal it), then persist the pending state, then leave.
+  // If the copy fails we do NOT leave: there is nothing useful to paste, so the message is shown for
+  // manual copying instead. Nothing here calls an RPC.
+  // ---------------------------------------------------------------------------------------------
+  if (workSubstate === 'dm') {
+    const t = currentWorkTask;
+    const copyBtn = $('work-copy-dm');
+    if (!copyBtn || !t) return;
+
+    copyBtn.onclick = () => {
+      if (!t.dm_message) return;
+      copyBtn.disabled = true;
+
+      const copiedNow = legacyCopy(t.dm_message) === true;
+
+      setPending({
+        task_id: t.task_id,
+        handle: t.handle,
+        profile_url: t.profile_url,
+        dm_message: t.dm_message,
+        state: AWAITING_SEND,
+        copy_ok: copiedNow,
+        saved_at: Date.now()
+      });
+
+      if (!copiedNow) {
+        // Do not send them to TikTok with an empty clipboard. Show the message, let them copy it by
+        // hand, and keep both confirm buttons available for when they come back.
+        copyBtn.disabled = false;
+        const msg = $('dm-msg');
+        if (msg) {
+          msg.textContent = 'We could not copy it automatically — the message is below, copy it by hand.';
+          msg.className = 'fieldmsg bad';
+        }
+        render();
+        return;
+      }
+
+      leaveForTikTok(t.profile_url || ('https://www.tiktok.com/@' + t.handle));
+      render(); // if the tab survives, phase 2 is already on screen behind TikTok
+    };
+    return;
+  }
+
+  if (workSubstate === 'awaiting_send') {
+    const c = currentWorkTask;
     const sentBtn = $('work-sent');
     const couldntBtn = $('work-couldnt');
     const msg = $('dm-msg');
+    if (!c) return;
 
     if (sentBtn) {
       sentBtn.onclick = async () => {
@@ -1264,7 +1368,9 @@ function wireWorkButtons(replies) {
         const res = await withButton(sentBtn, 'record_send', { task: c.task_id },
           () => sb.rpc('dh_tiktok_record_send', { p_task_id: c.task_id, p_notes: null }),
           async (r) => {
-            copiedFor = null;
+            // The pending state is cleared only once the backend has confirmed. A failure leaves it
+            // in place so the VA can try again after a reload.
+            setPending(null);
             const workEl = $('work');
             if (workEl) {
               workEl.innerHTML = '<div class="card top" style="margin-bottom:14px">'
@@ -1272,28 +1378,26 @@ function wireWorkButtons(replies) {
                 + 'color:#b6f0d5;padding:18px;font-size:18px;min-height:64px;'
                 + 'cursor:default;opacity:0.8">DM SENT</button></div>';
             }
-            cursor = (cursor + 1) % Math.max(1, queue.length);
             const cooldown = r.data?.cooldown_seconds || 30;
             await new Promise((res2) => setTimeout(res2, Math.max(300, Math.min(cooldown, 2) * 1000)));
             await Promise.all([loadAccounts(), loadMoney()]);
             await boot();
           });
-        // The sibling follows the same rule as the button itself: only a failure re-opens it.
-        // Re-enabling it on success would leave COULDN'T SEND live over a task already recorded.
         if (!res.ok) {
           if (couldntBtn) couldntBtn.disabled = false;
           if (msg) { msg.textContent = res.message; msg.className = 'fieldmsg bad'; }
         }
       };
     }
+
     if (couldntBtn) {
       couldntBtn.onclick = async () => {
         if (sentBtn) sentBtn.disabled = true;
         const res = await withButton(couldntBtn, 'couldnt_send', { task: c.task_id },
+          // UNREACHABLE ONLY. No send row, no earning -- dh_va_update_task, never record_send.
           () => sb.rpc('dh_va_update_task', { p_task_id: c.task_id, p_status: 'UNREACHABLE' }),
           async () => {
-            copiedFor = null;
-            cursor = (cursor + 1) % Math.max(1, queue.length);
+            setPending(null);
             await loadAccounts();
             await boot();
           });
@@ -1306,39 +1410,63 @@ function wireWorkButtons(replies) {
     return;
   }
 
-  if (workSubstate === 'dm') {
-    const t = queue[cursor];
-    const copyBtn = $('work-copy-dm');
-    if (!copyBtn) return;
-
-    // PHASE 1. Everything here is reversible and nothing calls the server.
-    copyBtn.onclick = async () => {
-      if (!t?.dm_message) return;
-      copyBtn.disabled = true;
-
-      // window.open FIRST and SYNCHRONOUSLY, still inside the click gesture -- this is what a
-      // browser will allow without treating it as a popup. Anything awaited before this line is
-      // exactly what breaks it.
-      const url = t.profile_url || ('https://www.tiktok.com/@' + t.handle);
-      const win = window.open(url, '_blank');
-      const openedOk = Boolean(win);
-
-      const cr = await copyNow(t.dm_message);
-      copyBtn.disabled = false;
-
-      copiedFor = {
-        task_id: t.task_id, handle: t.handle, dm_message: t.dm_message,
-        profile_url: t.profile_url,
-        copyFailed: !cr.ok,
-        copyMessage: !openedOk
-            ? 'Your browser blocked the TikTok tab. Open it yourself, then paste the message below.'
-          : cr.ok ? 'Copied — paste it in TikTok, then tell us what happened.'
-          : 'Could not copy automatically — copy the message below by hand, then paste it in TikTok.'
-      };
+  // PHASE 1 OF A REPLY CHECK: open TikTok, and persist that we did, so the answer buttons are
+  // waiting whether the VA switches back or the page reloads underneath them.
+  if (workSubstate === 'reply') {
+    const r = currentWorkTask;
+    const openBtn = $('work-reply-open');
+    if (!openBtn || !r) return;
+    openBtn.onclick = () => {
+      setPending({
+        task_id: r.task_id,
+        handle: r.handle,
+        profile_url: r.profile_url,
+        state: AWAITING_REPLY,
+        copy_ok: true,
+        saved_at: Date.now()
+      });
+      leaveForTikTok(r.profile_url || ('https://www.tiktok.com/@' + (r.handle || '')));
       render();
     };
     return;
   }
+
+  if (workSubstate === 'awaiting_reply') {
+    const r = currentWorkTask;
+    const yesBtn = $('work-reply-yes');
+    const noBtn = $('work-reply-no');
+    const msg = $('reply-msg');
+    if (!r) return;
+
+    if (yesBtn) yesBtn.onclick = () => beginReplyCapture(r);
+    if (noBtn) {
+      noBtn.onclick = async () => {
+        const res = await withButton(noBtn, 'no_reply', { task: r.task_id },
+          () => sb.rpc('dh_va_update_task', { p_task_id: r.task_id, p_status: 'NO_REPLY' }),
+          async () => {
+            setPending(null);
+            await Promise.all([loadAccounts(), loadMoney()]);
+            await boot();
+          });
+        if (!res.ok && msg) { msg.textContent = res.message; msg.className = 'fieldmsg bad'; }
+      };
+    }
+    return;
+  }
+}
+
+/**
+ * Leave for TikTok in the way the current browser actually allows.
+ *
+ * window.open is tried first because keeping DropHero alive in its own tab is what makes coming back
+ * a tab switch rather than a cold reload. When it is refused -- iOS blocks it outside a narrow
+ * gesture window, and standalone PWAs often ignore it entirely -- we navigate this tab instead.
+ * Either way the pending state is already in sessionStorage, which is what makes a full reload safe.
+ */
+function leaveForTikTok(url) {
+  let win = null;
+  try { win = window.open(url, '_blank'); } catch { win = null; }
+  if (!win) window.location.href = url;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1792,6 +1920,10 @@ async function beginReplyCapture(r) {
     // handed over; a reload is the honest retry path if classification never completes.
     justUploadedReply.add(r.task_id);
     replyReports.delete(r.task_id);
+    // The reply question has now been answered, so the persisted "came back from TikTok, still to
+    // answer" state is spent. Clearing it only here means a failed upload leaves it standing and the
+    // VA still gets the buttons back after a reload.
+    if (pending && pending.task_id === r.task_id) setPending(null);
     await Promise.all([loadAccounts(), loadMoney()]);
     await boot();
   };
@@ -1914,188 +2046,19 @@ function wireRows(rows) {
   }
 }
 
-function buildCardHtml(t) {
-  const blocked = !(sendFrom && sendFrom.ok);
-  return sendFromHtml()
-    + '<div class="card top">'
-    + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">'
-      + '<div><div class="who">' + esc(t.display_name || t.handle || 'creator') + '</div>'
-      + '<div class="meta">' + esc(t.handle ? '@' + t.handle : '') + ' · ' + esc(t.platform) + '</div></div>'
-      + '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end">'
-        + tierPill(t)
-        + '<span class="pill ' + esc(t.priority) + '">' + esc(t.priority) + '</span></div></div>'
-    + '<p class="muted" style="margin:13px 0 5px">Personalized message</p>'
-    + '<div class="script" id="script">' + esc(t.dm_message) + '</div>'
-    + (blocked
-        ? '<div class="warn" style="text-align:center">' + esc(blockedLine()) + '</div>'
-        : '<a class="open primary" id="copyopen" href="' + esc(t.profile_url) + '"'
-          + ' target="_blank" rel="noopener">Copy DM &amp; open profile</a>')
-    + '<p class="muted" id="copystate" style="margin:-4px 0 10px;text-align:center">&nbsp;</p>'
-    + (blocked ? '' : '<button class="sm" id="copy">Copy DM</button>')
-    + '<p class="muted" style="margin:13px 0 5px">Note (optional)</p>'
-    + '<textarea id="note" placeholder="Anything worth remembering">' + esc(t.notes || '') + '</textarea>'
-    + '<div class="acts" style="margin-top:12px">'
-      + (blocked ? '' : '<button class="good full" data-s="CONTACTED">DM sent</button>')
-      + '<button data-s="TIKTOK_BLOCKED" class="full">TikTok wouldn\'t send it</button>'
-      + '<button class="bad full" data-s="UNREACHABLE">Couldn\'t send</button>'
-    + '</div>'
-    + '<p class="muted" style="margin:10px 0 0">After you send, they move to '
-      + '<b>Check replies</b> so you can come back when they answer.</p>'
-    + '<p class="muted" style="margin-bottom:0">' + (cursor + 1) + ' of ' + queue.length + '</p>'
-    + '</div>';
-}
-
-function wireCardButtons(t, containerId) {
-  const container = $(containerId);
-  if (!container) return;
-  if ($('copyopen')) $('copyopen').addEventListener('click', async () => {
-    const r = await copyNow(t.dm_message);
-    say(r.ok ? 'Copied — paste it in the DM' : 'Copy failed, select the message above');
-  });
-  if ($('copy')) $('copy').onclick = async () => {
-    const r = await copyNow(t.dm_message);
-    $('copy').textContent = r.ok ? 'Copied' : 'Select the text above to copy';
-    say(r.ok ? 'Copied' : '');
-  };
-  for (const b of container.querySelectorAll('button[data-s]')) {
-    b.onclick = async () => {
-      for (const o of container.querySelectorAll('button[data-s]')) o.disabled = true;
-      const note = $('note').value.trim() || null;
-      let error = null;
-
-      if (b.dataset.s === 'CONTACTED') {
-        const { data, error: e } = await sb.rpc('dh_tiktok_record_send',
-          { p_task_id: t.task_id, p_notes: note });
-        error = e;
-        if (!error && data && !data.ok) {
-          alert(refusal(data));
-          await boot();
-          return;
-        }
-        if (!error && data && data.ok && data.proof_required) {
-          await boot();
-          openProof(view.pending_proof || { proof_check_id: data.proof_check_id,
-                                            handle: t.handle, proof_kind: 'SEND' });
-          return;
-        }
-      } else if (b.dataset.s === 'TIKTOK_BLOCKED') {
-        const { data, error: e } = await sb.rpc('dh_tiktok_record_blocked',
-          { p_task_id: t.task_id, p_platform_error: note });
-        error = e;
-        if (!error && data && !data.ok) { alert(refusal(data)); await boot(); return; }
-        if (!error && data && data.ok) {
-          alert(data.account_paused_for_review
-            ? 'Thanks — recorded. This account has now had ' + data.blocked_from_this_account
-              + ' messages refused, so it is paused until Rico has looked at it. '
-              + 'Your other accounts are unaffected.'
-            : 'Thanks — recorded. Do NOT send that message again. '
-              + 'We will rewrite it and bring this creator back to you.');
-          cursor = cursor + 1;
-          await boot();
-          return;
-        }
-      } else {
-        const { error: e } = await sb.rpc('dh_va_update_task',
-          { p_task_id: t.task_id, p_status: b.dataset.s, p_notes: note });
-        error = e;
-      }
-
-      if (error) {
-        alert(error.message);
-        for (const o of container.querySelectorAll('button[data-s]')) o.disabled = false;
-        return;
-      }
-      cursor = cursor + 1;
-      boot();
-    };
-  }
-}
-
-function draw() {
-  const t = queue[cursor];
-  if (!t) {
-    $('card').innerHTML = '<div class="card"><div class="who">All caught up</div>'
-      + '<p class="muted">No new creators to write to. Anyone you have already messaged is under '
-      + 'Check replies and Conversations.</p></div>';
-    return;
-  }
-  $('card').innerHTML = buildCardHtml(t);
-  wireCardButtons(t, 'card');
-}
-
-/** The strip above the creator card: which account, how much of its day is left, and its state. */
-function sendFromHtml() {
-  if (!sendFrom) return '';
-  if (!sendFrom.ok) {
-    return '<div class="sendfrom"><div class="lbl">Send from</div>'
-      + '<div class="acct" style="font-size:15px;font-weight:500">' + esc(blockedLine()) + '</div>'
-      + (sendFrom.reason === 'COOLDOWN' && sendFrom.next_cooldown_seconds != null
-          ? '<p class="muted" style="margin:11px 0 2px">Next DM available in</p>'
-            + '<div class="countdown" data-until="'
-            + (Date.now() + sendFrom.next_cooldown_seconds * 1000) + '">'
-            + mmss(sendFrom.next_cooldown_seconds) + '</div>'
-          : '')
-      + '</div>';
-  }
-  const pct = sendFrom.daily_limit
-    ? Math.min(100, Math.round(sendFrom.sent_today / sendFrom.daily_limit * 100)) : 0;
-  return '<div class="sendfrom">'
-    + '<div class="acct-head"><div><div class="lbl">Send from</div>'
-      + '<div class="acct">@' + esc(sendFrom.username) + '</div></div>'
-      + '<span class="state READY">Ready</span></div>'
-    + '<div class="bar"><i style="width:' + pct + '%"></i></div>'
-    + '<div class="nums"><span>' + sendFrom.sent_today + ' of ' + sendFrom.daily_limit
-      + ' sent today</span><span>·</span><span>'
-      + esc(sendFrom.level_name || ('Level ' + sendFrom.level)) + '</span></div>'
-    + '</div>';
-}
-
-/** Why no DM can go out right now, in words a VA can act on. */
-function blockedLine() {
-  if (!sendFrom) return 'Checking your accounts…';
-  switch (sendFrom.reason) {
-    case 'NO_ACCOUNTS':
-      return 'Add a TikTok account under Accounts to start sending.';
-    case 'VA_DAILY_CAP_REACHED':
-      return 'That is your lot for today — ' + (sendFrom.va_sent_today ?? 0) + ' sent. '
-        + 'Come back tomorrow.';
-    case 'ALL_ACCOUNTS_AT_LIMIT':
-      return 'All your accounts have sent their messages for today.';
-    case 'COOLDOWN':
-      return 'Just a moment — your account is taking a short break between messages.';
-    default:
-      return 'No account is ready to send right now. Check the Accounts tab.';
-  }
-}
-
-/** The server refused a send. Say what it said, in the VA's language. */
-function refusal(d) {
-  switch (d.reason) {
-    case 'COOLDOWN':
-      return 'Not yet — that account is taking a short break. '
-        + mmss(d.seconds_left || 0) + ' to go.';
-    case 'DAILY_LIMIT_REACHED':
-      return 'That account has sent all ' + d.daily_limit + ' of its messages for today.';
-    case 'VA_DAILY_CAP_REACHED':
-      return 'You have sent everything for today. Come back tomorrow.';
-    case 'PAUSED':
-      return 'That account is stopped until Rico has looked at it.';
-    case 'NOT_APPROVED':
-      return 'That account is still waiting to be switched on.';
-    case 'NOT_YOUR_TASK':
-    case 'NOT_YOUR_ACCOUNT':
-      return 'That one is not yours to send.';
-    case 'PROOF_REQUIRED':
-      return 'Send us the photo we asked for first, then you can carry on.';
-    case 'MESSAGE_BLOCKED':
-      return 'TikTok already refused this exact message, so it must not be sent again. '
-        + 'We are rewriting it — skip this creator for now.';
-    case 'REVIEW_REQUIRED':
-      return 'That account is on hold while Rico checks why TikTok refused its messages.';
-    default:
-      return 'That did not go through. Please try the next creator.';
-  }
-}
+// THE SECOND WORK UI, DELETED.
+//
+// buildCardHtml / wireCardButtons / draw() / sendFromHtml / blockedLine / refusal were a
+// complete parallel Work screen from the pre-two-phase design: a multi-button card with its own
+// "DM sent" handler calling dh_tiktok_record_send directly, its own TIKTOK_BLOCKED and
+// "Couldn't send" buttons, and its own copy-then-open link. It rendered into #card, an element
+// this document no longer contains, so none of it reached a VA -- but it was still a live send path
+// sitting in the shipped bundle, reachable by one stray call and bypassing the pending-state
+// machinery entirely. Deleting it is the point: there is exactly one Work state machine
+// (workState + drawWork + wireWorkButtons) and exactly one path to dh_tiktok_record_send.
+//
+// The reason wording the old blockedLine()/refusal() carried now lives in SENDER_BLOCK and
+// REASON_TEXT in va-portal-logic.mjs, where it is covered by tests.
 
 /**
  * THE BUG THIS REPLACES. tab was reassigned and then render() was only called after an await --
@@ -2108,21 +2071,36 @@ function refusal(d) {
  * lands is gated by the same key the tab was clicked with -- a second, faster tap always wins.
  */
 let tabLoading = null;
+
+/**
+ * Switch to a tab and refresh what that tab actually needs.
+ *
+ * THE BUG THIS REPLACES. The refresh conditions named tabs that do not exist. This portal has three
+ * -- work, tt, earn -- and the code asked for 'new' and 'conv', names left over from an earlier
+ * layout. The practical effect: opening **Work refreshed nothing at all**. A VA returning from
+ * TikTok and tapping Work got whatever was on screen before they left, including a sender state and
+ * a capacity figure that were minutes stale.
+ */
+async function selectTab(name) {
+  tab = name;
+  search.q = ''; search.results = null; search.focused = false;
+  const token = seq.begin('tab');
+  tabLoading = tab;
+  render(); // the switch itself, instantly -- nothing below this line may block it
+
+  // Work needs the sender state and the capacity figure it prints, so it refreshes both. It is the
+  // tab a VA lands on after every trip to TikTok, which is exactly when that data has gone stale.
+  if (tab === 'work') await Promise.all([loadAccounts(), loadMoney(), boot()]);
+  if (tab === 'tt')   await loadAccounts();
+  if (tab === 'earn') await loadMoney();
+
+  if (!seq.isCurrent('tab', token)) return; // a faster later tap already redrew the screen
+  tabLoading = null;
+  render();
+}
+
 for (const b of document.querySelectorAll('.tab')) {
-  b.onclick = async () => {
-    tab = b.dataset.tab;
-    if (tab !== 'conv') { search.q = ''; search.results = null; search.focused = false; }
-    const token = seq.begin('tab');
-    tabLoading = tab;
-    render(); // the switch itself, instantly -- nothing below this line may block it
-
-    if (tab === 'new' || tab === 'tt') await loadAccounts();
-    if (tab === 'earn' || tab === 'conv') await loadMoney();
-
-    if (!seq.isCurrent('tab', token)) return; // a faster later tap already redrew the screen
-    tabLoading = null;
-    render();
-  };
+  b.onclick = () => selectTab(b.dataset.tab);
 }
 
 // The 30s refresh must not yank the ground from under someone mid-typing: a VA writing a note or
@@ -2132,6 +2110,29 @@ function typing() {
   return a && (a.tagName === 'TEXTAREA' || a.tagName === 'INPUT');
 }
 setInterval(() => { if (!document.hidden && !$('app').hidden && !typing()) boot(); }, 30000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) boot(); });
+
+/**
+ * COMING BACK FROM TIKTOK.
+ *
+ * This is the single most common transition in the whole app and the one iOS is least predictable
+ * about: it may fire visibilitychange on a live page, fire pageshow from the back/forward cache, or
+ * simply reload the document from scratch. All three land here or in the initial boot(), and all
+ * three read the same persisted pending state, so the confirm buttons are waiting either way.
+ *
+ * The sender state and capacity are reloaded too, not just the queue -- a trip to TikTok is exactly
+ * how long a cooldown takes to start or a daily limit to be reached.
+ */
+async function resume() {
+  if (document.hidden || $('app').hidden) return;
+  pending = loadPending();
+  await Promise.all([loadAccounts(), loadMoney()]);
+  await boot();
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) resume(); });
+window.addEventListener('pageshow', (e) => { if (e.persisted) resume(); });
+
+// The first read of the pending state happens before the first paint, so a cold reload started by
+// returning from TikTok never shows the phase-1 card for a DM already pasted and sent.
+pending = loadPending();
 boot();
 </script></body></html>

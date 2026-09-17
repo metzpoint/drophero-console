@@ -348,3 +348,215 @@ export function createSequencer() {
     }
   };
 }
+
+// ---------------------------------------------------------------------------------------------
+// THE PENDING SEND, WHICH MUST SURVIVE LEAVING THE APP.
+//
+// THE BUG THIS REPLACES. The task awaiting confirmation lived in one JS variable. On iOS, leaving
+// for TikTok and coming back is frequently not a "return" at all -- Safari discards and reloads the
+// page, or the PWA restarts. The variable came back undefined, the portal drew the ordinary
+// "COPY DM & OPEN TIKTOK" card, and the DM the VA had just pasted and sent was never confirmed and
+// never paid. The VA's only visible option was to send it a second time.
+//
+// The pending state therefore goes to sessionStorage BEFORE the tab leaves, and the task is found
+// again by task_id on return -- never by queue position, which a refreshed queue reorders.
+// ---------------------------------------------------------------------------------------------
+
+export const PENDING_KEY = 'dh_pending_action_v1';
+export const AWAITING_SEND = 'AWAITING_SEND_CONFIRMATION';
+export const AWAITING_REPLY = 'AWAITING_REPLY_CONFIRMATION';
+
+/** Storage can be absent or throw (private mode, blocked site data). Never let that break a send. */
+function store(deps) {
+  return deps.storage ?? (typeof sessionStorage !== 'undefined' ? sessionStorage : null);
+}
+
+export function savePending(entry, deps = {}) {
+  const s = store(deps);
+  if (!s || !entry || !entry.task_id || !entry.state) return false;
+  try {
+    s.setItem(PENDING_KEY, JSON.stringify({
+      task_id: entry.task_id,
+      handle: entry.handle || null,
+      profile_url: entry.profile_url || null,
+      dm_message: entry.dm_message || null,
+      state: entry.state,
+      copy_ok: entry.copy_ok === true,
+      saved_at: entry.saved_at || Date.now()
+    }));
+    return true;
+  } catch { return false; }
+}
+
+/**
+ * The pending action, or null. Anything older than the cutoff is dropped: a confirmation prompt for
+ * a DM from yesterday is worse than no prompt, because the VA cannot remember and will guess.
+ */
+export function loadPending(deps = {}) {
+  const s = store(deps);
+  if (!s) return null;
+  let raw;
+  try { raw = s.getItem(PENDING_KEY); } catch { return null; }
+  if (!raw) return null;
+  let p;
+  try { p = JSON.parse(raw); } catch { clearPending(deps); return null; }
+  if (!p || !p.task_id || (p.state !== AWAITING_SEND && p.state !== AWAITING_REPLY)) {
+    clearPending(deps);
+    return null;
+  }
+  const maxAge = Number.isFinite(deps.maxAgeMs) ? deps.maxAgeMs : 12 * 60 * 60 * 1000;
+  const now = deps.now ?? Date.now();
+  if (Number.isFinite(p.saved_at) && now - p.saved_at > maxAge) { clearPending(deps); return null; }
+  return p;
+}
+
+export function clearPending(deps = {}) {
+  const s = store(deps);
+  if (!s) return;
+  try { s.removeItem(PENDING_KEY); } catch { /* nothing to do */ }
+}
+
+/** Find the task the pending entry refers to by id, falling back to what the entry itself carries. */
+export function resolvePendingTask(pending, lists = {}) {
+  if (!pending) return null;
+  const pools = [lists.queue, lists.replies].filter(Array.isArray);
+  for (const pool of pools) {
+    const hit = pool.find((t) => t && t.task_id === pending.task_id);
+    if (hit) return { ...hit, ...pendingOverlay(pending) };
+  }
+  // Not in the current queue any more -- the backend may already have moved it on. The VA still
+  // has to be able to answer for it, so the persisted copy stands in.
+  return {
+    task_id: pending.task_id,
+    handle: pending.handle,
+    profile_url: pending.profile_url,
+    dm_message: pending.dm_message,
+    ...pendingOverlay(pending)
+  };
+}
+
+function pendingOverlay(pending) {
+  return { pending_state: pending.state, pending_copy_ok: pending.copy_ok === true };
+}
+
+// ---------------------------------------------------------------------------------------------
+// WHY NO DM CAN GO OUT, FOR EVERY REASON THE BACKEND ACTUALLY RETURNS.
+//
+// THE BUG THIS REPLACES. drawWork branched on exactly two reasons (COOLDOWN and
+// DAILY_LIMIT_REACHED) and let every other one fall through to "No tasks right now" -- shown to a
+// VA with a full queue of creators whose only real problem was a paused account or one still
+// waiting for approval. It reads as "there is no work", so they close the app.
+// ---------------------------------------------------------------------------------------------
+
+export const SENDER_BLOCK = {
+  NO_ACCOUNTS: {
+    title: 'No TikTok account yet',
+    detail: 'Add your TikTok account under Accounts and Rico will switch it on for you.',
+    action: 'accounts'
+  },
+  WAITING_APPROVAL: {
+    title: 'Waiting for approval',
+    detail: 'Your account is with Rico to be switched on. Nothing to do — check back soon.',
+    action: 'accounts'
+  },
+  NOT_APPROVED: {
+    title: 'Waiting for approval',
+    detail: 'Your account is with Rico to be switched on. Nothing to do — check back soon.',
+    action: 'accounts'
+  },
+  NO_APPROVED_ACCOUNT: {
+    title: 'No approved account',
+    detail: 'None of your TikTok accounts is approved to send yet. Check the Accounts tab.',
+    action: 'accounts'
+  },
+  NO_ELIGIBLE_ACCOUNT: {
+    title: 'No account free right now',
+    detail: 'No approved account can send at this moment. Check the Accounts tab for why.',
+    action: 'accounts'
+  },
+  PAUSED: {
+    title: 'Account paused',
+    detail: 'That account is stopped until Rico has looked at it. Your other accounts are unaffected.',
+    action: 'accounts'
+  },
+  REVIEW_REQUIRED: {
+    title: 'Account on hold',
+    detail: 'That account is on hold while Rico checks why TikTok refused its messages.',
+    action: 'accounts'
+  },
+  COOLDOWN: {
+    title: 'Short break between messages',
+    detail: 'Your account is pacing itself. The next DM unlocks when the countdown ends.',
+    action: 'wait'
+  },
+  DAILY_LIMIT_REACHED: {
+    title: 'That account is done for today',
+    detail: 'It has sent all the messages it is allowed today. Come back tomorrow.',
+    action: 'tomorrow'
+  },
+  ALL_ACCOUNTS_AT_LIMIT: {
+    title: 'All your accounts are done for today',
+    detail: 'Every approved account has sent its messages for today. Come back tomorrow.',
+    action: 'tomorrow'
+  },
+  VA_DAILY_CAP_REACHED: {
+    title: 'That is your lot for today',
+    detail: 'You have reached your own daily limit. Come back tomorrow.',
+    action: 'tomorrow'
+  }
+};
+
+/** One shape for "can a DM go out, and if not, what do I tell the VA". */
+export function senderState(sendFrom) {
+  if (!sendFrom) return { ok: false, known: false, reason: null, title: 'Checking your accounts…',
+                          detail: '', action: 'wait' };
+  if (sendFrom.ok) return { ok: true, known: true, reason: 'READY', title: null, detail: '', action: null };
+  const reason = sendFrom.reason || null;
+  const hit = SENDER_BLOCK[reason];
+  if (hit) return { ok: false, known: true, reason, ...hit };
+  // An unrecognised reason is still a blocked sender, never "no work". Say so plainly and point at
+  // the one screen that can explain it.
+  return {
+    ok: false, known: false, reason,
+    title: 'No account is ready to send',
+    detail: 'Check the Accounts tab to see which of your accounts can send.',
+    action: 'accounts'
+  };
+}
+
+/**
+ * THE ONE WORK STATE MACHINE.
+ *
+ * Priority is deliberate: anything the VA has already half-done comes before anything new. A DM
+ * they have pasted into TikTok but not confirmed outranks a fresh creator, because leaving it
+ * unanswered is what loses a send.
+ *
+ * "empty" is reachable only when there is genuinely nothing: no creator queued, no reply to check,
+ * no proof outstanding and nothing half-done. A blocked sender is "blocked", never "empty".
+ */
+export function workState({ pending, proof, replies, queue, sendFrom } = {}) {
+  const replyList = Array.isArray(replies) ? replies : [];
+  const queueList = Array.isArray(queue) ? queue : [];
+
+  if (pending && pending.state === AWAITING_SEND) {
+    return { state: 'awaiting_send', task: resolvePendingTask(pending, { queue: queueList }) };
+  }
+  if (pending && pending.state === AWAITING_REPLY) {
+    return { state: 'awaiting_reply', task: resolvePendingTask(pending, { replies: replyList }) };
+  }
+  if (proof && proof.proof_check_id) return { state: 'proof', task: proof };
+  if (replyList.length > 0) return { state: 'reply', task: replyList[0] };
+
+  const sender = senderState(sendFrom);
+  if (queueList.length > 0) {
+    if (sender.ok) return { state: 'dm', task: queueList[0], sender };
+    return { state: 'blocked', task: null, sender };
+  }
+
+  // No creators queued. If the sender is also blocked, the blocked reason is still the more useful
+  // thing to show -- "come back tomorrow" beats "no tasks right now" when the cap is the cause.
+  if (!sender.ok && sender.known && sender.action === 'tomorrow') {
+    return { state: 'blocked', task: null, sender };
+  }
+  return { state: 'empty', task: null, sender };
+}
