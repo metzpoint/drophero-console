@@ -1,14 +1,16 @@
 <!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' https://esm.sh; style-src 'unsafe-inline'; connect-src https://aexomkitwnxvpqlmtrik.supabase.co wss://aexomkitwnxvpqlmtrik.supabase.co https://esm.sh; img-src data: blob: https://aexomkitwnxvpqlmtrik.supabase.co; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://aexomkitwnxvpqlmtrik.supabase.co wss://aexomkitwnxvpqlmtrik.supabase.co; img-src data: blob: https://aexomkitwnxvpqlmtrik.supabase.co; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b0f14">
+<meta name="referrer" content="no-referrer">
 <title>DropHero — Owner</title>
 <style>
   :root{--bg:#0b0f14;--card:#151b24;--line:#232c39;--ink:#e8edf5;--dim:#8b98ab;
         --ok:#3ddc97;--warn:#ffb454;--bad:#ff6b6b;--accent:#6aa6ff}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  [hidden]{display:none!important}
   html,body{overflow-x:hidden;max-width:100%}
   body{margin:0;background:var(--bg);color:var(--ink);
        font:16px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;
@@ -78,20 +80,19 @@
 </style></head><body>
 
 <div id="login" hidden>
-  <h1>DropHero</h1><p class="sub" id="loginlead">Owner and VA access.</p>
-  <div class="card">
-    <p class="k">Email</p><input id="email" type="email" autocomplete="username" inputmode="email">
-    <p class="k" style="margin-top:12px">Password</p>
-    <input id="pw" type="password" autocomplete="current-password">
-    <div class="two" style="margin-top:14px">
-      <button id="signin">Sign in</button>
-      <button id="signup">Create account</button>
+  <h1>DropHero</h1><p class="sub" id="loginlead">Owner admin access.</p>
+  <form class="card" id="login-form">
+    <label class="k" for="email">Email</label>
+    <input id="email" type="email" autocomplete="username" inputmode="email" required>
+    <label class="k" for="pw" style="display:block;margin-top:12px">Password</label>
+    <input id="pw" type="password" autocomplete="current-password" required minlength="8">
+    <div style="margin-top:14px">
+      <button id="signin" type="submit">Sign in</button>
     </div>
-    <p id="loginmsg" class="muted" style="margin-bottom:0"></p>
-  </div>
-  <p class="muted" style="margin-top:14px">First time? Use <b>Create account</b> with the address
-    that was invited and pick your own password. Access is granted by the invitation, not by
-    signing up.</p>
+    <p id="loginmsg" class="muted" style="margin-bottom:0" role="status" aria-live="polite"></p>
+  </form>
+  <p class="muted" style="margin-top:14px">VA account? Open the invitation link your manager sent,
+    or use the <a href="./va.html">VA portal</a> if your account is already active.</p>
 </div>
 
 <main id="app" hidden>
@@ -145,28 +146,29 @@
   <h2 id="proofs">Proof checks <small class="muted">send and reply screenshots</small></h2>
   <div class="card" id="proofq"><div class="muted">loading…</div></div>
 
-  <h2 id="payouts">Payouts</h2>
+  <h2 id="payouts-title">Payouts</h2>
   <div class="card" id="payouts"><div class="muted">loading…</div></div>
 
   <h2 id="directory">Creator directory</h2>
   <div class="card">
+    <label class="k" for="q">Search creators</label>
     <input id="q" type="search" placeholder="Search handle, name or email" autocomplete="off">
     <div class="chips" style="margin-top:9px">
-      <select id="f_platform"><option value="">All platforms</option></select>
-      <select id="f_route"><option value="">All routes</option></select>
-      <select id="f_priority"><option value="">Any priority</option>
+      <select id="f_platform" aria-label="Platform"><option value="">All platforms</option></select>
+      <select id="f_route" aria-label="Contact route"><option value="">All routes</option></select>
+      <select id="f_priority" aria-label="Priority"><option value="">Any priority</option>
         <option value="HIGH">High</option><option value="MEDIUM">Medium</option>
         <option value="LOW">Low</option></select>
-      <select id="f_status"><option value="">Any status</option></select>
+      <select id="f_status" aria-label="Contact status"><option value="">Any status</option></select>
     </div>
     <div class="chips" style="margin-top:7px">
-      <select id="f_category"><option value="">All categories</option></select>
-      <select id="f_country"><option value="">All countries</option></select>
-      <select id="f_va"><option value="">All VAs</option></select>
-      <select id="f_interested"><option value="">Interested: any</option>
+      <select id="f_category" aria-label="Category"><option value="">All categories</option></select>
+      <select id="f_country" aria-label="Country"><option value="">All countries</option></select>
+      <select id="f_va" aria-label="VA"><option value="">All VAs</option></select>
+      <select id="f_interested" aria-label="Interested status"><option value="">Interested: any</option>
         <option value="1">Interested only</option>
         <option value="0">Not interested yet</option></select>
-      <select id="f_affiliate"><option value="">Affiliate: any</option>
+      <select id="f_affiliate" aria-label="Affiliate status"><option value="">Affiliate: any</option>
         <option value="1">Affiliates only</option>
         <option value="0">Not an affiliate</option></select>
     </div>
@@ -189,11 +191,30 @@
   <div class="card" id="integrations"></div>
 
   <p style="margin-top:26px"><button id="signout" style="width:100%">Sign out</button></p>
+  <p class="muted" id="sessionmsg" role="status" aria-live="polite"></p>
   <p class="muted" id="whoami"></p>
 </main>
 
+<!-- Keep an actionable screen available even when the external module or a cold network request
+     never completes. This deliberately is not a module: it still runs when the module import does
+     not. A successful boot hides the login again for an authenticated owner. -->
+<script>
+  window.addEventListener('DOMContentLoaded', function () {
+    setTimeout(function () {
+      var login = document.getElementById('login');
+      var app = document.getElementById('app');
+      if (!login || !login.hidden || (app && !app.hidden)) return;
+      login.hidden = false;
+      var msg = document.getElementById('loginmsg');
+      if (msg && !msg.textContent) {
+        msg.textContent = 'The admin portal did not finish loading. Reload the page and try again.';
+      }
+    }, 4000);
+  });
+</script>
+
 <script type="module">
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
+import { createClient } from './vendor/supabase.mjs';
 const sb = createClient('https://aexomkitwnxvpqlmtrik.supabase.co', 'sb_publishable_Y88uWkdq3igd5dMkT1c8JA_qMB_ZB7d',
   // The session is kept and silently renewed, so opening the page on a phone tomorrow does not ask
   // for the password again.
@@ -202,64 +223,204 @@ const sb = createClient('https://aexomkitwnxvpqlmtrik.supabase.co', 'sb_publisha
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const SAFE_PROFILE_HOSTS = ['tiktok.com', 'youtube.com', 'youtu.be', 'instagram.com'];
+function safeProfileUrl(value, handle = '') {
+  const fallback = String(handle || '').trim().replace(/^@/, '');
+  const candidate = value || (fallback && !/[\s/?#]/.test(fallback)
+    ? 'https://www.tiktok.com/@' + encodeURIComponent(fallback) : '');
+  if (!candidate) return null;
+  try {
+    const parsed = new URL(candidate);
+    const host = parsed.hostname.toLowerCase();
+    const allowed = SAFE_PROFILE_HOSTS.some((base) => host === base || host.endsWith('.' + base));
+    return parsed.protocol === 'https:' && allowed && !parsed.username && !parsed.password
+      ? parsed.href : null;
+  } catch { return null; }
+}
+function profileAnchor(value, label, handle = '') {
+  const url = safeProfileUrl(value, handle);
+  const text = esc(label);
+  return url ? '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">' + text + '</a>'
+             : text;
+}
 const n = (x) => (x === null || x === undefined) ? '–' : Number(x).toLocaleString('en-US');
 const usd = (x) => x === null || x === undefined ? '–'
   : '$' + Number(x).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const pct = (x) => x === null || x === undefined ? '–' : Number(x).toFixed(1) + '%';
 const when = (t) => t ? new Date(t).toLocaleString() : 'never';
 
+async function copyPlainText(text) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch { /* use the synchronous fallback below */ }
+  const box = document.createElement('textarea');
+  box.value = text;
+  box.setAttribute('readonly', '');
+  box.style.cssText = 'position:fixed;left:-9999px;top:0';
+  document.body.appendChild(box);
+  box.select();
+  let copied = false;
+  try { copied = document.execCommand('copy') === true; } catch { copied = false; }
+  box.remove();
+  return copied;
+}
+
 let period = 'ALL';
 let offset = 0;
 const PAGE = 25;
+const signedProofUrls = new Map();
+
+async function proofImageUrl(path) {
+  const cached = signedProofUrls.get(path);
+  if (cached && cached.expiresAt > Date.now()) return cached.url;
+  const { data, error } = await sb.storage.from('proofs').createSignedUrl(path, 300);
+  if (error || !data?.signedUrl) return null;
+  signedProofUrls.set(path, { url: data.signedUrl, expiresAt: Date.now() + 240000 });
+  return data.signedUrl;
+}
 
 // ---------------------------------------------------------------------------------------------
 // AUTH. Two buttons, one form. Creating an account is the entire setup step.
 // ---------------------------------------------------------------------------------------------
-$('signin').onclick = async () => {
+async function signIn(event) {
+  event?.preventDefault();
+  $('signin').disabled = true;
   $('loginmsg').textContent = 'signing in…';
-  const { error } = await sb.auth.signInWithPassword(
-    { email: $('email').value.trim(), password: $('pw').value });
-  $('loginmsg').textContent = error ? error.message : '';
-  if (!error) boot();
-};
-
-$('signup').onclick = async () => {
-  const email = $('email').value.trim();
-  if (!email || $('pw').value.length < 8) {
-    $('loginmsg').textContent = 'Enter your email and a password of at least 8 characters.'; return;
+  const password = $('pw').value;
+  try {
+    const { error } = await sb.auth.signInWithPassword(
+      { email: $('email').value.trim(), password });
+    $('loginmsg').textContent = error ? error.message : '';
+    if (!error) await boot();
+  } catch {
+    $('loginmsg').textContent = 'Could not reach the server. Check your connection and try again.';
+  } finally {
+    $('pw').value = '';
+    $('signin').disabled = false;
   }
-  $('loginmsg').textContent = 'creating your account…';
-  const { data, error } = await sb.auth.signUp({ email, password: $('pw').value,
-    options: { emailRedirectTo: location.origin + location.pathname } });
-  if (error) { $('loginmsg').textContent = error.message; return; }
-  // Whether a session comes back depends on the project's confirmation setting, so the page reports
-  // what actually happened rather than assuming either one.
-  if (data.session) { $('loginmsg').textContent = ''; boot(); }
-  else $('loginmsg').textContent =
-    'Account created. Open the confirmation link we just emailed to ' + email + '. If it lands on a '
-    + 'blank or unfamiliar page, that is fine — the address is confirmed either way. Then come back '
-    + 'here and sign in with the password you just chose.';
-};
+}
+$('login-form').addEventListener('submit', signIn);
 
-$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+$('signout').onclick = async () => {
+  $('signout').disabled = true;
+  $('sessionmsg').textContent = 'Signing out…';
+  let error;
+  try { ({ error } = await sb.auth.signOut()); }
+  catch { error = new Error('network'); }
+  if (error) {
+    $('sessionmsg').textContent = 'Could not sign out. Check your connection and try again.';
+    $('signout').disabled = false;
+    return;
+  }
+  $('pw').value = '';
+  location.replace(location.pathname);
+};
 
 // ---------------------------------------------------------------------------------------------
 // BOOT. One call decides which of the two audiences is looking: the owner RPC succeeds only for the
 // owner, and a VA is sent to their own portal rather than shown an empty owner page.
 // ---------------------------------------------------------------------------------------------
+let bootPromise = null;
+let bootRequested = false;
+let hasOwnerSnapshot = false;
+let facetsLoaded = false;
+let ownerUserId = null;
+
+function showRefreshFailure(detail) {
+  $('banners').innerHTML = '<div class="banner bad" id="refresh-error"><b>Refresh failed.</b> '
+    + esc(detail) + '</div>';
+}
+
+function resetOwnerSnapshot() {
+  hasOwnerSnapshot = false;
+  signedProofUrls.clear();
+  facetsLoaded = false;
+  offset = 0;
+  period = 'ALL';
+  window.__dm = '';
+  for (const id of ['attention', 'interested', 'kpis', 'budget', 'supply', 'funnel',
+                    'fullfunnel', 'production', 'ttadmin', 'modblock', 'templates', 'vaperf',
+                    'proofq', 'payouts', 'creators', 'vas', 'sourcing', 'config', 'integrations']) {
+    const el = $(id);
+    if (el) el.innerHTML = '';
+  }
+  $('creatorcount').textContent = '—';
+  $('loginmsg').textContent = '';
+  $('sessionmsg').textContent = '';
+  $('whoami').textContent = '';
+  $('q').value = '';
+  for (const id of ['f_platform', 'f_route', 'f_status', 'f_category', 'f_country', 'f_va']) {
+    const select = $(id);
+    while (select.options.length > 1) select.remove(1);
+    select.value = '';
+  }
+  for (const id of ['f_priority', 'f_interested', 'f_affiliate']) $(id).value = '';
+  for (const button of $('periods').querySelectorAll('button')) {
+    button.setAttribute('aria-pressed', String(button.dataset.p === 'ALL'));
+  }
+}
+
 async function boot() {
+  if (bootPromise) {
+    bootRequested = true;
+    return bootPromise;
+  }
+  bootPromise = (async () => {
+    do {
+      bootRequested = false;
+      try { await bootOnce(); }
+      catch (error) {
+        const message = 'The admin portal could not refresh. Check the connection and try again.';
+        if (hasOwnerSnapshot) {
+          show('app');
+          showRefreshFailure(message);
+        } else {
+          show('login');
+          $('loginmsg').textContent = message;
+        }
+        console.error('[owner-portal] boot failed', error);
+      }
+    } while (bootRequested);
+  })();
+  try { return await bootPromise; }
+  finally { bootPromise = null; }
+}
+
+async function bootOnce() {
   const { data: { session } } = await sb.auth.getSession();
-  if (!session) { show('login'); return; }
+  if (!session) {
+    resetOwnerSnapshot();
+    ownerUserId = null;
+    show('login');
+    return;
+  }
+  const nextUserId = session.user?.id || null;
+  if (ownerUserId && ownerUserId !== nextUserId) resetOwnerSnapshot();
+  ownerUserId = nextUserId;
   const { data: overview, error } = await sb.rpc('dh_owner_overview', { p_period: period });
   if (error) {
-    show('login');
-    const { data: vaq } = await sb.rpc('dh_va_queue');
-    $('loginmsg').innerHTML = vaq
-      ? 'This account is a VA. <a href="./va.html">Open the VA portal</a>.'
-      : 'This account has no access yet.';
+    const { data: vaq, error: vaError } = await sb.rpc('dh_va_queue');
+    if (!vaError && vaq) {
+      show('login');
+      $('loginmsg').innerHTML = 'This account is a VA. <a href="./va.html">Open the VA portal</a>.';
+    } else if (hasOwnerSnapshot) {
+      show('app');
+      showRefreshFailure('The last confirmed dashboard data is still shown.');
+    } else {
+      show('login');
+      const denied = /owner only|permission|not authorized/i.test(error.message || '')
+        && /no va is linked|permission|not authorized/i.test(vaError?.message || '');
+      $('loginmsg').textContent = denied
+        ? 'This account has no owner or VA access.'
+        : 'Signed in, but the portal could not load. This is a server or connection error.';
+    }
     return;
   }
   show('app');
+  $('banners').innerHTML = '';
   $('whoami').textContent = 'Signed in as ' + (session.user.email || '');
   renderOverview(overview);
 
@@ -281,18 +442,19 @@ async function boot() {
   renderPayouts(payouts.data, payouts.error);
   renderTemplates(templates.data, templates.error);
   renderModerationBlocks(modblock.data, modblock.error);
-  renderFunnel(funnel.data || []);
+  renderFunnel(funnel.data || [], funnel.error);
   renderFullFunnel(full.data, full.error);
-  renderProduction(full.data);
-  renderAttention(attention.data || {});
+  renderProduction(full.data, full.error);
+  renderAttention(attention.data || {}, attention.error);
   renderInterested(interested.data || [], interested.error);
-  renderVas(vas.data || {});
-  renderSourcing(sourcing.data || {});
-  renderBudget((sourcing.data || {}).budget || {});
-  renderConfig(((attention.data || {}).config_required) || []);
-  renderIntegrations(integrations.data || {});
-  fillFilterOptions();
-  loadCreators();
+  renderVas(vas.data || {}, vas.error);
+  renderSourcing(sourcing.data || {}, sourcing.error);
+  renderBudget((sourcing.data || {}).budget || {}, sourcing.error);
+  renderConfig(((attention.data || {}).config_required) || [], attention.error);
+  renderIntegrations(integrations.data || {}, integrations.error);
+  if (!facetsLoaded) await fillFilterOptions();
+  await loadCreators();
+  hasOwnerSnapshot = true;
 }
 
 function show(which) {
@@ -415,7 +577,8 @@ function renderSupply(d, err) {
   $('supply').innerHTML = head + '<div style="margin:9px 0">' + bars + '</div>' + table + foot;
 }
 
-function renderFunnel(stages) {
+function renderFunnel(stages, err) {
+  if (err) { $('funnel').innerHTML = '<div class="muted">could not load — ' + esc(err.message) + '</div>'; return; }
   if (!stages.length) { $('funnel').innerHTML = '<div class="muted">no data yet</div>'; return; }
   const top = Math.max(1, Number(stages[0].count) || 0);
   $('funnel').innerHTML = stages.map((s, i) => {
@@ -464,7 +627,8 @@ function renderFullFunnel(d, err) {
 // ---------------------------------------------------------------------------------------------
 // BACKLOG AND GENERATION COST. What is left to do, and what each message cost to write.
 // ---------------------------------------------------------------------------------------------
-function renderProduction(d) {
+function renderProduction(d, err) {
+  if (err) { $('production').innerHTML = '<div class="muted">could not load — ' + esc(err.message) + '</div>'; return; }
   if (!d) { $('production').innerHTML = '<div class="muted">no data yet</div>'; return; }
   const b = d.backlog || {}, g = d.generation || {}, s = d.sourcing || {};
   const row = (k, v) => '<div class="row"><span class="muted">' + k + '</span><b>' + v + '</b></div>';
@@ -507,20 +671,21 @@ function renderProduction(d) {
 // NEEDS YOUR ATTENTION. Only blocks that actually have something in them are drawn -- an empty
 // heading is noise the owner has to read past.
 // ---------------------------------------------------------------------------------------------
-function renderAttention(a) {
+function renderAttention(a, err) {
+  if (err) { $('attention').innerHTML = '<div class="muted">could not load — ' + esc(err.message) + '</div>'; return; }
   const out = [];
   const block = (crit, title, body) =>
     out.push('<div class="att' + (crit ? ' crit' : '') + '"><h3>' + title + '</h3>' + body + '</div>');
 
   if ((a.interested || []).length) block(false, 'Interested creators (' + a.interested.length + ')',
-    a.interested.slice(0, 12).map((i) => '<div class="row"><span><a href="' + esc(i.profile_url)
-      + '" target="_blank" rel="noopener">@' + esc(i.handle || i.display_name || 'creator') + '</a>'
+    a.interested.slice(0, 12).map((i) => '<div class="row"><span>'
+      + profileAnchor(i.profile_url, '@' + (i.handle || i.display_name || 'creator'), i.handle)
       + '<span class="muted"> · ' + esc(i.va || 'unassigned') + '</span></span>'
       + '<span class="pill on">interested</span></div>').join(''));
 
   if ((a.replies || []).length) block(false, 'Replies to read (' + a.replies.length + ')',
-    a.replies.slice(0, 12).map((i) => '<div class="row"><span><a href="' + esc(i.profile_url)
-      + '" target="_blank" rel="noopener">@' + esc(i.handle || i.display_name || 'creator') + '</a>'
+    a.replies.slice(0, 12).map((i) => '<div class="row"><span>'
+      + profileAnchor(i.profile_url, '@' + (i.handle || i.display_name || 'creator'), i.handle)
       + (i.notes ? '<br><span class="muted">' + esc(i.notes) + '</span>' : '') + '</span>'
       + '<span class="pill">' + esc(when(i.replied_at)) + '</span></div>').join(''));
 
@@ -574,15 +739,14 @@ function renderInterested(rows, err) {
   }
 
   const html = rows.map((r) => {
-    const url = r.profile_url || ('https://www.tiktok.com/@' + (r.handle || ''));
+    const url = safeProfileUrl(r.profile_url, r.handle);
     const va_name = r.va_name || 'unknown VA';
     const when_text = r.replied_at ? new Date(r.replied_at).toLocaleDateString() : 'unknown date';
     let thumb = '';
 
     if (r.storage_path) {
-      const signed_url = 'data:image/jpeg;base64,'; // Placeholder — actual signed URL from storage
       thumb = '<img style="width:80px;height:80px;border-radius:8px;object-fit:cover;margin-right:10px" '
-        + 'src="' + esc(signed_url) + '" alt="reply" data-path="' + esc(r.storage_path)
+        + 'hidden alt="reply" data-path="' + esc(r.storage_path)
         + '" data-task="' + esc(r.task_id) + '">';
     }
 
@@ -595,9 +759,9 @@ function renderInterested(rows, err) {
       + '</div>'
       + '</div>'
       + '<div style="display:flex;gap:6px;flex-direction:column">'
-      + '<a href="' + esc(url) + '" target="_blank" rel="noopener" '
-      + 'style="padding:8px 12px;background:#e67e22;border-radius:8px;color:#fff;text-decoration:none;text-align:center;font-size:13px;font-weight:600">'
-      + 'OPEN TIKTOK</a>'
+      + (url ? '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer" '
+        + 'style="padding:8px 12px;background:#e67e22;border-radius:8px;color:#fff;text-decoration:none;text-align:center;font-size:13px;font-weight:600">'
+        + 'OPEN TIKTOK</a>' : '<span class="muted">invalid profile link</span>')
       + '<button class="sm" data-task="' + esc(r.task_id) + '" '
       + 'style="padding:8px 12px;background:#1d2836;border:1px solid var(--line);border-radius:8px">Mark handled</button>'
       + '</div>'
@@ -610,8 +774,10 @@ function renderInterested(rows, err) {
   for (const img of $('interested').querySelectorAll('img[data-path]')) {
     const path = img.dataset.path;
     if (path) {
-      sb.storage.from('proofs').createSignedUrl(path, 300).then((res) => {
-        if (res.data?.signedUrl) img.src = res.data.signedUrl;
+      proofImageUrl(path).then((url) => {
+        if (url) { img.src = url; img.hidden = false; }
+        else img.replaceWith(Object.assign(document.createElement('span'),
+          { className: 'muted', textContent: 'screenshot could not be loaded' }));
       });
     }
   }
@@ -633,7 +799,8 @@ function renderInterested(rows, err) {
 // BUDGET. Spent / ceiling / remaining / percentage, with the three warning bands the owner asked
 // for. Nothing on this card raises the ceiling by itself.
 // ---------------------------------------------------------------------------------------------
-function renderBudget(b) {
+function renderBudget(b, err) {
+  if (err) { $('budget').innerHTML = '<div class="muted">could not load — ' + esc(err.message) + '</div>'; return; }
   if (!b || b.ceiling === undefined) { $('budget').innerHTML = '<div class="muted">no budget set</div>'; return; }
   const p = Number(b.pct_used || 0);
   const colour = p >= 95 ? 'var(--bad)' : p >= 80 ? 'var(--warn)' : 'var(--accent)';
@@ -686,10 +853,7 @@ $('next').onclick = () => { offset += PAGE; loadCreators(); };
 const tri = (id) => $(id).value === '' ? null : $(id).value === '1';
 
 const DIR_COLS = [
-  ['Creator', (r) => r.profile_url
-      ? '<a href="' + esc(r.profile_url) + '" target="_blank" rel="noopener">'
-        + esc(r.creator || r.handle || 'creator') + '</a>'
-      : esc(r.creator || r.handle || 'creator')],
+  ['Creator', (r) => profileAnchor(r.profile_url, r.creator || r.handle || 'creator', r.handle)],
   ['Handle', (r) => r.handle ? '@' + esc(r.handle) : '—'],
   ['Platform', (r) => esc(r.platform)],
   ['Country', (r) => esc(r.country || '—')],
@@ -715,8 +879,11 @@ const DIR_COLS = [
   ['Added', (r) => r.created_at ? esc(new Date(r.created_at).toLocaleDateString()) : '—']
 ];
 
+let directoryRequest = 0;
 async function loadCreators() {
-  const { data, error } = await sb.rpc('dh_owner_directory', {
+  const request = ++directoryRequest;
+  let result;
+  try { result = await sb.rpc('dh_owner_directory', {
     p_search: $('q').value.trim() || null,
     p_platform: $('f_platform').value || null,
     p_route: $('f_route').value || null,
@@ -728,14 +895,17 @@ async function loadCreators() {
     p_interested: tri('f_interested'),
     p_affiliate: tri('f_affiliate'),
     p_limit: PAGE, p_offset: offset
-  });
+  }); } catch (error) { result = { data: null, error }; }
+  if (request !== directoryRequest) return;
+  const { data, error } = result;
   if (error) { $('creators').innerHTML = ''; $('creatorcount').textContent = error.message; return; }
-  const rows = data.rows || [];
+  const rows = data?.rows || [];
+  const total = Number(data?.total || 0);
   $('creatorcount').textContent = rows.length
-    ? (offset + 1) + '–' + (offset + rows.length) + ' of ' + n(data.total)
+    ? (offset + 1) + '–' + (offset + rows.length) + ' of ' + n(total)
     : 'nothing matches those filters';
   $('prev').disabled = offset === 0;
-  $('next').disabled = offset + rows.length >= Number(data.total || 0);
+  $('next').disabled = offset + rows.length >= total;
   $('creators').innerHTML =
     '<tr>' + DIR_COLS.map(([h, , cls]) =>
       '<th' + (cls ? ' class="' + cls + '"' : '') + '>' + h + '</th>').join('') + '</tr>'
@@ -747,8 +917,8 @@ async function loadCreators() {
 // The dropdowns are filled from what actually exists in the database, once, so they never offer a
 // filter that would return nothing and never miss a value that is only on page nine.
 async function fillFilterOptions() {
-  const { data } = await sb.rpc('dh_owner_directory_facets');
-  if (!data) return;
+  const { data, error } = await sb.rpc('dh_owner_directory_facets');
+  if (error || !data) return;
   const add = (id, values, label) => {
     const sel = $(id), have = new Set([...sel.options].map((o) => o.value));
     for (const v of values || []) {
@@ -766,6 +936,7 @@ async function fillFilterOptions() {
   add('f_category', data.categories);
   add('f_country', data.countries);
   add('f_va', data.vas, true);
+  facetsLoaded = true;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1040,7 +1211,7 @@ async function renderProofs(rows, err) {
                          : ' · not sent yet')
         + ' · ' + esc(r.review_status)
         + (r.ai_verdict ? ' · machine says ' + esc(r.ai_verdict) : '') + '</div>'
-        + (r.image_path ? '<img data-img="' + esc(r.image_path) + '" alt="proof screenshot"'
+        + (r.image_path ? '<img data-img="' + esc(r.image_path) + '" hidden alt="proof screenshot"'
             + ' style="max-width:320px;width:100%;border-radius:10px;border:1px solid var(--line)">'
             : '<div class="muted">no screenshot yet</div>')
         + '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:9px">'
@@ -1064,8 +1235,8 @@ async function renderProofs(rows, err) {
   // A private bucket means every image needs its own short-lived URL. Done after the markup so the
   // rows appear immediately and fill in, rather than the whole queue waiting on the slowest signature.
   for (const img of $('proofq').querySelectorAll('img[data-img]')) {
-    sb.storage.from('proofs').createSignedUrl(img.dataset.img, 300).then(({ data }) => {
-      if (data?.signedUrl) img.src = data.signedUrl;
+    proofImageUrl(img.dataset.img).then((url) => {
+      if (url) { img.src = url; img.hidden = false; }
       else img.replaceWith(Object.assign(document.createElement('div'),
         { className: 'muted', textContent: 'screenshot could not be loaded' }));
     });
@@ -1131,7 +1302,8 @@ function renderPayouts(rows, err) {
   }
 }
 
-function renderVas(d) {
+function renderVas(d, err) {
+  if (err) { $('vas').innerHTML = '<div class="muted">could not load — ' + esc(err.message) + '</div>'; return; }
   const rows = d.vas || [];
   window.__dm = d.dm_template ?? '';   // the Config-required card edits this same value
   const sel = $('f_va'), have = new Set([...sel.options].map((o) => o.value));
@@ -1177,14 +1349,15 @@ function renderVas(d) {
   // own password and is signed in immediately -- no confirmation mail, and therefore no encounter
   // with the redirect to this project's factory-default Site URL, which lands on a browser error.
   const inviteLink = (code) =>
-    location.origin + location.pathname.replace(/[^/]*$/, '') + 'va.html?invite=' + code;
+    location.origin + location.pathname.replace(/[^/]*$/, '') + 'va.html#invite=' + encodeURIComponent(code);
 
   // The link is a credential for 14 days, so it is shown once, offered to the clipboard, and never
   // stored anywhere the dashboard can redisplay it.
   async function handOver(email, code) {
     const url = inviteLink(code);
-    try { await navigator.clipboard.writeText(url); } catch { /* shown below either way */ }
-    prompt('Send this link to ' + email + '. It is already copied.\\n\\n'
+    const copied = await copyPlainText(url);
+    prompt('Send this link to ' + email + '. '
+      + (copied ? 'It is copied to your clipboard.' : 'Copy it from the field below.') + '\\n\\n'
       + 'They open it, choose their own password, and are straight in. Nothing is emailed.\\n'
       + 'The link works once and expires in 14 days.', url);
   }
@@ -1231,9 +1404,10 @@ async function editVa(v) {
     const { data, error } = await sb.rpc('dh_owner_reissue_invite', { p_va_id: v.va_id });
     if (error) { alert(error.message); return; }
     const url = location.origin + location.pathname.replace(/[^/]*$/, '')
-              + 'va.html?invite=' + data.invite_code;
-    try { await navigator.clipboard.writeText(url); } catch { /* shown below either way */ }
-    prompt('New link for ' + data.email + '. The previous one no longer works.', url);
+              + 'va.html#invite=' + encodeURIComponent(data.invite_code);
+    const copied = await copyPlainText(url);
+    prompt('New link for ' + data.email + '. The previous one no longer works. '
+      + (copied ? 'The new link is copied.' : 'Copy the new link from the field below.'), url);
     return;
   }
   if (what === 'creators') {
@@ -1260,7 +1434,8 @@ async function editVa(v) {
 // SOURCING CONTROLS. Everything that costs more money asks first, in words that name the cost.
 // The outbound send kill-switch is deliberately NOT here: this card configures discovery only.
 // ---------------------------------------------------------------------------------------------
-function renderSourcing(s) {
+function renderSourcing(s, err) {
+  if (err) { $('sourcing').innerHTML = '<div class="muted">could not load — ' + esc(err.message) + '</div>'; return; }
   const on = s.sourcing_enabled === true;
   const q = s.qualification || {};
   const territory = (s.territory && s.territory.countries) || [];
@@ -1352,7 +1527,8 @@ function renderSourcing(s) {
 // ---------------------------------------------------------------------------------------------
 // CONFIG REQUIRED and INTEGRATIONS. Both read state; neither exposes a secret.
 // ---------------------------------------------------------------------------------------------
-function renderConfig(items) {
+function renderConfig(items, err) {
+  if (err) { $('config').innerHTML = '<div class="muted">could not load — ' + esc(err.message) + '</div>'; return; }
   $('config').innerHTML = (items.length
     ? items.map((c) => '<div class="row"><span><b>' + esc(c.label) + '</b><br>'
         + '<span class="muted">' + esc(c.detail) + '</span></span></div>').join('')
@@ -1370,7 +1546,8 @@ function renderConfig(items) {
   };
 }
 
-function renderIntegrations(d) {
+function renderIntegrations(d, err) {
+  if (err) { $('integrations').innerHTML = '<div class="muted">could not load — ' + esc(err.message) + '</div>'; return; }
   const fp = d.firstpromoter || {};
   $('integrations').innerHTML =
     '<div class="row"><span>FirstPromoter</span><span class="pill ' + (fp.configured ? 'on' : 'warnp')
@@ -1396,10 +1573,16 @@ function renderIntegrations(d) {
 // LIVE, without a refresh button. Realtime pushes the moment a VA touches the queue; the 30-second
 // poll is the belt to that braces, so a dropped socket costs freshness rather than correctness.
 // ---------------------------------------------------------------------------------------------
+let realtimeRefreshTimer = 0;
+function scheduleBoot(delay = 250) {
+  clearTimeout(realtimeRefreshTimer);
+  realtimeRefreshTimer = setTimeout(() => boot(), delay);
+}
 sb.channel('dash')
-  .on('postgres_changes', { event: '*', schema: 'public', table: 'dh_contact_tasks' }, () => boot())
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'dh_contact_tasks' },
+    () => scheduleBoot())
   .subscribe();
 setInterval(() => { if (!document.hidden && !$('app').hidden) boot(); }, 30000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) boot(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) scheduleBoot(0); });
 boot();
 </script></body></html>
