@@ -1,14 +1,16 @@
 <!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' https://esm.sh; style-src 'unsafe-inline'; connect-src https://aexomkitwnxvpqlmtrik.supabase.co wss://aexomkitwnxvpqlmtrik.supabase.co https://esm.sh; img-src data: blob: https://aexomkitwnxvpqlmtrik.supabase.co; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://aexomkitwnxvpqlmtrik.supabase.co wss://aexomkitwnxvpqlmtrik.supabase.co; img-src data: blob: https://aexomkitwnxvpqlmtrik.supabase.co; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b0f14">
+<meta name="referrer" content="no-referrer">
 <title>DropHero — VA</title>
 <style>
   :root{--bg:#0b0f14;--card:#151b24;--line:#232c39;--ink:#e8edf5;--dim:#8b98ab;
         --ok:#3ddc97;--warn:#ffb454;--bad:#ff6b6b;--accent:#6aa6ff}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  [hidden]{display:none!important}
   html,body{overflow-x:hidden;max-width:100%}
   body{margin:0;background:var(--bg);color:var(--ink);
        font:16px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;
@@ -45,9 +47,9 @@
          border-radius:11px;padding:11px;min-height:44px;width:100%;max-width:100%}
   textarea{min-height:64px}
   .muted{color:var(--dim);font-size:12px}
-  /* Three tabs, thumb-sized, stuck to the top. The Work tab consolidates New DMs, Check replies,
-     and Chats — showing the most important action first. */
-  .tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;position:sticky;top:0;z-index:5;
+  /* Four thumb-sized tabs, stuck to the top. Work consolidates first DMs and reply checks; Chats
+     keeps answered conversations and their approved follow-up actions available afterwards. */
+  .tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;position:sticky;top:0;z-index:5;
         background:var(--bg);padding:8px 0 10px;margin-bottom:4px}
   .tab{font:inherit;background:#161d27;color:var(--dim);border:1px solid var(--line);
        border-radius:10px;padding:9px 2px;min-height:56px;cursor:pointer;width:100%;
@@ -76,6 +78,7 @@
      number depending on width. min-width:0 stops a long value from forcing the row wider than the
      phone; the numbers shrink before they wrap. */
   .counts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-bottom:14px}
+  .counts.two{grid-template-columns:repeat(2,minmax(0,1fr))}
   .counts div{min-width:0}
   .counts b{display:block;overflow-wrap:anywhere}
   @media(max-width:360px){.counts{gap:4px}.counts b{font-size:22px}}
@@ -171,66 +174,70 @@
 
 <div id="login" hidden>
   <h1>DropHero</h1><p class="sub">VA sign in.</p>
-  <div class="card">
-    <p class="muted">Email</p><input id="email" type="email" autocomplete="username" inputmode="email">
-    <p class="muted" style="margin-top:11px">Password</p>
-    <input id="pw" type="password" autocomplete="current-password">
+  <form class="card" id="login-form">
+    <label class="muted" for="email">Email</label>
+    <input id="email" type="email" autocomplete="username" inputmode="email" required>
+    <label class="muted" for="pw" style="display:block;margin-top:11px">Password</label>
+    <input id="pw" type="password" autocomplete="current-password" required minlength="8">
     <div class="acts" style="margin-top:13px">
-      <button id="signin" class="full">Sign in</button>
+      <button id="signin" class="full" type="submit">Sign in</button>
     </div>
-    <p id="loginmsg" class="muted" style="margin-bottom:0"></p>
+    <p id="loginmsg" class="muted" style="margin-bottom:0" role="status" aria-live="polite"></p>
     <!-- Only shown when somebody is signed in but this portal cannot serve them. The Sign out
          button lives inside #app, which is exactly what gets hidden in that state, so without
          this one there is no way out of the screen except clearing site data. -->
     <div class="acts" id="wrongacct" hidden style="margin-top:13px">
-      <button id="switchacct" class="full">Sign out and use another account</button>
+      <button id="switchacct" class="full" type="button">Sign out and use another account</button>
     </div>
-  </div>
+  </form>
   <p class="muted">First time? Open the invitation link your manager sent you — that is where you
     choose your password.</p>
 </div>
 
 <div id="claim" hidden>
   <h1>DropHero</h1><p class="sub">Set up your account.</p>
-  <div class="card">
+  <form class="card" id="claim-form">
     <p class="muted">You were invited as</p>
     <p class="who" id="claimemail" style="font-size:16px">…</p>
-    <p class="muted" style="margin-top:13px">Choose a password</p>
-    <input id="claimpw" type="password" autocomplete="new-password">
-    <p class="muted" style="margin-top:11px">Repeat it</p>
-    <input id="claimpw2" type="password" autocomplete="new-password">
+    <label class="muted" for="claimpw" style="display:block;margin-top:13px">Choose a password</label>
+    <input id="claimpw" type="password" autocomplete="new-password" required minlength="8">
+    <label class="muted" for="claimpw2" style="display:block;margin-top:11px">Repeat it</label>
+    <input id="claimpw2" type="password" autocomplete="new-password" required minlength="8">
     <div class="acts" style="margin-top:13px">
-      <button id="claimgo" class="good full">Create my account</button>
+      <button id="claimgo" class="good full" type="submit">Create my account</button>
     </div>
-    <p id="claimmsg" class="muted" style="margin-bottom:0"></p>
-  </div>
+    <p id="claimmsg" class="muted" style="margin-bottom:0" role="status" aria-live="polite"></p>
+  </form>
 </div>
 
 <main id="app" hidden>
   <h1 id="hello">DropHero</h1>
   <p class="sub" id="sub">loading…</p>
 
-  <div class="counts">
+  <div class="counts two">
     <div><b id="remaining">–</b><span>Left today</span></div>
     <div><b id="done">–</b><span>Done today</span></div>
   </div>
 
   <div class="tabs" role="tablist">
     <button class="tab" id="tab-work" role="tab" aria-selected="true"
-            data-tab="work"><b id="n-work">–</b>Work</button>
+            aria-controls="work" data-tab="work"><b id="n-work">–</b>Work</button>
     <button class="tab" id="tab-tt"   role="tab" aria-selected="false"
-            data-tab="tt"><b id="n-tt">–</b>Accounts</button>
+            aria-controls="tt" data-tab="tt"><b id="n-tt">–</b>Accounts</button>
+    <button class="tab" id="tab-conv" role="tab" aria-selected="false"
+            aria-controls="conv" data-tab="conv"><b id="n-conv">–</b>Chats</button>
     <button class="tab" id="tab-earn" role="tab" aria-selected="false"
-            data-tab="earn"><b id="n-earn">–</b>Earnings</button>
+            aria-controls="earn" data-tab="earn"><b id="n-earn">–</b>Earnings</button>
   </div>
 
   <div id="demand"></div>
-  <div id="work"></div>
-  <div id="tt" hidden></div>
-  <div id="earn" hidden></div>
+  <div id="work" role="tabpanel" aria-labelledby="tab-work"></div>
+  <div id="tt" role="tabpanel" aria-labelledby="tab-tt" hidden></div>
+  <div id="conv" role="tabpanel" aria-labelledby="tab-conv" hidden><div id="list"></div></div>
+  <div id="earn" role="tabpanel" aria-labelledby="tab-earn" hidden></div>
 
-<dialog id="addacct"><div class="sheet">
-  <h2 style="margin:0 0 4px;font-size:20px">Add a TikTok account</h2>
+<dialog id="addacct" aria-labelledby="addacct-title"><div class="sheet">
+  <h2 id="addacct-title" style="margin:0 0 4px;font-size:20px">Add a TikTok account</h2>
   <p class="muted" style="margin-top:0">An account you have already made yourself. We never create
     one for you.</p>
 
@@ -262,8 +269,8 @@
   </div>
 </div></dialog>
 
-<dialog id="probdlg"><div class="sheet">
-  <h2 style="margin:0 0 4px;font-size:20px">Report a problem</h2>
+<dialog id="probdlg" aria-labelledby="problem-title"><div class="sheet">
+  <h2 id="problem-title" style="margin:0 0 4px;font-size:20px">Report a problem</h2>
   <p class="muted" style="margin-top:0" id="p-acct"></p>
   <div id="p-kinds"></div>
   <p class="muted" style="margin:11px 0 4px">Anything else worth knowing? (optional)</p>
@@ -276,8 +283,8 @@
   </div>
 </div></dialog>
 
-<dialog id="pwdlg"><div class="sheet">
-  <h2 style="margin:0 0 4px;font-size:20px">Change password</h2>
+<dialog id="pwdlg" aria-labelledby="password-title"><div class="sheet">
+  <h2 id="password-title" style="margin:0 0 4px;font-size:20px">Change password</h2>
   <p class="muted" style="margin-top:0">At least 8 characters. You will use this the next time you sign in.</p>
   <p class="muted" style="margin:13px 0 4px">New password</p>
   <input id="pw-new" type="password" autocomplete="new-password">
@@ -290,7 +297,7 @@
   </div>
 </div></dialog>
 
-<dialog id="proofdlg"><div class="sheet">
+<dialog id="proofdlg" aria-labelledby="pr-title"><div class="sheet">
   <h2 style="margin:0 0 4px;font-size:20px" id="pr-title">Quick check</h2>
   <p class="muted" style="margin-top:0" id="pr-why"></p>
   <label class="shot" id="pr-pick">Take or choose a photo
@@ -304,8 +311,8 @@
   </div>
 </div></dialog>
 
-<dialog id="replydlg"><div class="sheet">
-  <h2 style="margin:0 0 4px;font-size:20px">They replied</h2>
+<dialog id="replydlg" aria-labelledby="reply-title"><div class="sheet">
+  <h2 id="reply-title" style="margin:0 0 4px;font-size:20px">They replied</h2>
   <p class="muted" style="margin-top:0" id="rp-who"></p>
   <label class="shot" id="rp-pick">Photo of the chat
     <input type="file" accept="image/*" id="rp-file">
@@ -352,7 +359,7 @@
 </script>
 
 <script type="module">
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
+import { createClient } from './vendor/supabase.mjs';
 import {
   computeCapacity, sentLabel, checkedLabel, followUpLabel,
   normalizeRpc, safeLogLine, copyText, createSequencer,
@@ -367,10 +374,29 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+function cleanTikTokHandle(value) {
+  const handle = String(value || '').trim().replace(/^@/, '');
+  return handle && !/[\s/?#]/.test(handle) ? handle : null;
+}
+
+function safeTikTokProfileUrl(value, handle = '') {
+  if (value) {
+    try {
+      const parsed = new URL(value);
+      const host = parsed.hostname.toLowerCase();
+      if (parsed.protocol === 'https:'
+          && (host === 'tiktok.com' || host.endsWith('.tiktok.com'))
+          && !parsed.username && !parsed.password) return parsed.href;
+    } catch { /* fall back to the separately supplied handle */ }
+  }
+  const cleanHandle = cleanTikTokHandle(handle);
+  return cleanHandle ? 'https://www.tiktok.com/@' + encodeURIComponent(cleanHandle) : null;
+}
+
 let queue = [];       // NEW DMS only: creators nobody has written to yet
 let cursor = 0;       // which one is on screen
 let view = {};        // the whole three-part payload from dh_va_queue
-let tab = 'work';     // 'work' | 'tt' | 'earn'
+let tab = 'work';     // 'work' | 'tt' | 'conv' | 'earn'
 let workSubstate = null; // which action is being shown: 'proof' | 'reply' | 'dm' | 'copied' | 'cooldown' | 'done' | 'sent'
 let capacity = null;  // last dh_va_capacity() answer -- the one number the Work header trusts
 
@@ -384,11 +410,20 @@ let capacity = null;  // last dh_va_capacity() answer -- the one number the Work
 // option was to send it again. The pending action is written to sessionStorage BEFORE the tab
 // leaves and read back on every boot, so it survives a reload, a tab switch and an app restart.
 let pending = null;   // { task_id, handle, profile_url, dm_message, state, copy_ok } | null
+let pendingUserId = null;
 
 /** Persist and mirror in one place, so the variable and the storage can never disagree. */
 function setPending(entry) {
   pending = entry;
-  if (entry) savePending(entry); else clearPending();
+  if (entry) savePending(entry, { userId: pendingUserId });
+  else clearPending({ userId: pendingUserId });
+}
+
+function clearUserState() {
+  clearPending({ userId: pendingUserId });
+  clearReplyReports();
+  pending = null;
+  resetVaMemory();
 }
 
 // Whatever the Work state machine last decided the VA is acting on. The handlers read this rather
@@ -406,6 +441,25 @@ const justUploadedReply = new Set();
 // results === null means "no search running, show the normal conversations list". An empty array
 // means the search ran and matched nothing, which is a different thing to say on screen.
 const search = { q: '', results: null, timer: 0, focused: false };
+let chatStatus = '';
+
+function resetVaMemory() {
+  queue = [];
+  cursor = 0;
+  view = {};
+  currentWorkTask = null;
+  capacity = null;
+  justUploadedReply.clear();
+  search.q = '';
+  search.results = null;
+  search.focused = false;
+  chatStatus = '';
+  clearTimeout(search.timer);
+  search.timer = 0;
+  if (typeof tt !== 'undefined') tt = { accounts: [], va_sent_today: 0, va_daily_cap: 0, va_remaining: 0 };
+  if (typeof sendFrom !== 'undefined') sendFrom = null;
+  if (typeof ticker !== 'undefined') { clearInterval(ticker); ticker = 0; }
+}
 
 const seq = createSequencer();
 
@@ -451,13 +505,24 @@ async function withButton(btn, action, ids, call, after) {
   return res;
 }
 
-$('signin').onclick = async () => {
+async function signIn(event) {
+  event?.preventDefault();
+  $('signin').disabled = true;
   $('loginmsg').textContent = 'signing in…';
-  const { error } = await sb.auth.signInWithPassword(
-    { email: $('email').value.trim(), password: $('pw').value });
-  $('loginmsg').textContent = error ? error.message : '';
-  if (!error) boot();
-};
+  const password = $('pw').value;
+  try {
+    const { error } = await sb.auth.signInWithPassword(
+      { email: $('email').value.trim(), password });
+    $('loginmsg').textContent = error ? error.message : '';
+    if (!error) await boot();
+  } catch {
+    $('loginmsg').textContent = 'Could not reach the server. Check your connection and try again.';
+  } finally {
+    $('pw').value = '';
+    $('signin').disabled = false;
+  }
+}
+$('login-form').addEventListener('submit', signIn);
 
 // ---------------------------------------------------------------------------------------------
 // CLAIMING AN INVITATION. The link carries a single-use code; the VA supplies only a password.
@@ -465,7 +530,15 @@ $('signin').onclick = async () => {
 // lost in -- which matters because this project's Site URL still points somewhere that does not
 // resolve, and a VA who lands there cannot tell a working signup from a broken one.
 // ---------------------------------------------------------------------------------------------
-const INVITE = new URLSearchParams(location.search).get('invite');
+const inviteUrl = new URL(location.href);
+const INVITE = inviteUrl.searchParams.get('invite')
+  || new URLSearchParams(inviteUrl.hash.replace(/^#/, '')).get('invite');
+// Old links carried the credential in the query string, which browsers may include in referrers.
+// Move it into the fragment immediately, but keep it until claiming succeeds so a reload or a
+// temporary connection failure does not destroy the only invitation the VA received.
+if (inviteUrl.searchParams.get('invite') && INVITE) {
+  history.replaceState(null, '', location.pathname + '#invite=' + encodeURIComponent(INVITE));
+}
 
 async function claimEndpoint(payload) {
   // fetch rejects rather than returning a response when the request never completes -- no network,
@@ -488,12 +561,19 @@ async function claimEndpoint(payload) {
 
 async function offerClaim() {
   const { ok, body } = await claimEndpoint({ code: INVITE, check: true });
-  if (!ok) { $('login').hidden = false; $('loginmsg').textContent = body.error; return; }
+  if (!ok) {
+    $('claim').hidden = true;
+    $('login').hidden = false;
+    $('loginmsg').textContent = body.error;
+    return;
+  }
+  $('login').hidden = true;
   $('claim').hidden = false;
   $('claimemail').textContent = body.email;
 }
 
-$('claimgo').onclick = async () => {
+async function claimInvite(event) {
+  event?.preventDefault();
   const pw = $('claimpw').value;
   if (pw.length < 8) { $('claimmsg').textContent = 'At least 8 characters, please.'; return; }
   if (pw !== $('claimpw2').value) { $('claimmsg').textContent = 'The two passwords differ.'; return; }
@@ -502,25 +582,45 @@ $('claimgo').onclick = async () => {
 
   const { ok, body } = await claimEndpoint({ code: INVITE, password: pw });
   if (!ok) { $('claimmsg').textContent = body.error; $('claimgo').disabled = false; return; }
+  history.replaceState(null, '', location.pathname); // the single-use credential is now spent
 
   // Straight in. Signing in here rather than asking them to type it all again is the whole point.
-  const { error } = await sb.auth.signInWithPassword({ email: body.email, password: pw });
+  let error;
+  try {
+    ({ error } = await sb.auth.signInWithPassword({ email: body.email, password: pw }));
+  } catch {
+    error = new Error('The account was created, but automatic sign-in could not reach the server.');
+  }
+  $('claimpw').value = ''; $('claimpw2').value = '';
   if (error) {
     $('claim').hidden = true; $('login').hidden = false;
     $('loginmsg').textContent = 'Your account is ready. Sign in with ' + body.email + '.';
     return;
   }
-  history.replaceState(null, '', location.pathname);   // do not leave a used code in the address bar
   $('claim').hidden = true;
-  boot();
-};
+  await boot();
+}
+$('claim-form').addEventListener('submit', claimInvite);
 
-$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+async function signOut(button, target) {
+  if (button) button.disabled = true;
+  let error;
+  try { ({ error } = await sb.auth.signOut()); }
+  catch { error = new Error('network'); }
+  if (error) {
+    if (button) button.disabled = false;
+    alert('Could not sign out. Check your connection and try again.');
+    return;
+  }
+  clearUserState();
+  $('pw').value = '';
+  location.replace(target);
+}
+$('signout').onclick = () => signOut($('signout'), location.pathname);
 // The same thing, from the screen where #app -- and therefore #signout -- is hidden. The invite
 // code is dropped on the way out: it belongs to whoever was invited, not to whoever signs in next.
 $('switchacct').onclick = async () => {
-  await sb.auth.signOut();
-  location.replace(location.pathname);
+  await signOut($('switchacct'), location.pathname);
 };
 
 // A VA's first password was chosen by whoever created their account, so they get a way to replace
@@ -553,7 +653,9 @@ $('pw-save').onclick = async () => {
   // Never logged: supabase-js's own error objects do not carry the password, and none of this
   // repository's error handling (safeLogLine, console.error) is given the field values -- only the
   // update() call sees them, and only to send them to Supabase auth over TLS.
-  const { error } = await sb.auth.updateUser({ password: a });
+  let error;
+  try { ({ error } = await sb.auth.updateUser({ password: a })); }
+  catch { error = new Error('Could not reach the server. Check your connection and try again.'); }
   $('pw-save').disabled = false;
   if (error) { msg.textContent = error.message; msg.className = 'fieldmsg bad'; return; }
 
@@ -567,28 +669,64 @@ $('pw-save').onclick = async () => {
  * boot() reaches the network three times before it shows anything. Any of them throwing used to
  * leave all three screens hidden, and a blank page with no sign-in button reads as a dead product.
  */
+let bootPromise = null;
+let bootRequested = false;
+
 async function boot() {
-  try {
-    await bootOrThrow();
-  } catch (e) {
-    $('claim').hidden = true; $('app').hidden = true; $('login').hidden = false;
-    $('wrongacct').hidden = false;
-    $('loginmsg').textContent = 'Something went wrong loading the portal — this is a fault on our '
-      + 'side, not your account. Try signing in below. (' + (e && e.message || 'unknown error') + ')';
+  if (bootPromise) {
+    bootRequested = true;
+    return bootPromise;
   }
+  bootPromise = (async () => {
+    let result;
+    do {
+      bootRequested = false;
+      try {
+        result = await bootOrThrow();
+      } catch (e) {
+        $('claim').hidden = true; $('app').hidden = true; $('login').hidden = false;
+        $('wrongacct').hidden = false;
+        $('loginmsg').textContent = 'Something went wrong loading the portal — this is a fault on our '
+          + 'side, not your account. Try signing in below. (' + (e && e.message || 'unknown error') + ')';
+      }
+    } while (bootRequested);
+    return result;
+  })();
+  try { return await bootPromise; }
+  finally { bootPromise = null; }
 }
 
 async function bootOrThrow() {
+  const token = seq.begin('boot');
   const { data: { session } } = await sb.auth.getSession();
+  if (!seq.isCurrent('boot', token)) return;
   if (!session) {
+    // Keep the user-scoped pending action in sessionStorage on an unexpected auth expiry. If the
+    // same VA signs back in, they must still be able to confirm a DM already sent. Memory is wiped
+    // so a different account can never see the previous VA's cached accounts or amounts.
+    pending = null;
+    resetVaMemory();
+    pendingUserId = null;
     $('app').hidden = true;
+    $('wrongacct').hidden = true;
+    $('loginmsg').textContent = '';
+    $('login').hidden = true;
+    $('claim').hidden = true;
     // An invitation link takes precedence over the sign-in form: someone arriving with one has no
     // account yet, and showing them a password box they cannot use is how people give up.
     if (INVITE) { await offerClaim(); } else { $('login').hidden = false; }
     return;
   }
+  const nextUserId = session.user && session.user.id;
+  if (pendingUserId !== nextUserId) {
+    if (pendingUserId) clearUserState();
+    pendingUserId = nextUserId;
+    pending = loadPending({ userId: pendingUserId });
+    loadReplyReports();
+  }
   $('claim').hidden = true;
   const { data, error } = await sb.rpc('dh_va_queue');
+  if (!seq.isCurrent('boot', token)) return;
   if (error) {
     // TWO VERY DIFFERENT FAILURES USED TO SHOW THE SAME SENTENCE. Any error here was reported as
     // "not set up as a VA yet" -- so when a bug in the query made every call fail, a VA with a
@@ -622,13 +760,14 @@ async function bootOrThrow() {
   $('wrongacct').hidden = true;
   $('login').hidden = true; $('app').hidden = false;
 
-  // A slow boot() racing a faster later one must not let the slow one win. bootOrThrow can be
-  // re-entered (visibilitychange, an action's own refresh, a second tap) faster than a request
-  // returns; without this, an old response landing last silently rewound the screen.
-  const token = seq.begin('boot');
-
   view = data;
   queue = data.new_dms || [];
+  if (pending) {
+    const authorised = pending.state === AWAITING_SEND
+      ? queue.some((task) => task && task.task_id === pending.task_id)
+      : (data.check_replies || []).some((task) => task && task.task_id === pending.task_id);
+    if (!authorised) setPending(null);
+  }
   cursor = Math.min(cursor, Math.max(0, queue.length - 1));
   $('hello').textContent = 'Hi ' + ((data.va && data.va.name) || '');
   // THE TIER 1 COUNT, NAMED RATHER THAN INFERRED.
@@ -711,6 +850,7 @@ async function loadMoney() {
   view.chats = convosRes.data || [];
   $('n-earn').title = '';
   $('n-earn').textContent = view.money ? usd(view.money.today_total_cents || 0) : '–';
+  $('n-conv').textContent = String(view.chats.length);
   return { ok: true };
 }
 
@@ -869,7 +1009,7 @@ function drawAccounts() {
     + '<div class="acct-head"><div><div class="who">My TikTok accounts</div>'
       + '<div class="meta">' + list.length + (list.length === 1 ? ' account' : ' accounts') + '</div></div>'
       + '</div>'
-    + '<div class="counts" style="margin:13px 0 0">'
+    + '<div class="counts two" style="margin:13px 0 0">'
       + '<div><b>' + (capacity ? capacity.va_sent_today : (tt.va_sent_today ?? '—')) + '</b><span>Sent today</span></div>'
       + '<div><b>' + (capacity ? capacity.sendable_now : '—') + '</b><span>You can still send</span></div>'
     + '</div></div>'
@@ -901,8 +1041,11 @@ function openAdd() {
 $('a-cancel').onclick = () => $('addacct').close();
 
 $('a-save').onclick = async () => {
-  const user = $('a-user').value.trim();
+  const user = cleanTikTokHandle($('a-user').value);
   if (!user) { $('a-msg').textContent = 'The username is missing.'; return; }
+  const enteredUrl = $('a-url').value.trim();
+  const profileUrl = safeTikTokProfileUrl(enteredUrl, user);
+  if (!profileUrl) { $('a-msg').textContent = 'Enter a valid TikTok profile link.'; return; }
   if (!($('a-img').checked && $('a-bio').checked && $('a-vid').checked)) {
     $('a-msg').textContent = 'Please tick all three boxes first.'; return;
   }
@@ -910,7 +1053,7 @@ $('a-save').onclick = async () => {
   $('a-msg').textContent = 'adding…';
   const { data, error } = await sb.rpc('dh_tiktok_add_account', {
     p_username: user,
-    p_profile_url: $('a-url').value.trim() || ('https://www.tiktok.com/@' + user.replace(/^@/, '')),
+    p_profile_url: profileUrl,
     p_created_on: $('a-date').value || null,
     p_country: $('a-country').value.trim() || null,
     p_confirm_image: true, p_confirm_bio: true, p_confirm_video: true
@@ -1088,9 +1231,11 @@ function render() {
   }
   $('work').hidden = tab !== 'work';
   $('tt').hidden   = tab !== 'tt';
+  $('conv').hidden = tab !== 'conv';
   $('earn').hidden = tab !== 'earn';
   drawDemand();
   if (tab === 'tt')   { drawAccounts(); return; }
+  if (tab === 'conv') { drawConversations(); return; }
   if (tab === 'earn') { drawEarnings(); return; }
   if (tab === 'work') { drawWork(); return; }
 }
@@ -1328,7 +1473,23 @@ function wireWorkButtons() {
     if (!copyBtn || !t) return;
 
     copyBtn.onclick = () => {
-      if (!t.dm_message) return;
+      if (!t.dm_message) {
+        const msg = $('dm-msg');
+        if (msg) {
+          msg.textContent = 'No approved DM is attached to this creator. Tell Rico before sending.';
+          msg.className = 'fieldmsg bad';
+        }
+        return;
+      }
+      const profileUrl = safeTikTokProfileUrl(t.profile_url, t.handle);
+      if (!profileUrl) {
+        const msg = $('dm-msg');
+        if (msg) {
+          msg.textContent = 'This creator has no valid TikTok profile link. Tell Rico before sending.';
+          msg.className = 'fieldmsg bad';
+        }
+        return;
+      }
       copyBtn.disabled = true;
 
       const copiedNow = legacyCopy(t.dm_message) === true;
@@ -1336,7 +1497,7 @@ function wireWorkButtons() {
       setPending({
         task_id: t.task_id,
         handle: t.handle,
-        profile_url: t.profile_url,
+        profile_url: profileUrl,
         dm_message: t.dm_message,
         state: AWAITING_SEND,
         copy_ok: copiedNow,
@@ -1356,7 +1517,7 @@ function wireWorkButtons() {
         return;
       }
 
-      leaveForTikTok(t.profile_url || ('https://www.tiktok.com/@' + t.handle));
+      leaveForTikTok(profileUrl, t.handle);
       render(); // if the tab survives, phase 2 is already on screen behind TikTok
     };
     return;
@@ -1375,7 +1536,7 @@ function wireWorkButtons() {
     const openBtn = $('work-open-tiktok');
     if (openBtn) {
       openBtn.onclick = () => {
-        leaveForTikTok(c.profile_url || ('https://www.tiktok.com/@' + (c.handle || '')));
+        leaveForTikTok(c.profile_url || ('https://www.tiktok.com/@' + (c.handle || '')), c.handle);
       };
     }
 
@@ -1397,7 +1558,6 @@ function wireWorkButtons() {
             }
             const cooldown = r.data?.cooldown_seconds || 30;
             await new Promise((res2) => setTimeout(res2, Math.max(300, Math.min(cooldown, 2) * 1000)));
-            await Promise.all([loadAccounts(), loadMoney()]);
             await boot();
           });
         if (!res.ok) {
@@ -1415,7 +1575,6 @@ function wireWorkButtons() {
           () => sb.rpc('dh_va_update_task', { p_task_id: c.task_id, p_status: 'UNREACHABLE' }),
           async () => {
             setPending(null);
-            await loadAccounts();
             await boot();
           });
         if (!res.ok) {
@@ -1434,15 +1593,24 @@ function wireWorkButtons() {
     const openBtn = $('work-reply-open');
     if (!openBtn || !r) return;
     openBtn.onclick = () => {
+      const profileUrl = safeTikTokProfileUrl(r.profile_url, r.handle);
+      if (!profileUrl) {
+        const msg = $('reply-msg');
+        if (msg) {
+          msg.textContent = 'This creator has no valid TikTok profile link. Tell Rico.';
+          msg.className = 'fieldmsg bad';
+        }
+        return;
+      }
       setPending({
         task_id: r.task_id,
         handle: r.handle,
-        profile_url: r.profile_url,
+        profile_url: profileUrl,
         state: AWAITING_REPLY,
         copy_ok: true,
         saved_at: Date.now()
       });
-      leaveForTikTok(r.profile_url || ('https://www.tiktok.com/@' + (r.handle || '')));
+      leaveForTikTok(profileUrl, r.handle);
       render();
     };
     return;
@@ -1462,7 +1630,6 @@ function wireWorkButtons() {
           () => sb.rpc('dh_va_update_task', { p_task_id: r.task_id, p_status: 'NO_REPLY' }),
           async () => {
             setPending(null);
-            await Promise.all([loadAccounts(), loadMoney()]);
             await boot();
           });
         if (!res.ok && msg) { msg.textContent = res.message; msg.className = 'fieldmsg bad'; }
@@ -1480,10 +1647,26 @@ function wireWorkButtons() {
  * gesture window, and standalone PWAs often ignore it entirely -- we navigate this tab instead.
  * Either way the pending state is already in sessionStorage, which is what makes a full reload safe.
  */
-function leaveForTikTok(url) {
+function leaveForTikTok(url, handle = '') {
+  const safeUrl = safeTikTokProfileUrl(url, handle);
+  if (!safeUrl) {
+    alert('This TikTok profile link is invalid. Reload the queue or tell Rico.');
+    return false;
+  }
   let win = null;
-  try { win = window.open(url, '_blank'); } catch { win = null; }
-  if (!win) window.location.href = url;
+  try {
+    // Opening with the `noopener` feature can legitimately return null even when the new tab did
+    // open. Treating that as a popup block navigated the current portal too, leaving two TikTok
+    // tabs. Open an empty same-origin tab, sever its opener before any external page loads, then
+    // navigate that tab. A real popup block still falls back to this tab.
+    win = window.open('', '_blank');
+    if (win) {
+      win.opener = null;
+      win.location.replace(safeUrl);
+    }
+  } catch { win = null; }
+  if (!win) window.location.assign(safeUrl);
+  return true;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1495,7 +1678,9 @@ function leaveForTikTok(url) {
 // ---------------------------------------------------------------------------------------------
 function drawDemand() {
   const p = view.pending_proof;
-  if (!p || !p.proof_check_id) { $('demand').innerHTML = ''; return; }
+  // Work already renders the proof as its single primary action. The banner is only needed on the
+  // other tabs; showing both on Work produced two buttons for one proof request.
+  if (tab === 'work' || !p || !p.proof_check_id) { $('demand').innerHTML = ''; return; }
   const who = p.handle ? ('@' + esc(p.handle)) : 'a creator';
   $('demand').innerHTML =
     '<div class="demand"><h3>Quick check</h3>'
@@ -1549,7 +1734,7 @@ function drawReplies() {
  */
 function chatHtml(c) {
   const who = esc(c.display_name || c.handle || 'creator');
-  const url = c.profile_url || ('https://www.tiktok.com/@' + (c.handle || ''));
+  const url = safeTikTokProfileUrl(c.profile_url, c.handle);
   let h = '<div class="row chat"><div class="who">' + who + '</div>'
     + '<div class="meta">@' + esc(c.handle || '') + ' · replied ' + ago(c.reported_at)
     + (c.username ? ' · from @' + esc(c.username) : '') + '</div>';
@@ -1566,7 +1751,7 @@ function chatHtml(c) {
 
   if (c.suggestion) {
     h += '<div class="suggest"><span class="lbl">Suggested reply</span>' + esc(c.suggestion) + '</div>'
-      + '<button class="sm" data-copy="' + esc(c.reply_event_id) + '">Copy this reply</button>';
+      + '<button class="sm" data-copy-reply="' + esc(c.reply_event_id) + '">Copy this reply</button>';
   }
 
   // SECTION M, ON SCREEN. Not shown merely because a reply exists -- only once the creator has said
@@ -1581,8 +1766,10 @@ function chatHtml(c) {
       + 'appears once they say they want it.</p>';
   }
 
-  h += '<div style="margin-top:9px"><a class="open" href="' + esc(url)
-    + '" target="_blank" rel="noopener">Open the chat</a></div></div>';
+  h += url
+    ? '<div style="margin-top:9px"><a class="open" href="' + esc(url)
+      + '" target="_blank" rel="noopener noreferrer">Open the chat</a></div></div>'
+    : '<p class="muted">The TikTok profile link is invalid. Tell Rico.</p></div>';
   return h;
 }
 
@@ -1593,43 +1780,62 @@ const CLASSES = [
 ];
 
 function wireChats(rows) {
-  for (const box of document.querySelectorAll('[data-cls]')) {
+  const list = $('list');
+  if (!list) return;
+  const notice = (text) => {
+    chatStatus = text;
+    const status = $('chatmsg');
+    if (status) status.textContent = text;
+  };
+  for (const box of list.querySelectorAll('[data-cls]')) {
     for (const b of box.querySelectorAll('button')) {
       b.onclick = async () => {
+        for (const choice of box.querySelectorAll('button')) choice.disabled = true;
         const { data, error } = await sb.rpc('dh_reply_classify',
           { p_reply_event_id: box.dataset.cls, p_classification: b.dataset.v });
-        if (error || !data?.ok) { say('Could not save that — try again.'); return; }
+        if (error || !data?.ok) {
+          for (const choice of box.querySelectorAll('button')) choice.disabled = false;
+          notice('Could not save that — try again.');
+          return;
+        }
         await loadMoney(); render();
       };
     }
   }
-  for (const b of document.querySelectorAll('[data-copy]')) {
+  for (const b of list.querySelectorAll('[data-copy-reply]')) {
     b.onclick = async () => {
-      const row = rows.find((r) => r.reply_event_id === b.dataset.copy);
+      const row = rows.find((r) => r.reply_event_id === b.dataset.copyReply);
       if (!row?.suggestion) return;
       b.disabled = true;
       const r = await copyNow(row.suggestion);
       b.disabled = false;
-      say(r.ok ? 'Reply copied — paste it in TikTok.'
-              : 'Could not copy — select the text and copy it by hand.');
+      if (r.ok) notice('Reply copied — paste it in TikTok.');
+      else {
+        prompt('Automatic copy was blocked. Copy this reply from the field below.', row.suggestion);
+        notice('Use the reply shown in the copy field.');
+      }
     };
   }
-  for (const b of document.querySelectorAll('[data-invite]')) {
+  for (const b of list.querySelectorAll('[data-invite]')) {
     b.onclick = async () => {
       b.disabled = true;
       const { data, error } = await sb.rpc('dh_affiliate_invite_issue', { p_task_id: b.dataset.invite });
       b.disabled = false;
-      if (error) { say('Could not make a link — try again.'); return; }
+      if (error) { notice('Could not make a link — try again.'); return; }
       if (!data?.ok) {
         // ALREADY_ATTRIBUTED is not a glitch: somebody else got there first, and the VA needs to
         // know to stop working this creator rather than to keep tapping.
-        say(data?.reason === 'ALREADY_ATTRIBUTED'
+        notice(data?.reason === 'ALREADY_ATTRIBUTED'
               ? 'This creator has already joined through someone else. Leave this one.'
               : 'Not yet — wait until they say they want the link.');
         return;
       }
       const cr = await copyNow(data.url);
-      say(cr.ok ? 'Signup link copied — paste it in TikTok.' : 'Could not copy the link — try again.');
+      if (cr.ok) notice('Signup link copied — paste it in TikTok.');
+      else {
+        prompt('Automatic copy was blocked. Copy this signup link from the field below.', data.url);
+        notice('Use the signup link shown in the copy field.');
+      }
       await loadMoney(); render();
     };
   }
@@ -1639,7 +1845,9 @@ function drawConversations() {
   const chats = view.chats || [];
   const rows = search.results !== null ? search.results : (view.conversations || []);
   const box = '<input id="q" type="search" placeholder="Search name or handle"'
-            + ' value="' + esc(search.q) + '" autocomplete="off" style="margin-bottom:12px">';
+            + ' value="' + esc(search.q) + '" autocomplete="off" style="margin-bottom:6px">'
+            + '<p id="chatmsg" class="fieldmsg" role="status" aria-live="polite">'
+            + esc(chatStatus) + '</p>';
   const answered = (search.results === null && chats.length)
     ? '<p class="earnhead">Replied to you</p>' + chats.map(chatHtml).join('')
       + '<p class="earnhead" style="margin-top:18px">Everyone else</p>'
@@ -1664,7 +1872,8 @@ function drawConversations() {
   q.oninput = () => {
     search.q = q.value; search.focused = true;
     clearTimeout(search.timer);
-    search.timer = setTimeout(runSearch, 250);
+    const token = seq.begin('search');
+    search.timer = setTimeout(() => runSearch(token), 250);
   };
   wireRows(rows);
   wireChats(chats);
@@ -1718,10 +1927,14 @@ function drawEarnings() {
     + 'changed from this screen — it is counted from what you actually did.</p></div>';
 }
 
-async function runSearch() {
+async function runSearch(token = seq.begin('search')) {
   const q = search.q.trim();
-  if (q.length < 2) { search.results = null; render(); return; }
+  if (q.length < 2) {
+    if (seq.isCurrent('search', token)) { search.results = null; render(); }
+    return;
+  }
   const { data, error } = await sb.rpc('dh_va_search', { p_q: q });
+  if (!seq.isCurrent('search', token) || q !== search.q.trim()) return;
   search.results = error ? [] : (data || []);
   render();
 }
@@ -1747,6 +1960,7 @@ function tierPill(t) {
 
 function rowHtml(t, opts) {
   const due = t.follow_up_at || t.last_checked_at || t.first_sent_at;
+  const profileUrl = safeTikTokProfileUrl(t.profile_url, t.handle);
   return '<div class="row" data-task="' + esc(t.task_id) + '">'
     + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">'
       + '<div><div class="who">' + esc(t.display_name || t.handle || 'creator') + '</div>'
@@ -1766,7 +1980,10 @@ function rowHtml(t, opts) {
         ? t.replies.map((r) => '<div class="quote">' + esc(r.text)
             + '<div class="muted" style="margin-top:6px">pasted ' + esc(ago(r.at)) + '</div></div>').join('')
         : '')
-    + '<a class="open" href="' + esc(t.profile_url) + '" target="_blank" rel="noopener">Open profile</a>'
+    + (profileUrl
+        ? '<a class="open" href="' + esc(profileUrl)
+          + '" target="_blank" rel="noopener noreferrer">Open profile</a>'
+        : '<p class="muted">The TikTok profile link is invalid. Tell Rico.</p>')
     // THE ONE ACTION THAT PAYS A BONUS, GIVEN ITS OWN BUTTON ABOVE THE STATUS GRID.
     //
     // A reply with a photo is worth five times a sent DM, so it must not be one of eight equal
@@ -1780,9 +1997,7 @@ function rowHtml(t, opts) {
     + '<p class="muted" style="margin:10px 0 5px">Note (optional)</p>'
     + '<textarea data-note="1">' + esc(t.notes || '') + '</textarea>'
     + '<div class="acts" style="margin-top:11px">'
-      + '<button class="good" data-s="REPLIED">Replied</button>'
       + '<button data-s="NO_REPLY">No reply</button>'
-      + '<button class="good" data-s="INTERESTED">Interested</button>'
       + '<button class="bad" data-s="NOT_INTERESTED">Not interested</button>'
       + '<button data-s="FOLLOW_UP_LATER">Follow up later</button>'
       + '<button class="bad" data-s="UNREACHABLE">Can\'t reach</button>'
@@ -1800,8 +2015,31 @@ function rowHtml(t, opts) {
 // whether this is yours to upload. It is not a naming convention; it is the authorisation.
 // ---------------------------------------------------------------------------------------------
 let proofCtx = null;    // { proof_check_id, file, bucket }
+let proofPreviewUrl = null;
+let replyPreviewUrl = null;
 
 function fileTooBig(f) { return f.size > 10 * 1024 * 1024; }
+function validImage(f) { return Boolean(f && f.size > 0 && /^image\//i.test(f.type || '')); }
+
+function resetProofSelection(clearInput = true) {
+  if (proofPreviewUrl) URL.revokeObjectURL(proofPreviewUrl);
+  proofPreviewUrl = null;
+  if (proofCtx) proofCtx.file = null;
+  $('pr-thumb').removeAttribute('src');
+  $('pr-thumb').hidden = true;
+  $('pr-send').disabled = true;
+  if (clearInput) $('pr-file').value = '';
+}
+
+function resetReplySelection(clearInput = true) {
+  if (replyPreviewUrl) URL.revokeObjectURL(replyPreviewUrl);
+  replyPreviewUrl = null;
+  if (replyCtx) replyCtx.file = null;
+  $('rp-thumb').removeAttribute('src');
+  $('rp-thumb').hidden = true;
+  $('rp-send').disabled = true;
+  if (clearInput) $('rp-file').value = '';
+}
 
 /**
  * THE BUG THIS REPLACES. This was the one RPC path that did not go through normalizeRpc, and it
@@ -1837,6 +2075,18 @@ async function uploadShot(proofId, file, bucket) {
   }
   if (!res.ok) {
     console.error(safeLogLine('proof_upload', res, { proof: proofId }));
+    // Only a definitive database rejection is safe to clean up here. A lost network response may
+    // have committed successfully; deleting its object would leave a valid proof pointing nowhere.
+    if (res.kind === 'REJECTED') {
+      try {
+        const cleanup = await sb.storage.from(bucket || 'proofs').remove([path]);
+        if (cleanup.error) console.error(safeLogLine('proof_storage_cleanup',
+          { ok: false, kind: 'TRANSPORT', reason: null }, { proof: proofId }));
+      } catch {
+        console.error(safeLogLine('proof_storage_cleanup',
+          { ok: false, kind: 'TRANSPORT', reason: null }, { proof: proofId }));
+      }
+    }
     return { ok: false, message: res.message };
   }
   return { ok: true };
@@ -1849,17 +2099,28 @@ function openProof(p) {
     ? 'A photo of the chat so we can confirm the reply and release your bonus.'
     : 'We check about one message in twenty. Send a photo of the chat showing your message, and '
       + 'you can carry on.';
-  $('pr-thumb').hidden = true; $('pr-msg').textContent = ''; $('pr-send').disabled = true;
-  $('pr-file').value = '';
+  resetProofSelection();
+  $('pr-msg').textContent = '';
   $('proofdlg').showModal();
 }
 
 $('pr-file').onchange = () => {
   const f = $('pr-file').files?.[0];
+  resetProofSelection(false);
   if (!f) return;
-  if (fileTooBig(f)) { $('pr-msg').textContent = 'That photo is too large — try again.'; return; }
+  if (!validImage(f)) {
+    $('pr-file').value = '';
+    $('pr-msg').textContent = 'Choose a valid image file.';
+    return;
+  }
+  if (fileTooBig(f)) {
+    $('pr-file').value = '';
+    $('pr-msg').textContent = 'That photo is too large — try again.';
+    return;
+  }
   proofCtx.file = f;
-  $('pr-thumb').src = URL.createObjectURL(f);
+  proofPreviewUrl = URL.createObjectURL(f);
+  $('pr-thumb').src = proofPreviewUrl;
   $('pr-thumb').hidden = false;
   $('pr-msg').textContent = '';
   $('pr-send').disabled = false;
@@ -1889,6 +2150,7 @@ $('pr-send').onclick = async () => {
 };
 
 $('pr-cancel').onclick = () => $('proofdlg').close();
+$('proofdlg').addEventListener('close', () => { resetProofSelection(); proofCtx = null; });
 
 // ---------------------------------------------------------------------------------------------
 // "YES, THEY REPLIED" -- THE SIMPLIFIED FLOW'S ENTRY INTO THE REAL PROOF SYSTEM.
@@ -1906,45 +2168,61 @@ $('pr-cancel').onclick = () => $('proofdlg').close();
 // the result per task_id the first time it succeeds, and every retry (a failed upload, closing and
 // reopening the dialog) reuses that same proof_check_id rather than asking the database for a new one.
 // ---------------------------------------------------------------------------------------------
-const replyReports = new Map(); // task_id -> { reply_event_id, proof_check_id }
+const replyReports = new Map(); // task_id -> { reply_event_id, proof_check_id, saved_at }
+const REPLY_REPORTS_KEY = 'dh_reply_reports_v1';
+
+function replyReportsKey() {
+  return pendingUserId ? REPLY_REPORTS_KEY + ':' + encodeURIComponent(pendingUserId) : null;
+}
+
+function persistReplyReports() {
+  const key = replyReportsKey();
+  if (!key) return;
+  try { sessionStorage.setItem(key, JSON.stringify(Object.fromEntries(replyReports))); }
+  catch { /* retry safety still exists for the current page through the Map */ }
+}
+
+function loadReplyReports() {
+  replyReports.clear();
+  const key = replyReportsKey();
+  if (!key) return;
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(key) || '{}');
+    const cutoff = Date.now() - 12 * 60 * 60 * 1000;
+    for (const [taskId, report] of Object.entries(parsed)) {
+      if (report && report.reply_event_id && report.proof_check_id
+          && Number(report.saved_at || 0) >= cutoff) replyReports.set(taskId, report);
+    }
+    persistReplyReports();
+  } catch {
+    try { sessionStorage.removeItem(key); } catch { /* unavailable storage */ }
+  }
+}
+
+function rememberReplyReport(taskId, report) {
+  const saved = { ...report, saved_at: Date.now() };
+  replyReports.set(taskId, saved);
+  persistReplyReports();
+  return saved;
+}
+
+function forgetReplyReport(taskId) {
+  replyReports.delete(taskId);
+  persistReplyReports();
+}
+
+function clearReplyReports() {
+  const key = replyReportsKey();
+  replyReports.clear();
+  if (!key) return;
+  try { sessionStorage.removeItem(key); } catch { /* unavailable storage */ }
+}
 
 async function beginReplyCapture(r) {
-  const btn = $('work-reply-yes');
-  let report = replyReports.get(r.task_id);
-  if (!report) {
-    const res = await withButton(btn, 'reply_report', { task: r.task_id },
-      () => sb.rpc('dh_reply_report', { p_task_id: r.task_id }));
-    if (!res.ok) {
-      const msg = $('reply-msg');
-      if (msg) { msg.textContent = res.message; msg.className = 'fieldmsg bad'; }
-      return;
-    }
-    report = { reply_event_id: res.data.reply_event_id, proof_check_id: res.data.proof_check_id };
-    replyReports.set(r.task_id, report);
-  }
-
-  proofCtx = { proof_check_id: report.proof_check_id, bucket: 'proofs', file: null };
-  $('pr-title').textContent = 'Screenshot of their reply';
-  $('pr-why').textContent = 'Upload a photo of their reply so we can confirm and release your bonus.';
-  $('pr-thumb').hidden = true; $('pr-msg').textContent = ''; $('pr-msg').className = 'fieldmsg';
-  $('pr-send').disabled = true;
-  $('pr-file').value = '';
-
-  proofCtx.onSuccess = async () => {
-    // The task stays in the backend's check_replies list until the model (or an admin) actually
-    // classifies the reply -- reply_status is still NULL the instant the upload lands. Hiding it
-    // here is what keeps the VA from being asked "did they reply?" again about a photo they just
-    // handed over; a reload is the honest retry path if classification never completes.
-    justUploadedReply.add(r.task_id);
-    replyReports.delete(r.task_id);
-    // The reply question has now been answered, so the persisted "came back from TikTok, still to
-    // answer" state is spent. Clearing it only here means a failed upload leaves it standing and the
-    // VA still gets the buttons back after a reload.
-    if (pending && pending.task_id === r.task_id) setPending(null);
-    await Promise.all([loadAccounts(), loadMoney()]);
-    await boot();
-  };
-  $('proofdlg').showModal();
+  // AI intent classification is not currently available, so every reply must use the one sheet
+  // that captures both its screenshot and the VA's required classification. This is also the same
+  // idempotent flow used from history: retrying reuses one reply event and one proof check.
+  openReply(r.task_id, '@' + (r.handle || ''));
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1953,13 +2231,23 @@ async function beginReplyCapture(r) {
 // Photo, what they said, and how to describe it -- in one sheet, because these arrive while the VA
 // is mid-conversation and a three-step flow is three chances to abandon it.
 // ---------------------------------------------------------------------------------------------
-let replyCtx = null;    // { task_id, file, classification }
+let replyCtx = null;    // { task_id, file, classification, report, uploaded }
+
+function updateReplyReady() {
+  $('rp-send').disabled = !(replyCtx?.file && replyCtx?.classification);
+}
 
 function openReply(taskId, who) {
-  replyCtx = { task_id: taskId, file: null, classification: null };
+  replyCtx = {
+    task_id: taskId,
+    file: null,
+    classification: null,
+    report: replyReports.get(taskId) || null,
+    uploaded: false
+  };
   $('rp-who').textContent = who ? ('Chat with ' + who) : '';
-  $('rp-thumb').hidden = true; $('rp-msg').textContent = ''; $('rp-text').value = '';
-  $('rp-file').value = ''; $('rp-send').disabled = true;
+  resetReplySelection();
+  $('rp-msg').textContent = ''; $('rp-text').value = '';
   $('rp-cls').innerHTML = CLASSES.map(([v, label]) =>
     '<button class="sm" data-v="' + v + '" aria-pressed="false">' + label + '</button>').join('');
   for (const b of $('rp-cls').querySelectorAll('button')) {
@@ -1968,6 +2256,8 @@ function openReply(taskId, who) {
       for (const o of $('rp-cls').querySelectorAll('button')) {
         o.setAttribute('aria-pressed', String(o === b));
       }
+      $('rp-msg').textContent = '';
+      updateReplyReady();
     };
   }
   $('replydlg').showModal();
@@ -1975,54 +2265,86 @@ function openReply(taskId, who) {
 
 $('rp-file').onchange = () => {
   const f = $('rp-file').files?.[0];
+  resetReplySelection(false);
   if (!f) return;
-  if (fileTooBig(f)) { $('rp-msg').textContent = 'That photo is too large — try again.'; return; }
+  if (!validImage(f)) {
+    $('rp-file').value = '';
+    $('rp-msg').textContent = 'Choose a valid image file.';
+    return;
+  }
+  if (fileTooBig(f)) {
+    $('rp-file').value = '';
+    $('rp-msg').textContent = 'That photo is too large — try again.';
+    return;
+  }
   replyCtx.file = f;
-  $('rp-thumb').src = URL.createObjectURL(f);
+  replyPreviewUrl = URL.createObjectURL(f);
+  $('rp-thumb').src = replyPreviewUrl;
   $('rp-thumb').hidden = false;
   $('rp-msg').textContent = '';
-  $('rp-send').disabled = false;
+  updateReplyReady();
 };
 
 $('rp-send').onclick = async () => {
-  if (!replyCtx?.file) return;
-  $('rp-send').disabled = true; $('rp-msg').textContent = 'Saving…';
-
-  // The reply event is created first so the proof row exists to upload against. If the upload then
-  // fails the reply is still on record awaiting its photo -- which is recoverable. The other order
-  // loses the screenshot with nothing to attach it to.
-  const { data, error } = await sb.rpc('dh_reply_report', { p_task_id: replyCtx.task_id });
-  if (error || !data?.ok) {
-    $('rp-msg').textContent = data?.reason === 'NO_SEND_TO_REPLY_TO'
-      ? 'Mark the DM as sent first, then record their reply.'
-      : 'That did not save. Try once more.';
-    $('rp-send').disabled = false;
+  if (!replyCtx?.file || !replyCtx?.classification) {
+    $('rp-msg').textContent = 'Choose what kind of reply this is before saving.';
+    updateReplyReady();
     return;
   }
+  $('rp-send').disabled = true; $('rp-msg').textContent = 'Saving…';
 
-  const up = await uploadShot(data.proof_check_id, replyCtx.file, 'proofs');
-  if (!up.ok) {
-    $('rp-msg').textContent = 'Saved, but the photo did not upload. Open the chat and try again.';
-    $('rp-send').disabled = false;
-    await boot();
-    return;
+  // Create the reply/proof pair once and persist its ids. A failed upload or reload reuses it rather
+  // than calling dh_reply_report again and creating a second reply event.
+  let data = replyCtx.report;
+  if (!data) {
+    const result = await sb.rpc('dh_reply_report', { p_task_id: replyCtx.task_id });
+    if (result.error || !result.data?.ok) {
+      $('rp-msg').textContent = result.data?.reason === 'NO_SEND_TO_REPLY_TO'
+        ? 'Mark the DM as sent first, then record their reply.'
+        : 'That did not save. Try once more.';
+      $('rp-send').disabled = false;
+      return;
+    }
+    data = rememberReplyReport(replyCtx.task_id, {
+      reply_event_id: result.data.reply_event_id,
+      proof_check_id: result.data.proof_check_id,
+      is_first: result.data.is_first === true
+    });
+    replyCtx.report = data;
+  }
+
+  if (!replyCtx.uploaded) {
+    const up = await uploadShot(data.proof_check_id, replyCtx.file, 'proofs');
+    if (!up.ok) {
+      $('rp-msg').textContent = 'Saved, but the photo did not upload. Try again — no duplicate reply will be created.';
+      $('rp-send').disabled = false;
+      return;
+    }
+    replyCtx.uploaded = true;
   }
 
   const text = $('rp-text').value.trim();
-  if (replyCtx.classification || text) {
-    await sb.rpc('dh_reply_classify', {
-      p_reply_event_id: data.reply_event_id,
-      p_classification: replyCtx.classification || 'OTHER',
-      p_text: text || null
-    });
+  const classified = await sb.rpc('dh_reply_classify', {
+    p_reply_event_id: data.reply_event_id,
+    p_classification: replyCtx.classification,
+    p_text: text || null
+  });
+  if (classified.error || classified.data?.ok === false) {
+    $('rp-msg').textContent = 'The photo is saved, but the reply details did not save. Try once more.';
+    $('rp-send').disabled = false;
+    return;
   }
 
+  forgetReplyReport(replyCtx.task_id);
+  justUploadedReply.add(replyCtx.task_id);
+  if (pending && pending.task_id === replyCtx.task_id) setPending(null);
   $('replydlg').close();
   say(data.is_first ? 'Saved — first reply from this creator.' : 'Saved.');
   await boot();
 };
 
 $('rp-cancel').onclick = () => $('replydlg').close();
+$('replydlg').addEventListener('close', () => { resetReplySelection(); replyCtx = null; });
 
 function wireRows(rows) {
   const byId = new Map(rows.map((r) => [r.task_id, r]));
@@ -2054,6 +2376,7 @@ function wireRows(rows) {
           for (const o of el.querySelectorAll('button[data-s]')) o.disabled = false;
           return;
         }
+        if (pending && pending.task_id === t.task_id) setPending(null);
         // A search result set is rebuilt from the server too, so a creator whose status just
         // changed shows their new state rather than the one that was on screen.
         if (search.results !== null) await runSearch();
@@ -2093,31 +2416,45 @@ let tabLoading = null;
  * Switch to a tab and refresh what that tab actually needs.
  *
  * THE BUG THIS REPLACES. The refresh conditions named tabs that do not exist. This portal has three
- * -- work, tt, earn -- and the code asked for 'new' and 'conv', names left over from an earlier
+ * -- work, tt, conv, earn -- and the code asked for 'new', a name left over from an earlier
  * layout. The practical effect: opening **Work refreshed nothing at all**. A VA returning from
  * TikTok and tapping Work got whatever was on screen before they left, including a sender state and
  * a capacity figure that were minutes stale.
  */
 async function selectTab(name) {
   tab = name;
+  seq.begin('search'); // invalidate a search response that may still be in flight
   search.q = ''; search.results = null; search.focused = false;
   const token = seq.begin('tab');
   tabLoading = tab;
   render(); // the switch itself, instantly -- nothing below this line may block it
+  $(tab)?.setAttribute('aria-busy', 'true');
 
   // Work needs the sender state and the capacity figure it prints, so it refreshes both. It is the
   // tab a VA lands on after every trip to TikTok, which is exactly when that data has gone stale.
-  if (tab === 'work') await Promise.all([loadAccounts(), loadMoney(), boot()]);
+  if (tab === 'work') await boot();
   if (tab === 'tt')   await loadAccounts();
+  if (tab === 'conv') await boot();
   if (tab === 'earn') await loadMoney();
 
   if (!seq.isCurrent('tab', token)) return; // a faster later tap already redrew the screen
+  $(tab)?.removeAttribute('aria-busy');
   tabLoading = null;
   render();
 }
 
-for (const b of document.querySelectorAll('.tab')) {
+const tabButtons = [...document.querySelectorAll('.tab')];
+for (const b of tabButtons) {
   b.onclick = () => selectTab(b.dataset.tab);
+  b.onkeydown = (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const current = tabButtons.indexOf(b);
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabButtons.length - 1
+      : (current + (event.key === 'ArrowRight' ? 1 : -1) + tabButtons.length) % tabButtons.length;
+    tabButtons[next].focus();
+    selectTab(tabButtons[next].dataset.tab);
+  };
 }
 
 // The 30s refresh must not yank the ground from under someone mid-typing: a VA writing a note or
@@ -2141,15 +2478,13 @@ setInterval(() => { if (!document.hidden && !$('app').hidden && !typing()) boot(
  */
 async function resume() {
   if (document.hidden || $('app').hidden) return;
-  pending = loadPending();
-  await Promise.all([loadAccounts(), loadMoney()]);
+  pending = loadPending({ userId: pendingUserId });
   await boot();
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) resume(); });
 window.addEventListener('pageshow', (e) => { if (e.persisted) resume(); });
 
-// The first read of the pending state happens before the first paint, so a cold reload started by
-// returning from TikTok never shows the phase-1 card for a DM already pasted and sent.
-pending = loadPending();
+// boot() reads pending state only after Supabase has identified the user, so one account can never
+// restore another account's creator or message from the shared origin.
 boot();
 </script></body></html>
