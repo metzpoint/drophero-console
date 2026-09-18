@@ -362,7 +362,8 @@ export function createSequencer() {
 // again by task_id on return -- never by queue position, which a refreshed queue reorders.
 // ---------------------------------------------------------------------------------------------
 
-export const PENDING_KEY = 'dh_pending_action_v1';
+export const PENDING_KEY = 'dh_pending_action_v2';
+const LEGACY_PENDING_KEY = 'dh_pending_action_v1';
 export const AWAITING_SEND = 'AWAITING_SEND_CONFIRMATION';
 export const AWAITING_REPLY = 'AWAITING_REPLY_CONFIRMATION';
 
@@ -371,11 +372,18 @@ function store(deps) {
   return deps.storage ?? (typeof sessionStorage !== 'undefined' ? sessionStorage : null);
 }
 
+function pendingKey(deps = {}) {
+  const userId = typeof deps.userId === 'string' ? deps.userId.trim() : '';
+  return userId ? PENDING_KEY + ':' + encodeURIComponent(userId) : null;
+}
+
 export function savePending(entry, deps = {}) {
   const s = store(deps);
-  if (!s || !entry || !entry.task_id || !entry.state) return false;
+  const key = pendingKey(deps);
+  if (!s || !key || !entry || !entry.task_id || !entry.state) return false;
   try {
-    s.setItem(PENDING_KEY, JSON.stringify({
+    s.setItem(key, JSON.stringify({
+      user_id: deps.userId,
       task_id: entry.task_id,
       handle: entry.handle || null,
       profile_url: entry.profile_url || null,
@@ -394,29 +402,43 @@ export function savePending(entry, deps = {}) {
  */
 export function loadPending(deps = {}) {
   const s = store(deps);
-  if (!s) return null;
+  const key = pendingKey(deps);
+  if (!s || !key) return null;
   let raw;
-  try { raw = s.getItem(PENDING_KEY); } catch { return null; }
+  try {
+    // The old origin-wide key could expose one VA's creator and message to the next account using
+    // the same phone. It is never trusted or migrated; each user now has an isolated key.
+    s.removeItem(LEGACY_PENDING_KEY);
+    raw = s.getItem(key);
+  } catch { return null; }
   if (!raw) return null;
   let p;
   try { p = JSON.parse(raw); } catch { clearPending(deps); return null; }
-  if (!p || !p.task_id || (p.state !== AWAITING_SEND && p.state !== AWAITING_REPLY)) {
+  if (!p || p.user_id !== deps.userId || !p.task_id
+      || (p.state !== AWAITING_SEND && p.state !== AWAITING_REPLY)) {
     clearPending(deps);
     return null;
   }
   const maxAge = Number.isFinite(deps.maxAgeMs) ? deps.maxAgeMs : 12 * 60 * 60 * 1000;
   const now = deps.now ?? Date.now();
-  if (Number.isFinite(p.saved_at) && now - p.saved_at > maxAge) { clearPending(deps); return null; }
+  // A missing or malformed timestamp must never make a browser entry immortal. savePending always
+  // writes a number, so anything else is corrupt or from an incompatible build and is discarded.
+  if (!Number.isFinite(p.saved_at) || p.saved_at > now + 60 * 1000
+      || now - p.saved_at > maxAge) { clearPending(deps); return null; }
   return p;
 }
 
 export function clearPending(deps = {}) {
   const s = store(deps);
   if (!s) return;
-  try { s.removeItem(PENDING_KEY); } catch { /* nothing to do */ }
+  const key = pendingKey(deps);
+  try {
+    if (key) s.removeItem(key);
+    s.removeItem(LEGACY_PENDING_KEY);
+  } catch { /* nothing to do */ }
 }
 
-/** Find the task the pending entry refers to by id, falling back to what the entry itself carries. */
+/** Find the task the pending entry refers to by id in data authorised for the current VA. */
 export function resolvePendingTask(pending, lists = {}) {
   if (!pending) return null;
   const pools = [lists.queue, lists.replies].filter(Array.isArray);
@@ -424,15 +446,9 @@ export function resolvePendingTask(pending, lists = {}) {
     const hit = pool.find((t) => t && t.task_id === pending.task_id);
     if (hit) return { ...hit, ...pendingOverlay(pending) };
   }
-  // Not in the current queue any more -- the backend may already have moved it on. The VA still
-  // has to be able to answer for it, so the persisted copy stands in.
-  return {
-    task_id: pending.task_id,
-    handle: pending.handle,
-    profile_url: pending.profile_url,
-    dm_message: pending.dm_message,
-    ...pendingOverlay(pending)
-  };
+  // Stored browser content is never enough authority to render a creator. If the current backend
+  // payload does not contain the task, the caller discards the pending state and shows current work.
+  return null;
 }
 
 function pendingOverlay(pending) {
@@ -539,10 +555,12 @@ export function workState({ pending, proof, replies, queue, sendFrom } = {}) {
   const queueList = Array.isArray(queue) ? queue : [];
 
   if (pending && pending.state === AWAITING_SEND) {
-    return { state: 'awaiting_send', task: resolvePendingTask(pending, { queue: queueList }) };
+    const task = resolvePendingTask(pending, { queue: queueList });
+    if (task) return { state: 'awaiting_send', task };
   }
   if (pending && pending.state === AWAITING_REPLY) {
-    return { state: 'awaiting_reply', task: resolvePendingTask(pending, { replies: replyList }) };
+    const task = resolvePendingTask(pending, { replies: replyList });
+    if (task) return { state: 'awaiting_reply', task };
   }
   if (proof && proof.proof_check_id) return { state: 'proof', task: proof };
   if (replyList.length > 0) return { state: 'reply', task: replyList[0] };
