@@ -1642,10 +1642,10 @@ function wireWorkButtons() {
 /**
  * Leave for TikTok in the way the current browser actually allows.
  *
- * window.open is tried first because keeping DropHero alive in its own tab is what makes coming back
- * a tab switch rather than a cold reload. When it is refused -- iOS blocks it outside a narrow
- * gesture window, and standalone PWAs often ignore it entirely -- we navigate this tab instead.
- * Either way the pending state is already in sessionStorage, which is what makes a full reload safe.
+ * Open the real TikTok URL directly. Opening `about:blank` first and replacing its location worked
+ * on desktop, but iOS/WebView browsers can sever the returned window before `replace()` runs. The
+ * result is exactly what the VA sees: a permanent blank tab. A direct URL keeps the user gesture
+ * intact; a genuinely blocked popup falls back to this tab. Pending state is already persisted.
  */
 function leaveForTikTok(url, handle = '') {
   const safeUrl = safeTikTokProfileUrl(url, handle);
@@ -1655,15 +1655,8 @@ function leaveForTikTok(url, handle = '') {
   }
   let win = null;
   try {
-    // Opening with the `noopener` feature can legitimately return null even when the new tab did
-    // open. Treating that as a popup block navigated the current portal too, leaving two TikTok
-    // tabs. Open an empty same-origin tab, sever its opener before any external page loads, then
-    // navigate that tab. A real popup block still falls back to this tab.
-    win = window.open('', '_blank');
-    if (win) {
-      win.opener = null;
-      win.location.replace(safeUrl);
-    }
+    win = window.open(safeUrl, '_blank');
+    if (win) win.opener = null;
   } catch { win = null; }
   if (!win) window.location.assign(safeUrl);
   return true;
