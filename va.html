@@ -365,7 +365,7 @@ import {
   normalizeRpc, safeLogLine, copyText, createSequencer,
   savePending, loadPending, clearPending, workState, senderState,
   AWAITING_SEND, AWAITING_REPLY
-} from './va-portal-logic.mjs';
+} from './va-portal-logic.mjs?v=20260919-3';
 
 const sb = createClient('https://aexomkitwnxvpqlmtrik.supabase.co', 'sb_publishable_Y88uWkdq3igd5dMkT1c8JA_qMB_ZB7d',
   { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
@@ -1541,8 +1541,40 @@ function wireWorkButtons() {
     // reload cannot send the VA to whoever happens to be at the top of the queue now.
     const openBtn = $('work-open-tiktok');
     if (openBtn) {
-      openBtn.onclick = () => {
+      openBtn.onclick = async () => {
+        // This is not an "open only" escape hatch. A previous automatic copy may have been blocked
+        // by iOS, but the next tap is a fresh user gesture and must retry the copy before leaving.
+        // The old handler skipped this step entirely, so TikTok opened with an empty clipboard.
+        if (!c.dm_message) {
+          if (msg) {
+            msg.textContent = 'No approved DM is attached to this creator. Tell Rico before sending.';
+            msg.className = 'fieldmsg bad';
+          }
+          return;
+        }
+        openBtn.disabled = true;
+        openBtn.textContent = 'COPYING…';
+        const copyResult = await copyNow(c.dm_message);
+        if (!copyResult.ok) {
+          openBtn.disabled = false;
+          openBtn.textContent = 'OPEN TIKTOK';
+          if (msg) {
+            msg.textContent = 'Copy was blocked again. Tap and hold the DM above, then tap OPEN TIKTOK.';
+            msg.className = 'fieldmsg bad';
+          }
+          return;
+        }
+        setPending({
+          task_id: c.task_id,
+          handle: c.handle,
+          profile_url: c.profile_url,
+          dm_message: c.dm_message,
+          state: AWAITING_SEND,
+          copy_ok: true,
+          saved_at: Date.now()
+        });
         leaveForTikTok(c.profile_url || ('https://www.tiktok.com/@' + (c.handle || '')), c.handle);
+        render();
       };
     }
 
