@@ -1197,6 +1197,25 @@ async function copyNow(text) {
   return copyText(text, { navigator, legacyCopy });
 }
 
+/**
+ * Start the DM copy and return while the original tap is still active.
+ *
+ * This is deliberately separate from copyNow(). Safari authorises clipboard.writeText when it is
+ * CALLED, not when its promise settles. The production flow that worked on iPhone started that
+ * write and navigated to TikTok in the same synchronous tap. Awaiting the promise before leaving
+ * was introduced later and broke that proven gesture chain in embedded iPhone browsers.
+ */
+function startDmCopyInTap(text) {
+  if (typeof text !== 'string' || !text) return false;
+  try {
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      Promise.resolve(navigator.clipboard.writeText(text)).catch(() => legacyCopy(text));
+      return true;
+    }
+  } catch { /* use the synchronous fallback below */ }
+  return legacyCopy(text);
+}
+
 function legacyCopy(text) {
   const ta = document.createElement('textarea');
   ta.value = text;
@@ -1473,7 +1492,7 @@ function wireWorkButtons() {
     const copyBtn = $('work-copy-dm');
     if (!copyBtn || !t) return;
 
-    copyBtn.onclick = async () => {
+    copyBtn.onclick = () => {
       if (!t.dm_message) {
         const msg = $('dm-msg');
         if (msg) {
@@ -1494,10 +1513,9 @@ function wireWorkButtons() {
       copyBtn.disabled = true;
       copyBtn.textContent = 'COPYING…';
 
-      // copyNow invokes navigator.clipboard and the legacy fallback synchronously before its first
-      // await, preserving iOS's user activation. Do not navigate until one route has completed.
-      const copyResult = await copyNow(t.dm_message);
-      const copiedNow = copyResult.ok === true;
+      // Keep copy + navigation inside one uninterrupted iPhone tap. The Clipboard promise may
+      // settle after TikTok opens; its permission was granted when writeText was invoked above.
+      const copiedNow = startDmCopyInTap(t.dm_message);
 
       setPending({
         task_id: t.task_id,
@@ -1541,7 +1559,7 @@ function wireWorkButtons() {
     // reload cannot send the VA to whoever happens to be at the top of the queue now.
     const openBtn = $('work-open-tiktok');
     if (openBtn) {
-      openBtn.onclick = async () => {
+      openBtn.onclick = () => {
         // This is not an "open only" escape hatch. A previous automatic copy may have been blocked
         // by iOS, but the next tap is a fresh user gesture and must retry the copy before leaving.
         // The old handler skipped this step entirely, so TikTok opened with an empty clipboard.
@@ -1554,8 +1572,7 @@ function wireWorkButtons() {
         }
         openBtn.disabled = true;
         openBtn.textContent = 'COPYING…';
-        const copyResult = await copyNow(c.dm_message);
-        if (!copyResult.ok) {
+        if (!startDmCopyInTap(c.dm_message)) {
           openBtn.disabled = false;
           openBtn.textContent = 'OPEN TIKTOK';
           if (msg) {
