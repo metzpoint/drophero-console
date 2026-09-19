@@ -1189,9 +1189,9 @@ function say(text) {
  * actually granted the write. A denied permission left the VA pasting an empty clipboard into a
  * real conversation with a real creator.
  *
- * This can still be called from inside a click handler without losing the gesture: it is the
- * subsequent window.open() that needs to be synchronous and inside the same handler, not this call
- * -- see the two-phase send below, which opens TikTok before awaiting the copy result.
+ * Call this immediately from the click handler. copyText starts both available clipboard methods
+ * before its first await, then returns only after one has reported success. TikTok uses same-tab
+ * navigation, so it can safely be opened after that result without creating a popup.
  */
 async function copyNow(text) {
   return copyText(text, { navigator, legacyCopy });
@@ -1462,8 +1462,9 @@ function wireWorkButtons() {
   // unreliable -- it rejects, or returns a promise that never settles at all. The VA arrived in the
   // chat with an empty clipboard, or with the button still spinning behind them.
   //
-  // The order is now: synchronous copy inside the tap (execCommand, which needs the gesture but not
-  // focus, and completes before anything can steal it), then persist the pending state, then leave.
+  // The order is now: start both clipboard routes inside the tap, await a real result, then persist
+  // the pending state and leave. navigator.clipboard is essential on iPhone: execCommand can return
+  // true inside an embedded browser without putting the text on the device clipboard.
   // If the copy fails we do NOT leave: there is nothing useful to paste, so the message is shown for
   // manual copying instead. Nothing here calls an RPC.
   // ---------------------------------------------------------------------------------------------
@@ -1472,7 +1473,7 @@ function wireWorkButtons() {
     const copyBtn = $('work-copy-dm');
     if (!copyBtn || !t) return;
 
-    copyBtn.onclick = () => {
+    copyBtn.onclick = async () => {
       if (!t.dm_message) {
         const msg = $('dm-msg');
         if (msg) {
@@ -1491,8 +1492,12 @@ function wireWorkButtons() {
         return;
       }
       copyBtn.disabled = true;
+      copyBtn.textContent = 'COPYING…';
 
-      const copiedNow = legacyCopy(t.dm_message) === true;
+      // copyNow invokes navigator.clipboard and the legacy fallback synchronously before its first
+      // await, preserving iOS's user activation. Do not navigate until one route has completed.
+      const copyResult = await copyNow(t.dm_message);
+      const copiedNow = copyResult.ok === true;
 
       setPending({
         task_id: t.task_id,
@@ -1508,6 +1513,7 @@ function wireWorkButtons() {
         // Do not send them to TikTok with an empty clipboard. Show the message, let them copy it by
         // hand, and keep both confirm buttons available for when they come back.
         copyBtn.disabled = false;
+        copyBtn.textContent = 'COPY DM & OPEN TIKTOK';
         const msg = $('dm-msg');
         if (msg) {
           msg.textContent = 'We could not copy it automatically — the message is below, copy it by hand.';
