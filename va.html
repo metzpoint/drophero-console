@@ -245,21 +245,21 @@
   <div class="examples" id="egnames"></div>
 
   <p class="muted" style="margin:12px 0 4px">Username</p>
-  <input id="a-user" placeholder="drophero.partners01" autocapitalize="none" spellcheck="false">
+  <input id="a-user" aria-label="TikTok username" placeholder="drophero.partners01" autocapitalize="none" spellcheck="false">
   <p class="muted" style="margin:11px 0 4px">Link to the profile</p>
-  <input id="a-url" placeholder="https://www.tiktok.com/@drophero.partners01"
+  <input id="a-url" aria-label="Link to your TikTok profile" placeholder="https://www.tiktok.com/@drophero.partners01"
          inputmode="url" autocapitalize="none" spellcheck="false">
   <p class="muted" style="margin:11px 0 4px">When did you make it?</p>
-  <input id="a-date" type="date">
+  <input id="a-date" type="date" aria-label="Date the account was created">
   <p class="muted" style="margin:11px 0 4px">Country</p>
-  <input id="a-country" placeholder="Philippines">
+  <input id="a-country" aria-label="Country the account is used from" placeholder="Philippines">
 
   <p class="muted" style="margin:15px 0 7px">Before we can switch it on, please confirm:</p>
-  <label class="check"><input type="checkbox" id="a-img">
+  <label class="check"><input type="checkbox" id="a-img" aria-label="I have set a profile picture">
     <span>The DropHero picture is on the profile</span></label>
-  <label class="check"><input type="checkbox" id="a-bio">
+  <label class="check"><input type="checkbox" id="a-bio" aria-label="I have written a bio">
     <span>The DropHero bio is on the profile</span></label>
-  <label class="check"><input type="checkbox" id="a-vid">
+  <label class="check"><input type="checkbox" id="a-vid" aria-label="I have posted a public video">
     <span>The DropHero video is posted and set to public</span></label>
 
   <p id="a-msg" class="muted"></p>
@@ -274,7 +274,7 @@
   <p class="muted" style="margin-top:0" id="p-acct"></p>
   <div id="p-kinds"></div>
   <p class="muted" style="margin:11px 0 4px">Anything else worth knowing? (optional)</p>
-  <textarea id="p-note" placeholder="What did you see on screen?"></textarea>
+  <textarea id="p-note" aria-label="What happened, in your own words" placeholder="What did you see on screen?"></textarea>
   <p class="muted" id="p-pausewarn" style="margin:9px 0 0"></p>
   <p id="p-msg" class="fieldmsg"></p>
   <div class="acts" style="margin-top:10px">
@@ -287,9 +287,9 @@
   <h2 id="password-title" style="margin:0 0 4px;font-size:20px">Change password</h2>
   <p class="muted" style="margin-top:0">At least 8 characters. You will use this the next time you sign in.</p>
   <p class="muted" style="margin:13px 0 4px">New password</p>
-  <input id="pw-new" type="password" autocomplete="new-password">
+  <input id="pw-new" type="password" aria-label="New password" autocomplete="new-password">
   <p class="muted" style="margin:11px 0 4px">Confirm new password</p>
-  <input id="pw-confirm" type="password" autocomplete="new-password">
+  <input id="pw-confirm" type="password" aria-label="Repeat the new password" autocomplete="new-password">
   <p id="pw-msg" class="fieldmsg"></p>
   <div class="acts" style="margin-top:10px">
     <button id="pw-save" class="good full">Change password</button>
@@ -301,7 +301,7 @@
   <h2 style="margin:0 0 4px;font-size:20px" id="pr-title">Quick check</h2>
   <p class="muted" style="margin-top:0" id="pr-why"></p>
   <label class="shot" id="pr-pick">Take or choose a photo
-    <input type="file" accept="image/*" id="pr-file">
+    <input type="file" accept="image/*" id="pr-file" aria-label="Choose a screenshot">
   </label>
   <img id="pr-thumb" class="thumb" hidden alt="">
   <p id="pr-msg" class="muted"></p>
@@ -315,11 +315,11 @@
   <h2 id="reply-title" style="margin:0 0 4px;font-size:20px">They replied</h2>
   <p class="muted" style="margin-top:0" id="rp-who"></p>
   <label class="shot" id="rp-pick">Photo of the chat
-    <input type="file" accept="image/*" id="rp-file">
+    <input type="file" accept="image/*" id="rp-file" aria-label="Choose a screenshot of their reply">
   </label>
   <img id="rp-thumb" class="thumb" hidden alt="">
   <p class="muted" style="margin:13px 0 4px">What did they say? (helps us suggest a reply)</p>
-  <textarea id="rp-text" placeholder="Type or paste their message"></textarea>
+  <textarea id="rp-text" aria-label="What the creator wrote back" placeholder="Type or paste their message"></textarea>
   <p class="muted" style="margin:13px 0 4px">How would you describe it?</p>
   <div class="cls" id="rp-cls"></div>
   <p id="rp-msg" class="muted"></p>
@@ -1361,7 +1361,7 @@ function drawWork() {
           ? 'Did that message go out?'
           : 'We could not copy it for you — if you sent it by hand, say so below.') + '</p>'
       + (c.pending_copy_ok ? '' :
-          '<textarea readonly id="manual-copy-text" style="width:100%;min-height:88px;margin-bottom:12px" '
+          '<textarea readonly id="manual-copy-text" aria-label="The message to copy by hand" style="width:100%;min-height:88px;margin-bottom:12px" '
           + 'onclick="this.select()">' + esc(c.dm_message || '') + '</textarea>'
           // THE BUG THIS FIXES. When the automatic copy failed the page stayed put -- correctly, so
           // the VA could copy the message by hand -- but then offered them nothing to do with it.
@@ -1869,7 +1869,7 @@ function wireChats(rows) {
 function drawConversations() {
   const chats = view.chats || [];
   const rows = search.results !== null ? search.results : (view.conversations || []);
-  const box = '<input id="q" type="search" placeholder="Search name or handle"'
+  const box = '<input id="q" type="search" aria-label="Search creators by name or handle" placeholder="Search name or handle"'
             + ' value="' + esc(search.q) + '" autocomplete="off" style="margin-bottom:6px">'
             + '<p id="chatmsg" class="fieldmsg" role="status" aria-live="polite">'
             + esc(chatStatus) + '</p>';
@@ -2018,9 +2018,9 @@ function rowHtml(t, opts) {
       + 'They replied — add photo</button>'
     + '<button class="sm" data-copy="1" style="margin-bottom:10px">Copy DM again</button>'
     + '<p class="muted" style="margin:4px 0 5px">Paste their reply (optional)</p>'
-    + '<textarea data-reply="1" placeholder="What they wrote back"></textarea>'
+    + '<textarea data-reply="1" aria-label="What they wrote back" placeholder="What they wrote back"></textarea>'
     + '<p class="muted" style="margin:10px 0 5px">Note (optional)</p>'
-    + '<textarea data-note="1">' + esc(t.notes || '') + '</textarea>'
+    + '<textarea data-note="1" aria-label="Note for this creator">' + esc(t.notes || '') + '</textarea>'
     + '<div class="acts" style="margin-top:11px">'
       + '<button data-s="NO_REPLY">No reply</button>'
       + '<button class="bad" data-s="NOT_INTERESTED">Not interested</button>'
