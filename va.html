@@ -1363,7 +1363,7 @@ function drawWork() {
           // had already moved past it. They could copy the DM and have nowhere to paste it.
           + '<button class="good full" id="work-open-tiktok" style="background:#e67e22;'
           + 'border-color:#d35400;color:#fff;padding:18px;font-size:18px;min-height:64px;'
-          + 'margin-bottom:12px">OPEN TIKTOK</button>')
+          + 'margin-bottom:12px">COPY DM &amp; OPEN TIKTOK</button>')
       + '<div class="acts">'
       + '<button class="full" id="work-sent" style="background:#1e5e46;border-color:#2b7d5f;color:#b6f0d5;'
       + 'min-height:56px;font-size:16px">I SENT THE DM</button>'
@@ -1398,7 +1398,7 @@ function drawWork() {
       + '<div class="meta" style="margin-bottom:12px">' + esc(timeLine) + '</div>'
       + (r.extracted_text ? '<div class="quote" style="margin:10px 0">' + esc(r.extracted_text) + '</div>' : '')
       + '<button class="good full" id="work-reply-open" style="background:#e67e22;border-color:#d35400;'
-      + 'color:#fff;padding:18px;font-size:18px;min-height:64px;margin-top:4px">OPEN TIKTOK</button>'
+      + 'color:#fff;padding:18px;font-size:18px;min-height:64px;margin-top:4px">CHECK CHAT IN TIKTOK</button>'
       + '<p class="muted" style="margin:10px 0 0">Look at the chat, then come back here and tell us '
       + 'what you found.</p>'
       + '<p id="reply-msg" class="fieldmsg"></p></div>';
@@ -1574,9 +1574,9 @@ function wireWorkButtons() {
         openBtn.textContent = 'COPYING…';
         if (!startDmCopyInTap(c.dm_message)) {
           openBtn.disabled = false;
-          openBtn.textContent = 'OPEN TIKTOK';
+          openBtn.textContent = 'COPY DM & OPEN TIKTOK';
           if (msg) {
-            msg.textContent = 'Copy was blocked again. Tap and hold the DM above, then tap OPEN TIKTOK.';
+            msg.textContent = 'Copy was blocked again. Tap and hold the DM above, then tap COPY DM & OPEN TIKTOK.';
             msg.className = 'fieldmsg bad';
           }
           return;
