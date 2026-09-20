@@ -190,6 +190,8 @@ export const REASON_TEXT = {
   PROOF_REQUIRED: 'Send the photo we asked for first, then carry on.',
   MESSAGE_BLOCKED: 'TikTok refused this message. It has to be rewritten before it can go out.',
   DUPLICATE_CREATOR: 'This creator has already been messaged under another record.',
+  SEND_CONFIRMATION_REQUIRED: 'Use I SENT THE DM after you have pasted and sent the message.',
+  NO_SEND_TO_UPDATE: 'Mark the DM as sent first, then record what happened.',
   NO_SEND_TO_REPLY_TO: 'Mark the DM as sent first, then record their reply.',
   NO_SUCH_PROOF: 'That photo request is no longer open.',
   BAD_CLASSIFICATION: 'That is not an answer we can record.',
@@ -267,6 +269,7 @@ export function safeLogLine(action, res, ids = {}) {
 export async function copyText(text, deps = {}) {
   const nav = deps.navigator ?? (typeof navigator !== 'undefined' ? navigator : undefined);
   const legacy = deps.legacyCopy;
+  const acceptLegacyAfterModernFailure = deps.acceptLegacyAfterModernFailure !== false;
   // A clipboard write is not guaranteed to settle. When the document does not hold focus, or the
   // permission prompt is suppressed rather than answered, navigator.clipboard.writeText() returns a
   // promise that neither resolves nor rejects -- measured in headless Chromium, and reachable in a
@@ -282,6 +285,7 @@ export async function copyText(text, deps = {}) {
 
   let legacyTried = false;
   let legacyWorked = false;
+  let modernAttempted = false;
   const tryLegacy = () => {
     if (legacyTried) return legacyWorked;
     legacyTried = true;
@@ -294,6 +298,7 @@ export async function copyText(text, deps = {}) {
     let write;
     try {
       write = Promise.resolve(nav.clipboard.writeText(text));
+      modernAttempted = true;
     } catch {
       write = null; // threw synchronously -- unavailable in this context
     }
@@ -305,7 +310,7 @@ export async function copyText(text, deps = {}) {
       const settled = write.then(() => 'written', () => 'failed');
       if (!setTimer) {
         if ((await settled) === 'written') return { ok: true, method: 'async' };
-        if (legacyWorked) return { ok: true, method: 'legacy' };
+        if (legacyWorked && acceptLegacyAfterModernFailure) return { ok: true, method: 'legacy' };
       } else {
         const first = await Promise.race([
           settled,
@@ -313,7 +318,7 @@ export async function copyText(text, deps = {}) {
         ]);
         if (first === 'written') return { ok: true, method: 'async' };
         if (first === 'failed') {
-          if (legacyWorked) return { ok: true, method: 'legacy' };
+          if (legacyWorked && acceptLegacyAfterModernFailure) return { ok: true, method: 'legacy' };
           return { ok: false, method: 'none', reason: 'COPY_FAILED' };
         }
         if (first === 'pending') {
@@ -325,13 +330,16 @@ export async function copyText(text, deps = {}) {
             new Promise((resolve) => setTimer(() => resolve('pending'), timeoutMs * 4))
           ]);
           if (grace === 'written') return { ok: true, method: 'async' };
-          if (legacyWorked) return { ok: true, method: 'legacy' };
+          if (legacyWorked && acceptLegacyAfterModernFailure) return { ok: true, method: 'legacy' };
           return { ok: false, method: 'none', reason: 'COPY_FAILED' };
         }
       }
     }
   }
 
+  if (modernAttempted && !acceptLegacyAfterModernFailure) {
+    return { ok: false, method: 'none', reason: 'COPY_FAILED' };
+  }
   if (tryLegacy()) return { ok: true, method: 'legacy' };
 
   return { ok: false, method: 'none', reason: 'COPY_FAILED' };
