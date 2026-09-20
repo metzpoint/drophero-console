@@ -365,7 +365,7 @@ import {
   normalizeRpc, safeLogLine, copyText, createSequencer,
   savePending, loadPending, clearPending, workState, senderState,
   AWAITING_SEND, AWAITING_REPLY
-} from './va-portal-logic.mjs?v=20260919-3';
+} from './va-portal-logic.mjs';
 
 const sb = createClient('https://aexomkitwnxvpqlmtrik.supabase.co', 'sb_publishable_Y88uWkdq3igd5dMkT1c8JA_qMB_ZB7d',
   { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
@@ -819,7 +819,32 @@ async function bootOrThrow() {
  * load put there -- or, on first load, printed "$0.00" for a VA who had genuinely earned money that
  * request simply failed to fetch. Neither is the truth; both look like it.
  */
-async function loadMoney() {
+/**
+ * ONE REQUEST PER RESOURCE IN FLIGHT AT A TIME.
+ *
+ * boot() already coalesces itself through bootPromise. These two did not, and they are called from
+ * just as many places: the 30s poll, visibilitychange, pageshow, every tab click and the
+ * after-action refresh inside each button handler. Returning from TikTok fires visibilitychange AND
+ * pageshow AND lands on the Work tab, so a single round trip could start three identical
+ * dh_va_earnings_summary calls and three dh_tiktok_my_accounts. The sequencer made the extra
+ * ANSWERS harmless, but the REQUESTS still went out -- three times the RPC volume per VA, which is
+ * invisible at a few users and a refresh storm at a few hundred.
+ *
+ * A caller arriving while the same resource is already loading joins the in-flight promise.
+ */
+function coalesced(run) {
+  let inFlight = null;
+  return async function coalescedCall() {
+    if (inFlight) return inFlight;
+    inFlight = (async () => { try { return await run(); } finally { inFlight = null; } })();
+    return inFlight;
+  };
+}
+
+const loadMoney = coalesced(loadMoneyOnce);
+const loadAccounts = coalesced(loadAccountsOnce);
+
+async function loadMoneyOnce() {
   const token = seq.begin('money');
   const [moneyRes, proofRes, convosRes] = await Promise.all([
     sb.rpc('dh_va_earnings_summary'), sb.rpc('dh_va_pending_proof'), sb.rpc('dh_va_conversations')
@@ -876,7 +901,7 @@ let ticker = 0;
  * failed dh_tiktok_my_accounts left `tt` holding whatever it held before -- stale data presented as
  * current, with nothing on screen to say it was not just refreshed.
  */
-async function loadAccounts() {
+async function loadAccountsOnce() {
   const token = seq.begin('accounts');
   const [mineRes, pickRes] = await Promise.all([
     sb.rpc('dh_tiktok_my_accounts'), sb.rpc('dh_tiktok_pick_account')
@@ -1189,19 +1214,12 @@ function say(text) {
  * actually granted the write. A denied permission left the VA pasting an empty clipboard into a
  * real conversation with a real creator.
  *
- * Call this immediately from the click handler. copyText starts both available clipboard methods
- * before its first await, then returns only after one has reported success. TikTok uses same-tab
- * navigation, so it can safely be opened after that result without creating a popup.
+ * This can still be called from inside a click handler without losing the gesture: it is the
+ * subsequent window.open() that needs to be synchronous and inside the same handler, not this call
+ * -- see the two-phase send below, which opens TikTok before awaiting the copy result.
  */
-async function copyNow(text, strictDeviceClipboard = false) {
-  return copyText(text, {
-    navigator,
-    legacyCopy,
-    // For the copy-and-leave DM action, a rejected modern clipboard write must not be hidden by
-    // execCommand returning true in an embedded/cloud browser. That "success" can be a clipboard
-    // on another machine and is exactly how a VA reaches TikTok with nothing to paste.
-    acceptLegacyAfterModernFailure: !strictDeviceClipboard
-  });
+async function copyNow(text) {
+  return copyText(text, { navigator, legacyCopy });
 }
 
 function legacyCopy(text) {
@@ -1351,9 +1369,7 @@ function drawWork() {
           // had already moved past it. They could copy the DM and have nowhere to paste it.
           + '<button class="good full" id="work-open-tiktok" style="background:#e67e22;'
           + 'border-color:#d35400;color:#fff;padding:18px;font-size:18px;min-height:64px;'
-          + 'margin-bottom:8px">TRY COPY AGAIN &amp; OPEN TIKTOK</button>'
-          + '<button class="full" id="work-open-only" style="min-height:48px;margin-bottom:12px">'
-          + 'I COPIED IT — OPEN TIKTOK</button>')
+          + 'margin-bottom:12px">OPEN TIKTOK</button>')
       + '<div class="acts">'
       + '<button class="full" id="work-sent" style="background:#1e5e46;border-color:#2b7d5f;color:#b6f0d5;'
       + 'min-height:56px;font-size:16px">I SENT THE DM</button>'
@@ -1388,7 +1404,7 @@ function drawWork() {
       + '<div class="meta" style="margin-bottom:12px">' + esc(timeLine) + '</div>'
       + (r.extracted_text ? '<div class="quote" style="margin:10px 0">' + esc(r.extracted_text) + '</div>' : '')
       + '<button class="good full" id="work-reply-open" style="background:#e67e22;border-color:#d35400;'
-      + 'color:#fff;padding:18px;font-size:18px;min-height:64px;margin-top:4px">CHECK CHAT IN TIKTOK</button>'
+      + 'color:#fff;padding:18px;font-size:18px;min-height:64px;margin-top:4px">OPEN TIKTOK</button>'
       + '<p class="muted" style="margin:10px 0 0">Look at the chat, then come back here and tell us '
       + 'what you found.</p>'
       + '<p id="reply-msg" class="fieldmsg"></p></div>';
@@ -1471,9 +1487,8 @@ function wireWorkButtons() {
   // unreliable -- it rejects, or returns a promise that never settles at all. The VA arrived in the
   // chat with an empty clipboard, or with the button still spinning behind them.
   //
-  // The order is now: start both clipboard routes inside the tap, await a real result, then persist
-  // the pending state and leave. navigator.clipboard is essential on iPhone: execCommand can return
-  // true inside an embedded browser without putting the text on the device clipboard.
+  // The order is now: synchronous copy inside the tap (execCommand, which needs the gesture but not
+  // focus, and completes before anything can steal it), then persist the pending state, then leave.
   // If the copy fails we do NOT leave: there is nothing useful to paste, so the message is shown for
   // manual copying instead. Nothing here calls an RPC.
   // ---------------------------------------------------------------------------------------------
@@ -1482,7 +1497,7 @@ function wireWorkButtons() {
     const copyBtn = $('work-copy-dm');
     if (!copyBtn || !t) return;
 
-    copyBtn.onclick = async () => {
+    copyBtn.onclick = () => {
       if (!t.dm_message) {
         const msg = $('dm-msg');
         if (msg) {
@@ -1501,12 +1516,8 @@ function wireWorkButtons() {
         return;
       }
       copyBtn.disabled = true;
-      copyBtn.textContent = 'COPYING…';
 
-      // writeText is invoked synchronously by copyNow, while this tap still owns the iOS user
-      // activation. We then wait for its real result before leaving. Same-tab navigation does not
-      // need popup activation, so there is no reason to guess that a pending write succeeded.
-      const copied = await copyNow(t.dm_message, true);
+      const copiedNow = legacyCopy(t.dm_message) === true;
 
       setPending({
         task_id: t.task_id,
@@ -1514,31 +1525,24 @@ function wireWorkButtons() {
         profile_url: profileUrl,
         dm_message: t.dm_message,
         state: AWAITING_SEND,
-        copy_ok: copied.ok,
+        copy_ok: copiedNow,
         saved_at: Date.now()
       });
 
-      if (!copied.ok) {
+      if (!copiedNow) {
         // Do not send them to TikTok with an empty clipboard. Show the message, let them copy it by
         // hand, and keep both confirm buttons available for when they come back.
         copyBtn.disabled = false;
-        copyBtn.textContent = 'COPY DM & OPEN TIKTOK';
         const msg = $('dm-msg');
         if (msg) {
-          msg.textContent = 'Automatic copy was blocked. Open this portal directly in Safari on your phone, '
-            + 'or copy the message below by hand. A cloud browser cannot fill your iPhone clipboard.';
+          msg.textContent = 'We could not copy it automatically — the message is below, copy it by hand.';
           msg.className = 'fieldmsg bad';
         }
         render();
         return;
       }
 
-      if (!leaveForTikTok(profileUrl, t.handle)) {
-        setPending({
-          task_id: t.task_id, handle: t.handle, profile_url: profileUrl,
-          dm_message: t.dm_message, state: AWAITING_SEND, copy_ok: false, saved_at: Date.now()
-        });
-      }
+      leaveForTikTok(profileUrl, t.handle);
       render(); // if the tab survives, phase 2 is already on screen behind TikTok
     };
     return;
@@ -1555,48 +1559,8 @@ function wireWorkButtons() {
     // names -- the persisted profile_url, or their handle when the URL was never recorded -- so a
     // reload cannot send the VA to whoever happens to be at the top of the queue now.
     const openBtn = $('work-open-tiktok');
-    const openOnlyBtn = $('work-open-only');
     if (openBtn) {
-      openBtn.onclick = async () => {
-        // This is not an "open only" escape hatch. A previous automatic copy may have been blocked
-        // by iOS, but the next tap is a fresh user gesture and must retry the copy before leaving.
-        // The old handler skipped this step entirely, so TikTok opened with an empty clipboard.
-        if (!c.dm_message) {
-          if (msg) {
-            msg.textContent = 'No approved DM is attached to this creator. Tell Rico before sending.';
-            msg.className = 'fieldmsg bad';
-          }
-          return;
-        }
-        openBtn.disabled = true;
-        openBtn.textContent = 'COPYING…';
-        const copied = await copyNow(c.dm_message, true);
-        if (!copied.ok) {
-          openBtn.disabled = false;
-          openBtn.textContent = 'COPY DM & OPEN TIKTOK';
-          if (msg) {
-            msg.textContent = 'Copy is blocked in this browser. Open the portal directly in Safari, '
-              + 'or tap and hold the DM above and copy it by hand.';
-            msg.className = 'fieldmsg bad';
-          }
-          return;
-        }
-        setPending({
-          task_id: c.task_id,
-          handle: c.handle,
-          profile_url: c.profile_url,
-          dm_message: c.dm_message,
-          state: AWAITING_SEND,
-          copy_ok: true,
-          saved_at: Date.now()
-        });
-        leaveForTikTok(c.profile_url || ('https://www.tiktok.com/@' + (c.handle || '')), c.handle);
-        render();
-      };
-    }
-
-    if (openOnlyBtn) {
-      openOnlyBtn.onclick = () => {
+      openBtn.onclick = () => {
         leaveForTikTok(c.profile_url || ('https://www.tiktok.com/@' + (c.handle || '')), c.handle);
       };
     }
@@ -1703,10 +1667,10 @@ function wireWorkButtons() {
 /**
  * Leave for TikTok in the way the current browser actually allows.
  *
- * Open the real TikTok URL in this tab. Opening a new tab is unreliable in iOS/WebView browsers:
- * some return a detached WindowProxy and leave a permanent `about:blank`, even for a real user tap.
- * `_self` is not a popup, so it cannot be popup-blocked. The pending state is already persisted and
- * the browser Back action returns to the exact confirmation step in DropHero.
+ * window.open is tried first because keeping DropHero alive in its own tab is what makes coming back
+ * a tab switch rather than a cold reload. When it is refused -- iOS blocks it outside a narrow
+ * gesture window, and standalone PWAs often ignore it entirely -- we navigate this tab instead.
+ * Either way the pending state is already in sessionStorage, which is what makes a full reload safe.
  */
 function leaveForTikTok(url, handle = '') {
   const safeUrl = safeTikTokProfileUrl(url, handle);
@@ -1714,21 +1678,20 @@ function leaveForTikTok(url, handle = '') {
     alert('This TikTok profile link is invalid. Reload the queue or tell Rico.');
     return false;
   }
+  let win = null;
   try {
-    // Cancelable for the browser regression harness, which must observe the exact destination
-    // without actually leaving its local fixture. Production has no listener, so this is a no-op.
-    const navEvent = new CustomEvent('dh:tiktok-navigation', {
-      cancelable: true, detail: { url: safeUrl }
-    });
-    if (!window.dispatchEvent(navEvent)) return true;
-    // location.assign is a real same-tab navigation. window.open(..., '_self') still produced an
-    // about:blank WindowProxy in iPhone/cloud WebViews, despite looking equivalent on desktop.
-    window.location.assign(safeUrl);
-    return true;
-  } catch {
-    alert('TikTok could not be opened. Copy the profile link and try again.');
-    return false;
-  }
+    // Opening with the `noopener` feature can legitimately return null even when the new tab did
+    // open. Treating that as a popup block navigated the current portal too, leaving two TikTok
+    // tabs. Open an empty same-origin tab, sever its opener before any external page loads, then
+    // navigate that tab. A real popup block still falls back to this tab.
+    win = window.open('', '_blank');
+    if (win) {
+      win.opener = null;
+      win.location.replace(safeUrl);
+    }
+  } catch { win = null; }
+  if (!win) window.location.assign(safeUrl);
+  return true;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1830,7 +1793,7 @@ function chatHtml(c) {
 
   h += url
     ? '<div style="margin-top:9px"><a class="open" href="' + esc(url)
-      + '">Open the chat</a></div></div>'
+      + '" target="_blank" rel="noopener noreferrer">Open the chat</a></div></div>'
     : '<p class="muted">The TikTok profile link is invalid. Tell Rico.</p></div>';
   return h;
 }
@@ -2023,7 +1986,6 @@ function tierPill(t) {
 function rowHtml(t, opts) {
   const due = t.follow_up_at || t.last_checked_at || t.first_sent_at;
   const profileUrl = safeTikTokProfileUrl(t.profile_url, t.handle);
-  const hasSend = Boolean(t.send_id);
   return '<div class="row" data-task="' + esc(t.task_id) + '">'
     + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">'
       + '<div><div class="who">' + esc(t.display_name || t.handle || 'creator') + '</div>'
@@ -2032,14 +1994,12 @@ function rowHtml(t, opts) {
       + '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end">'
         + tierPill(t)
         + '<span class="pill ' + esc(t.priority) + '">' + esc(t.priority) + '</span></div></div>'
-    + (hasSend
-      ? '<p class="muted" style="margin:10px 0 0">Sent ' + esc(when(t.first_sent_at))
-        + ' (' + esc(ago(t.first_sent_at)) + ')'
-        + (t.last_checked_at ? ' · last checked ' + esc(ago(t.last_checked_at)) : '')
-        + (t.follow_up_at ? ' · follow up ' + esc(ago(t.follow_up_at)) : '')
-        + (opts.due && due ? '' : '') + '</p>'
-      : '<p class="muted" style="margin:10px 0 0">No confirmed DM send is recorded.</p>')
-    + '<details class="prev"><summary>' + (hasSend ? 'Show the DM that was sent' : 'Show the prepared DM') + '</summary>'
+    + '<p class="muted" style="margin:10px 0 0">Sent ' + esc(when(t.first_sent_at))
+      + ' (' + esc(ago(t.first_sent_at)) + ')'
+      + (t.last_checked_at ? ' · last checked ' + esc(ago(t.last_checked_at)) : '')
+      + (t.follow_up_at ? ' · follow up ' + esc(ago(t.follow_up_at)) : '')
+      + (opts.due && due ? '' : '') + '</p>'
+    + '<details class="prev"><summary>Show the DM that was sent</summary>'
       + '<div class="script">' + esc(t.dm_message || '(no message stored)') + '</div></details>'
     + (Array.isArray(t.replies) && t.replies.length
         ? t.replies.map((r) => '<div class="quote">' + esc(r.text)
@@ -2047,29 +2007,26 @@ function rowHtml(t, opts) {
         : '')
     + (profileUrl
         ? '<a class="open" href="' + esc(profileUrl)
-          + '">Open profile</a>'
+          + '" target="_blank" rel="noopener noreferrer">Open profile</a>'
         : '<p class="muted">The TikTok profile link is invalid. Tell Rico.</p>')
     // THE ONE ACTION THAT PAYS A BONUS, GIVEN ITS OWN BUTTON ABOVE THE STATUS GRID.
     //
     // A reply with a photo is worth five times a sent DM, so it must not be one of eight equal
     // buttons. Tapping it opens the camera; the grid below stays exactly as it was for the outcomes
     // that need no evidence.
-    + (hasSend
-      ? '<button class="good" data-replied="' + esc(t.task_id) + '" style="margin-bottom:10px">'
-        + 'They replied — add photo</button>'
-        + '<button class="sm" data-copy="1" style="margin-bottom:10px">Copy DM again</button>'
-        + '<p class="muted" style="margin:4px 0 5px">Paste their reply (optional)</p>'
-        + '<textarea data-reply="1" placeholder="What they wrote back"></textarea>'
-        + '<p class="muted" style="margin:10px 0 5px">Note (optional)</p>'
-        + '<textarea data-note="1">' + esc(t.notes || '') + '</textarea>'
-        + '<div class="acts" style="margin-top:11px">'
-          + '<button data-s="NO_REPLY">No reply</button>'
-          + '<button class="bad" data-s="NOT_INTERESTED">Not interested</button>'
-          + '<button data-s="FOLLOW_UP_LATER">Follow up later</button>'
-          + '<button class="bad" data-s="UNREACHABLE">Can\'t reach</button>'
-        + '</div>'
-      : '<p class="muted" style="margin:10px 0 0">Reply and photo actions stay locked until a real send is confirmed.</p>')
-    + '</div>';
+    + '<button class="good" data-replied="' + esc(t.task_id) + '" style="margin-bottom:10px">'
+      + 'They replied — add photo</button>'
+    + '<button class="sm" data-copy="1" style="margin-bottom:10px">Copy DM again</button>'
+    + '<p class="muted" style="margin:4px 0 5px">Paste their reply (optional)</p>'
+    + '<textarea data-reply="1" placeholder="What they wrote back"></textarea>'
+    + '<p class="muted" style="margin:10px 0 5px">Note (optional)</p>'
+    + '<textarea data-note="1">' + esc(t.notes || '') + '</textarea>'
+    + '<div class="acts" style="margin-top:11px">'
+      + '<button data-s="NO_REPLY">No reply</button>'
+      + '<button class="bad" data-s="NOT_INTERESTED">Not interested</button>'
+      + '<button data-s="FOLLOW_UP_LATER">Follow up later</button>'
+      + '<button class="bad" data-s="UNREACHABLE">Can\'t reach</button>'
+    + '</div></div>';
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -2290,15 +2247,6 @@ async function beginReplyCapture(r) {
   // AI intent classification is not currently available, so every reply must use the one sheet
   // that captures both its screenshot and the VA's required classification. This is also the same
   // idempotent flow used from history: retrying reuses one reply event and one proof check.
-  if (!r?.send_id) {
-    const msg = $('reply-msg');
-    if (msg) {
-      msg.textContent = 'This DM has no confirmed send record. Confirm the send first; no photo was uploaded.';
-      msg.className = 'fieldmsg bad';
-    }
-    if (pending && pending.task_id === r?.task_id) setPending(null);
-    return;
-  }
   openReply(r.task_id, '@' + (r.handle || ''));
 }
 
@@ -2374,12 +2322,11 @@ $('rp-send').onclick = async () => {
   // than calling dh_reply_report again and creating a second reply event.
   let data = replyCtx.report;
   if (!data) {
-    let result;
-    try { result = await sb.rpc('dh_reply_report', { p_task_id: replyCtx.task_id }); }
-    catch (error) { result = { error }; }
-    const report = normalizeRpc(result);
-    if (!report.ok) {
-      $('rp-msg').textContent = report.message;
+    const result = await sb.rpc('dh_reply_report', { p_task_id: replyCtx.task_id });
+    if (result.error || !result.data?.ok) {
+      $('rp-msg').textContent = result.data?.reason === 'NO_SEND_TO_REPLY_TO'
+        ? 'Mark the DM as sent first, then record their reply.'
+        : 'That did not save. Try once more.';
       $('rp-send').disabled = false;
       return;
     }
@@ -2394,8 +2341,7 @@ $('rp-send').onclick = async () => {
   if (!replyCtx.uploaded) {
     const up = await uploadShot(data.proof_check_id, replyCtx.file, 'proofs');
     if (!up.ok) {
-      $('rp-msg').textContent = 'The reply is saved. ' + (up.message || 'The photo did not upload.')
-        + ' Try again — no duplicate reply will be created.';
+      $('rp-msg').textContent = 'Saved, but the photo did not upload. Try again — no duplicate reply will be created.';
       $('rp-send').disabled = false;
       return;
     }
@@ -2403,18 +2349,13 @@ $('rp-send').onclick = async () => {
   }
 
   const text = $('rp-text').value.trim();
-  let classified;
-  try {
-    classified = await sb.rpc('dh_reply_classify', {
-      p_reply_event_id: data.reply_event_id,
-      p_classification: replyCtx.classification,
-      p_text: text || null
-    });
-  } catch (error) { classified = { error }; }
-  const classResult = normalizeRpc(classified);
-  if (!classResult.ok) {
-    $('rp-msg').textContent = 'The photo is saved, but the reply details did not save. '
-      + classResult.message;
+  const classified = await sb.rpc('dh_reply_classify', {
+    p_reply_event_id: data.reply_event_id,
+    p_classification: replyCtx.classification,
+    p_text: text || null
+  });
+  if (classified.error || classified.data?.ok === false) {
+    $('rp-msg').textContent = 'The photo is saved, but the reply details did not save. Try once more.';
     $('rp-send').disabled = false;
     return;
   }
@@ -2438,33 +2379,25 @@ function wireRows(rows) {
     const t = byId.get(el.dataset.task);
     if (!t) continue;
     const copyBtn = el.querySelector('button[data-copy]');
-    if (copyBtn) {
-      copyBtn.onclick = async () => {
-        copyBtn.disabled = true;
-        const r = await copyNow(t.dm_message);
-        copyBtn.disabled = false;
-        copyBtn.textContent = r.ok ? 'Copied' : 'Select the text above';
-      };
-    }
+    copyBtn.onclick = async () => {
+      copyBtn.disabled = true;
+      const r = await copyNow(t.dm_message);
+      copyBtn.disabled = false;
+      copyBtn.textContent = r.ok ? 'Copied' : 'Select the text above';
+    };
     const rep = el.querySelector('button[data-replied]');
-    if (rep) rep.onclick = () => beginReplyCapture(t);
+    if (rep) rep.onclick = () => openReply(t.task_id, '@' + (t.handle || ''));
     for (const b of el.querySelectorAll('button[data-s]')) {
       b.onclick = async () => {
         for (const o of el.querySelectorAll('button[data-s]')) o.disabled = true;
-        let result;
-        try {
-          result = await sb.rpc('dh_va_update_task', {
-            p_task_id: t.task_id,
-            p_status: b.dataset.s,
-            p_notes: el.querySelector('textarea[data-note]')?.value.trim() || null,
-            p_reply_text: el.querySelector('textarea[data-reply]')?.value.trim() || null
-          });
-        } catch (error) {
-          result = { error };
-        }
-        const res = normalizeRpc(result);
-        if (!res.ok) {
-          alert(res.message);
+        const { error } = await sb.rpc('dh_va_update_task', {
+          p_task_id: t.task_id,
+          p_status: b.dataset.s,
+          p_notes: el.querySelector('textarea[data-note]').value.trim() || null,
+          p_reply_text: el.querySelector('textarea[data-reply]').value.trim() || null
+        });
+        if (error) {
+          alert(error.message);
           for (const o of el.querySelectorAll('button[data-s]')) o.disabled = false;
           return;
         }

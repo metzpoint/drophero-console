@@ -190,8 +190,6 @@ export const REASON_TEXT = {
   PROOF_REQUIRED: 'Send the photo we asked for first, then carry on.',
   MESSAGE_BLOCKED: 'TikTok refused this message. It has to be rewritten before it can go out.',
   DUPLICATE_CREATOR: 'This creator has already been messaged under another record.',
-  SEND_CONFIRMATION_REQUIRED: 'Use I SENT THE DM after you have pasted and sent the message.',
-  NO_SEND_TO_UPDATE: 'Mark the DM as sent first, then record what happened.',
   NO_SEND_TO_REPLY_TO: 'Mark the DM as sent first, then record their reply.',
   NO_SUCH_PROOF: 'That photo request is no longer open.',
   BAD_CLASSIFICATION: 'That is not an answer we can record.',
@@ -254,9 +252,8 @@ export function safeLogLine(action, res, ids = {}) {
 // returned true. The caller then printed "Copied — paste it in TikTok." and opened TikTok. If the
 // write was denied the VA arrived in a chat with an empty clipboard and a message saying otherwise.
 //
-// The write is started directly inside the tap and awaited before TikTok is opened. The fallback is
-// also attempted before the first await: iOS drops the transient user activation across an async
-// boundary, so trying execCommand only after a rejected promise is already too late there.
+// The write is awaited now. That is safe because opening TikTok no longer happens after the await
+// -- the window is opened first, synchronously, inside the gesture.
 // ---------------------------------------------------------------------------------------------
 
 /**
@@ -269,7 +266,6 @@ export function safeLogLine(action, res, ids = {}) {
 export async function copyText(text, deps = {}) {
   const nav = deps.navigator ?? (typeof navigator !== 'undefined' ? navigator : undefined);
   const legacy = deps.legacyCopy;
-  const acceptLegacyAfterModernFailure = deps.acceptLegacyAfterModernFailure !== false;
   // A clipboard write is not guaranteed to settle. When the document does not hold focus, or the
   // permission prompt is suppressed rather than answered, navigator.clipboard.writeText() returns a
   // promise that neither resolves nor rejects -- measured in headless Chromium, and reachable in a
@@ -283,63 +279,48 @@ export async function copyText(text, deps = {}) {
     return { ok: false, method: 'none', reason: 'NOTHING_TO_COPY' };
   }
 
-  let legacyTried = false;
-  let legacyWorked = false;
-  let modernAttempted = false;
   const tryLegacy = () => {
-    if (legacyTried) return legacyWorked;
-    legacyTried = true;
     if (typeof legacy !== 'function') return false;
-    try { legacyWorked = legacy(text) === true; } catch { legacyWorked = false; }
-    return legacyWorked;
+    try { return legacy(text) === true; } catch { return false; }
   };
 
   if (nav?.clipboard?.writeText) {
     let write;
     try {
       write = Promise.resolve(nav.clipboard.writeText(text));
-      modernAttempted = true;
     } catch {
       write = null; // threw synchronously -- unavailable in this context
     }
     if (write) {
-      // Both clipboard mechanisms must be *invoked* during the original tap on iOS. They write the
-      // same value, so running them together is safe; the modern API remains the preferred proof.
-      tryLegacy();
       // Swallow the rejection here so a later await cannot surface it as unhandled.
       const settled = write.then(() => 'written', () => 'failed');
       if (!setTimer) {
         if ((await settled) === 'written') return { ok: true, method: 'async' };
-        if (legacyWorked && acceptLegacyAfterModernFailure) return { ok: true, method: 'legacy' };
       } else {
         const first = await Promise.race([
           settled,
           new Promise((resolve) => setTimer(() => resolve('pending'), timeoutMs))
         ]);
         if (first === 'written') return { ok: true, method: 'async' };
-        if (first === 'failed') {
-          if (legacyWorked && acceptLegacyAfterModernFailure) return { ok: true, method: 'legacy' };
-          return { ok: false, method: 'none', reason: 'COPY_FAILED' };
-        }
         if (first === 'pending') {
-          // Give the modern write a bounded grace window before relying on the legacy result. Some
-          // iPhone WebViews incorrectly return true from execCommand even though no device clipboard
-          // was changed, while navigator.clipboard gives us an actual completion signal.
+          // Still unsettled. Rather than keep the VA on a disabled button, copy the old way now and
+          // report that -- execCommand is synchronous and does not care about focus. If it also
+          // fails, give the async write the rest of its chance before admitting defeat.
+          if (tryLegacy()) return { ok: true, method: 'legacy' };
+          // Both routes are now in doubt, so give the async write a bounded grace window -- bounded,
+          // because awaiting a promise that never settles is the deadlock this whole branch exists
+          // to avoid, and re-introducing it here would just move it a few lines down.
           const grace = await Promise.race([
             settled,
             new Promise((resolve) => setTimer(() => resolve('pending'), timeoutMs * 4))
           ]);
           if (grace === 'written') return { ok: true, method: 'async' };
-          if (legacyWorked && acceptLegacyAfterModernFailure) return { ok: true, method: 'legacy' };
           return { ok: false, method: 'none', reason: 'COPY_FAILED' };
         }
       }
     }
   }
 
-  if (modernAttempted && !acceptLegacyAfterModernFailure) {
-    return { ok: false, method: 'none', reason: 'COPY_FAILED' };
-  }
   if (tryLegacy()) return { ok: true, method: 'legacy' };
 
   return { ok: false, method: 'none', reason: 'COPY_FAILED' };

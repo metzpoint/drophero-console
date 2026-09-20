@@ -240,7 +240,7 @@ function safeProfileUrl(value, handle = '') {
 function profileAnchor(value, label, handle = '') {
   const url = safeProfileUrl(value, handle);
   const text = esc(label);
-  return url ? '<a href="' + esc(url) + '">' + text + '</a>'
+  return url ? '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">' + text + '</a>'
              : text;
 }
 const n = (x) => (x === null || x === undefined) ? '–' : Number(x).toLocaleString('en-US');
@@ -759,7 +759,7 @@ function renderInterested(rows, err) {
       + '</div>'
       + '</div>'
       + '<div style="display:flex;gap:6px;flex-direction:column">'
-      + (url ? '<a href="' + esc(url) + '" '
+      + (url ? '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer" '
         + 'style="padding:8px 12px;background:#e67e22;border-radius:8px;color:#fff;text-decoration:none;text-align:center;font-size:13px;font-weight:600">'
         + 'OPEN TIKTOK</a>' : '<span class="muted">invalid profile link</span>')
       + '<button class="sm" data-task="' + esc(r.task_id) + '" '
