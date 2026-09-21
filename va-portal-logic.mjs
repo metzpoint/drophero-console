@@ -578,3 +578,74 @@ export function workState({ pending, proof, replies, queue, sendFrom } = {}) {
   }
   return { state: 'empty', task: null, sender };
 }
+
+// ---------------------------------------------------------------------------------------------
+// WACHTWOORDEN DIE AL GERADEN ZIJN.
+//
+// WAT DIT WEL EN NIET IS. Supabase kan wachtwoorden toetsen tegen HaveIBeenPwned; die schakelaar
+// staat uit en zit op het platform, niet in de database, dus die kan hier niet omgezet worden. Dit
+// is niet hetzelfde en doet alsof niet: het is de bodem die we zelf kunnen leggen, zodat de
+// slechtste keuzes hoe dan ook geweigerd worden -- ook als die schakelaar nooit aangaat.
+//
+// De regels zijn bewust kort. Een lange lijst geeft schijnzekerheid en straft mensen voor
+// wachtwoorden die prima zijn. Wat hier staat vangt de vier dingen die in elke breach-lijst
+// bovenaan staan: bekende woorden, het eigen adres of de eigen dienst, één herhaald teken, en
+// een rijtje cijfers.
+// ---------------------------------------------------------------------------------------------
+
+/** Acht tekens is de bodem die Supabase zelf al afdwingt; hier alleen herhaald voor de melding. */
+export const MIN_PASSWORD_LENGTH = 8;
+
+// Alleen wachtwoorden die in werkelijke breach-lijsten structureel bovenaan staan.
+const NOTORIOUS = new Set([
+  'password', 'password1', 'password123', 'passw0rd', 'welcome', 'welcome1', 'welcome123',
+  'qwerty', 'qwerty123', 'qwertyuiop', 'azerty', '123456', '1234567', '12345678', '123456789',
+  '1234567890', 'iloveyou', 'admin', 'admin123', 'letmein', 'monkey', 'dragon', 'football',
+  'abc12345', 'sunshine', 'princess', 'trustno1', 'changeme', 'secret', 'starwars'
+]);
+
+/**
+ * Wat er mis is met dit wachtwoord, of null als er niets mis mee is.
+ *
+ * De melding zegt WAT er moet veranderen. "Ongeldig wachtwoord" laat iemand raden, en raden
+ * eindigt bij een variant van hetzelfde.
+ */
+export function passwordProblem(password, { email } = {}) {
+  const pw = typeof password === 'string' ? password : '';
+
+  if (pw.length < MIN_PASSWORD_LENGTH) {
+    return 'Use at least ' + MIN_PASSWORD_LENGTH + ' characters.';
+  }
+
+  const flat = pw.toLowerCase();
+
+  if (NOTORIOUS.has(flat)) {
+    return 'That is one of the most common passwords in the world. Pick something else.';
+  }
+
+  // Een bekend woord met cijfers erachter is geen ander wachtwoord; het staat in dezelfde lijsten.
+  const stripped = flat.replace(/[0-9!@#$%^&*._-]+$/, '');
+  if (stripped.length >= 5 && NOTORIOUS.has(stripped)) {
+    return 'That is a common password with numbers added. Those are guessed together.';
+  }
+
+  if (/^(.)\1+$/.test(pw)) {
+    return 'That is the same character repeated. Use a few different ones.';
+  }
+
+  if (/^\d+$/.test(pw)) {
+    return 'Digits only is quick to guess. Add some letters.';
+  }
+
+  // Het eigen adres of de eigen dienst als wachtwoord is precies wat een aanvaller eerst probeert.
+  const local = typeof email === 'string' && email.includes('@')
+    ? email.split('@')[0].toLowerCase() : '';
+  if (local.length >= 4 && flat.includes(local)) {
+    return 'That contains your own email address. Pick something unrelated to it.';
+  }
+  if (flat.includes('drophero')) {
+    return 'That contains the name of this service. Pick something unrelated to it.';
+  }
+
+  return null;
+}

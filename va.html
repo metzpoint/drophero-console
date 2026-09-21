@@ -373,7 +373,7 @@ import {
   computeCapacity, sentLabel, checkedLabel, followUpLabel,
   normalizeRpc, safeLogLine, copyText, createSequencer,
   savePending, loadPending, clearPending, workState, senderState,
-  AWAITING_SEND, AWAITING_REPLY
+  passwordProblem, AWAITING_SEND, AWAITING_REPLY
 } from './va-portal-logic.mjs';
 
 const sb = createClient('https://aexomkitwnxvpqlmtrik.supabase.co', 'sb_publishable_Y88uWkdq3igd5dMkT1c8JA_qMB_ZB7d',
@@ -584,7 +584,12 @@ async function offerClaim() {
 async function claimInvite(event) {
   event?.preventDefault();
   const pw = $('claimpw').value;
-  if (pw.length < 8) { $('claimmsg').textContent = 'At least 8 characters, please.'; return; }
+  // The first password a VA ever chooses here is the one they keep for months. "At least 8
+  // characters" let "password" and "12345678" through, and those are the first two guesses anyone
+  // makes. passwordProblem() names what is wrong instead of only counting, so the person can fix it
+  // in one go rather than guessing at a rule.
+  const weak = passwordProblem(pw, { email: $('claimemail').textContent });
+  if (weak) { $('claimmsg').textContent = weak; return; }
   if (pw !== $('claimpw2').value) { $('claimmsg').textContent = 'The two passwords differ.'; return; }
   $('claimgo').disabled = true;
   $('claimmsg').textContent = 'creating your account…';
@@ -741,7 +746,15 @@ $('pwdlg').addEventListener('close', () => { $('pw-new').value = ''; $('pw-confi
 $('pw-save').onclick = async () => {
   const a = $('pw-new').value, b = $('pw-confirm').value;
   const msg = $('pw-msg');
-  if (a.length < 8) { msg.textContent = 'At least 8 characters, please.'; msg.className = 'fieldmsg bad'; return; }
+  // Who is signed in, so the check can refuse a password that is simply their own address. Local
+  // read, no network; if it fails the check below is only less informed, never skipped.
+  let who = '';
+  try {
+    const { data } = await sb.auth.getSession();
+    who = (data && data.session && data.session.user && data.session.user.email) || '';
+  } catch { who = ''; }
+  const weak = passwordProblem(a, { email: who });
+  if (weak) { msg.textContent = weak; msg.className = 'fieldmsg bad'; return; }
   if (a !== b) { msg.textContent = 'The two passwords do not match.'; msg.className = 'fieldmsg bad'; return; }
 
   $('pw-save').disabled = true; msg.textContent = 'Saving…'; msg.className = 'fieldmsg';

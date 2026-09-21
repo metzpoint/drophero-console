@@ -239,6 +239,10 @@
 
 <script type="module">
 import { createClient } from './vendor/supabase.mjs';
+// Dezelfde wachtwoordcontrole als in het VA-portaal, uit dezelfde module -- de owner-login opent
+// alles wat er te openen valt, dus juist die mag niet de zwakste van de twee zijn. De build zet
+// va-portal-logic.mjs naast deze pagina; de deploy controleert dat het bestand er staat.
+import { passwordProblem } from './va-portal-logic.mjs';
 const sb = createClient('https://aexomkitwnxvpqlmtrik.supabase.co', 'sb_publishable_Y88uWkdq3igd5dMkT1c8JA_qMB_ZB7d',
   // The session is kept and silently renewed, so opening the page on a phone tomorrow does not ask
   // for the password again.
@@ -394,7 +398,13 @@ $('pwdlg').addEventListener('close', () => { $('pw-new').value = ''; $('pw-confi
 
 $('pw-save').onclick = async () => {
   const a = $('pw-new').value, b = $('pw-confirm').value, msg = $('pw-msg');
-  if (a.length < 8) { msg.textContent = 'Use at least 8 characters.'; return; }
+  let who = '';
+  try {
+    const { data } = await sb.auth.getSession();
+    who = (data && data.session && data.session.user && data.session.user.email) || '';
+  } catch { who = ''; }
+  const weak = passwordProblem(a, { email: who });
+  if (weak) { msg.textContent = weak; return; }
   if (a !== b) { msg.textContent = 'The two passwords do not match.'; return; }
 
   $('pw-save').disabled = true;
