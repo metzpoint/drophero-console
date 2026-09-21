@@ -19,7 +19,7 @@ function moduleSource(file) {
       computeCapacity, sentLabel, checkedLabel, followUpLabel,
       normalizeRpc, safeLogLine, copyText, createSequencer,
       savePending, loadPending, clearPending, workState, senderState,
-      AWAITING_SEND, AWAITING_REPLY
+      passwordProblem, AWAITING_SEND, AWAITING_REPLY
     } = window.__logic;`);
   return { html, source };
 }
@@ -42,6 +42,7 @@ function clientMock({ session, rpc, storage } = {}) {
   const channel = { on() { return channel; }, subscribe() { return channel; } };
   return {
     auth: {
+      onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
       getSession: async () => ({ data: { session: session || null } }),
       signInWithPassword: async () => ({ data: { session }, error: null }),
       signUp: async () => ({ data: { session: null }, error: null }),
@@ -218,6 +219,52 @@ test('VA primary DM button uses modern clipboard on iPhone when execCommand fail
   assert.deepEqual(opened, [{ url: task.profile_url, target: '_self' }]);
   assert.deepEqual(page.errors, []);
 });
+
+for (const mode of ['denied', 'legacy']) {
+  test('DM copy handles ' + mode + ' without false navigation or an empty selection', async (t) => {
+    const task = { task_id: 'copy-edge', handle: 'creator', dm_message: 'Hello 👋\nYour personalised DM', profile_url: 'https://www.tiktok.com/@creator' };
+    const opened = [];
+    const client = clientMock({
+      session: { user: { id: 'copy-edge-user', email: 'test@example.test' } },
+      rpc: async (name) => {
+        const data = {
+          dh_va_queue: vaBase({ newDms: [task] }),
+          dh_va_capacity: { ok: true, sendable_now: 1, va_sent_today: 0 },
+          dh_tiktok_my_accounts: { accounts: [], va_sent_today: 0 },
+          dh_tiktok_pick_account: { ok: true, username: 'sender' },
+          dh_va_earnings_summary: moneySummary(), dh_va_pending_proof: null,
+          dh_va_conversations: []
+        };
+        assert.ok(name in data, 'Unexpected RPC: ' + name);
+        return { data: data[name], error: null };
+      }
+    });
+    let selected = null;
+    const page = loadPage('va.html', client, {
+      clipboard: mode === 'legacy' ? {} : { writeText: async () => { throw new Error('denied'); } },
+      execCommand: () => {
+        const active = page.document.activeElement;
+        selected = active.value?.slice(active.selectionStart, active.selectionEnd);
+        return selected === task.dm_message;
+      },
+      open: (url) => opened.push(url)
+    });
+    t.after(() => page.dom.window.close());
+    await waitFor(() => page.document.querySelector('#work-copy-dm'), 'DM card');
+    page.document.querySelector('#work-copy-dm').click();
+    await waitFor(() => page.document.querySelector('#work-sent'), 'pending send card');
+    if (mode === 'denied') {
+      assert.deepEqual(opened, []);
+      assert.equal(selected, null, 'strict modern copy must not steal focus for legacy copy');
+      assert.equal(page.document.querySelector('#manual-copy-text').value, task.dm_message);
+      assert.match(page.document.body.textContent, /Automatic copy was blocked/);
+    } else {
+      assert.equal(selected, task.dm_message);
+      assert.deepEqual(opened, [task.profile_url]);
+    }
+    assert.deepEqual(page.errors, []);
+  });
+}
 
 test('VA cooldown counts down and unlocks the queued DM without losing it', async (t) => {
   let pickCalls = 0;
