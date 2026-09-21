@@ -1330,25 +1330,78 @@ async function copyNow(text) {
   return copyText(text, { navigator, legacyCopy });
 }
 
+/**
+ * THE BUG THIS REPLACES, AND WHY IT WAS INVISIBLE.
+ *
+ * This function reported success while copying nothing. Measured in Chromium against the deployed
+ * page, with the real queue of a real VA:
+ *
+ *     document.activeElement    BUTTON        -- the textarea was never focused
+ *     window.getSelection()     ""  (len 0)   -- the document selection was EMPTY
+ *     ta.selectionStart/End     0 / 10        -- the textarea's own selection was fine
+ *     document.execCommand()    true          -- and it still said yes
+ *     clipboard afterwards      unchanged     -- nothing was copied
+ *
+ * `range.selectNodeContents(ta)` selects a textarea's CHILD NODES. A textarea whose value was set
+ * through the `.value` property has none, so that range is empty -- and it then replaced the
+ * document selection with that emptiness. The textarea's own selection would have been used
+ * instead, but only if the textarea had focus, and nothing ever focused it. execCommand('copy')
+ * returns true when the command is merely *enabled*, not when it copied something.
+ *
+ * WHY THAT MATTERS HERE MORE THAN ANYWHERE ELSE. The caller trusts this return value to decide
+ * whether to send the VA to TikTok: "If the copy fails we do NOT leave: there is nothing useful to
+ * paste." A false yes defeats exactly that protection -- the VA lands in a real conversation with a
+ * real creator and an empty clipboard, which is the failure the two-phase send exists to prevent.
+ *
+ * THE FIX IS TO STOP TRUSTING execCommand AND CHECK THE SELECTION INSTEAD. Focus the field and
+ * select it the ordinary way; if that yields a real selection, copy. Only if it does not do we fall
+ * back to the iOS contentEditable+range recipe, which is left intact because this environment has
+ * no WebKit to test it against -- it can only help there, and it can no longer clobber a working
+ * selection, because it now runs second rather than first.
+ *
+ * And if neither produces a real selection, this returns false and means it. The caller then shows
+ * the message for manual copying instead of sending anyone away empty-handed.
+ */
 function legacyCopy(text) {
   const ta = document.createElement('textarea');
   ta.value = text;
+  // Both are iOS requirements: a readOnly field cannot be selected there, and contentEditable is
+  // what makes setSelectionRange take effect at all.
   ta.contentEditable = 'true';
   ta.readOnly = false;
   // Off-screen but not display:none -- a hidden element cannot be selected, and iOS scrolls to a
   // focused field, so it is parked at the current scroll position rather than at the top.
   ta.style.cssText = 'position:fixed;left:-9999px;top:' + window.scrollY + 'px;opacity:0';
   document.body.appendChild(ta);
+
+  // Is there really something selected that execCommand can copy? Either the field itself holds the
+  // focus with a non-empty selection, or the document selection carries the text. Anything else
+  // copies nothing, whatever execCommand claims.
+  const selectionIsReal = () =>
+    (document.activeElement === ta && ta.selectionEnd - ta.selectionStart >= text.length)
+    || String(window.getSelection() || '') === text;
+
   let ok = false;
   try {
-    const range = document.createRange();
-    range.selectNodeContents(ta);
-    const sel = window.getSelection();
-    sel.removeAllRanges();
-    sel.addRange(range);
+    // preventScroll keeps the page still where it is supported; the off-screen parking above is
+    // what covers the browsers that ignore it.
+    try { ta.focus({ preventScroll: true }); } catch { ta.focus(); }
+    ta.select();
     ta.setSelectionRange(0, text.length);
-    ok = document.execCommand('copy');
+
+    if (!selectionIsReal()) {
+      // The iOS recipe, now as the fallback it should always have been.
+      const range = document.createRange();
+      range.selectNodeContents(ta);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      ta.setSelectionRange(0, text.length);
+    }
+
+    ok = selectionIsReal() && document.execCommand('copy') === true;
   } catch { ok = false; }
+
   document.body.removeChild(ta);
   return ok;
 }
