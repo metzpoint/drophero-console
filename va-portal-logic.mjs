@@ -190,6 +190,8 @@ export const REASON_TEXT = {
   PROOF_REQUIRED: 'Send the photo we asked for first, then carry on.',
   MESSAGE_BLOCKED: 'TikTok refused this message. It has to be rewritten before it can go out.',
   DUPLICATE_CREATOR: 'This creator has already been messaged under another record.',
+  SEND_CONFIRMATION_REQUIRED: 'Use I SENT THE DM after you have pasted and sent the message.',
+  NO_SEND_TO_UPDATE: 'Mark the DM as sent first, then record what happened.',
   NO_SEND_TO_REPLY_TO: 'Mark the DM as sent first, then record their reply.',
   NO_SUCH_PROOF: 'That photo request is no longer open.',
   BAD_CLASSIFICATION: 'That is not an answer we can record.',
@@ -252,8 +254,9 @@ export function safeLogLine(action, res, ids = {}) {
 // returned true. The caller then printed "Copied — paste it in TikTok." and opened TikTok. If the
 // write was denied the VA arrived in a chat with an empty clipboard and a message saying otherwise.
 //
-// The write is awaited now. That is safe because opening TikTok no longer happens after the await
-// -- the window is opened first, synchronously, inside the gesture.
+// The write is started directly inside the tap and awaited before TikTok is opened. The fallback is
+// also attempted before the first await: iOS drops the transient user activation across an async
+// boundary, so trying execCommand only after a rejected promise is already too late there.
 // ---------------------------------------------------------------------------------------------
 
 /**
@@ -266,6 +269,7 @@ export function safeLogLine(action, res, ids = {}) {
 export async function copyText(text, deps = {}) {
   const nav = deps.navigator ?? (typeof navigator !== 'undefined' ? navigator : undefined);
   const legacy = deps.legacyCopy;
+  const acceptLegacyAfterModernFailure = deps.acceptLegacyAfterModernFailure !== false;
   // A clipboard write is not guaranteed to settle. When the document does not hold focus, or the
   // permission prompt is suppressed rather than answered, navigator.clipboard.writeText() returns a
   // promise that neither resolves nor rejects -- measured in headless Chromium, and reachable in a
@@ -279,128 +283,66 @@ export async function copyText(text, deps = {}) {
     return { ok: false, method: 'none', reason: 'NOTHING_TO_COPY' };
   }
 
+  let legacyTried = false;
+  let legacyWorked = false;
+  let modernAttempted = false;
   const tryLegacy = () => {
+    if (legacyTried) return legacyWorked;
+    legacyTried = true;
     if (typeof legacy !== 'function') return false;
-    try { return legacy(text) === true; } catch { return false; }
+    try { legacyWorked = legacy(text) === true; } catch { legacyWorked = false; }
+    return legacyWorked;
   };
 
   if (nav?.clipboard?.writeText) {
     let write;
     try {
       write = Promise.resolve(nav.clipboard.writeText(text));
+      modernAttempted = true;
     } catch {
       write = null; // threw synchronously -- unavailable in this context
     }
     if (write) {
+      // The copy-and-leave path uses only the modern API when available, keeping focus stable.
+      // Other copy actions may opt into a synchronous legacy fallback during the original tap.
+      if (acceptLegacyAfterModernFailure) tryLegacy();
       // Swallow the rejection here so a later await cannot surface it as unhandled.
       const settled = write.then(() => 'written', () => 'failed');
       if (!setTimer) {
         if ((await settled) === 'written') return { ok: true, method: 'async' };
+        if (legacyWorked && acceptLegacyAfterModernFailure) return { ok: true, method: 'legacy' };
       } else {
         const first = await Promise.race([
           settled,
           new Promise((resolve) => setTimer(() => resolve('pending'), timeoutMs))
         ]);
         if (first === 'written') return { ok: true, method: 'async' };
+        if (first === 'failed') {
+          if (legacyWorked && acceptLegacyAfterModernFailure) return { ok: true, method: 'legacy' };
+          return { ok: false, method: 'none', reason: 'COPY_FAILED' };
+        }
         if (first === 'pending') {
-          // Still unsettled. Rather than keep the VA on a disabled button, copy the old way now and
-          // report that -- execCommand is synchronous and does not care about focus. If it also
-          // fails, give the async write the rest of its chance before admitting defeat.
-          if (tryLegacy()) return { ok: true, method: 'legacy' };
-          // Both routes are now in doubt, so give the async write a bounded grace window -- bounded,
-          // because awaiting a promise that never settles is the deadlock this whole branch exists
-          // to avoid, and re-introducing it here would just move it a few lines down.
+          // Give the modern write a bounded grace window before relying on the legacy result. Some
+          // iPhone WebViews incorrectly return true from execCommand even though no device clipboard
+          // was changed, while navigator.clipboard gives us an actual completion signal.
           const grace = await Promise.race([
             settled,
             new Promise((resolve) => setTimer(() => resolve('pending'), timeoutMs * 4))
           ]);
           if (grace === 'written') return { ok: true, method: 'async' };
+          if (legacyWorked && acceptLegacyAfterModernFailure) return { ok: true, method: 'legacy' };
           return { ok: false, method: 'none', reason: 'COPY_FAILED' };
         }
       }
     }
   }
 
+  if (modernAttempted && !acceptLegacyAfterModernFailure) {
+    return { ok: false, method: 'none', reason: 'COPY_FAILED' };
+  }
   if (tryLegacy()) return { ok: true, method: 'legacy' };
 
   return { ok: false, method: 'none', reason: 'COPY_FAILED' };
-}
-
-// ---------------------------------------------------------------------------------------------
-// THE HAND-OFF COPY: ONE TAP, TWO ROUTES, AND THE SYNCHRONOUS ONE DECIDES.
-//
-// copyText() above is the general-purpose copy: it tries the async API first and times out into
-// the legacy route. That ordering is right for a "Copy" button the VA stays on, and wrong for the
-// one tap that hands them over to TikTok, because it spends its timeout budget BEFORE the
-// synchronous route runs -- and on iOS the synchronous route is the one that works.
-//
-// Here the order is inverted and nothing is awaited before deciding:
-//
-//   1. Fire navigator.clipboard.writeText() inside the tap. Never awaited at this point, so it
-//      cannot delay anything, and firing it first keeps it unambiguously inside the gesture.
-//   2. Run the synchronous execCommand route immediately after, still inside the same tap.
-//   3. If that worked, the caller navigates at once -- no await, no timeout, nothing between the
-//      tap and TikTok opening.
-//   4. Only if it did not do we wait on the async route, bounded, and navigate on its success.
-//
-// Why a bounded wait is safe here but not in step 3: a top-level same-tab navigation does not need
-// the gesture, so it still works a few hundred milliseconds later. A popup would not -- which is
-// one more reason the hand-off navigates this tab rather than opening another.
-// ---------------------------------------------------------------------------------------------
-
-/** How long the async route gets once the synchronous one has already failed. */
-export const HANDOFF_CLIPBOARD_TIMEOUT_MS = 1200;
-
-/**
- * @returns {{ syncOk: boolean, method: string, settled: Promise<boolean> }}
- *   `syncOk` is known immediately, inside the tap. `settled` resolves true if EITHER route put the
- *   text on the clipboard; it never rejects and never hangs, so a caller can always await it.
- */
-export function copyForHandoff(text, deps = {}) {
-  const nav = deps.navigator ?? (typeof navigator !== 'undefined' ? navigator : undefined);
-  const legacy = deps.legacyCopy;
-  const timeoutMs = Number.isFinite(deps.timeoutMs) ? deps.timeoutMs : HANDOFF_CLIPBOARD_TIMEOUT_MS;
-  const setTimer = deps.setTimeout ?? (typeof setTimeout !== 'undefined' ? setTimeout : null);
-
-  if (typeof text !== 'string' || text === '') {
-    return { syncOk: false, method: 'none', settled: Promise.resolve(false) };
-  }
-
-  // ROUTE B first, but only started -- see the note above on why this is not awaited here.
-  let asyncSettled = null;
-  if (nav && nav.clipboard && typeof nav.clipboard.writeText === 'function') {
-    try {
-      asyncSettled = Promise.resolve(nav.clipboard.writeText(text)).then(() => true, () => false);
-    } catch {
-      asyncSettled = null; // threw synchronously: not available in this context
-    }
-  }
-
-  // ROUTE A: synchronous, gesture-bound, focus-independent. The iOS route.
-  let syncOk = false;
-  try {
-    syncOk = typeof legacy === 'function' && legacy(text) === true;
-  } catch {
-    syncOk = false;
-  }
-
-  if (syncOk) {
-    // Route B may still be in flight. Keep a handler on it so a late rejection cannot surface as an
-    // unhandled promise, and otherwise ignore it -- the text is already on the clipboard.
-    if (asyncSettled) asyncSettled.then(() => {}, () => {});
-    return { syncOk: true, method: 'sync', settled: Promise.resolve(true) };
-  }
-
-  if (!asyncSettled) {
-    return { syncOk: false, method: 'none', settled: Promise.resolve(false) };
-  }
-
-  // A promise that never settles is a dead button, so the wait is bounded even in this branch.
-  const bounded = setTimer
-    ? Promise.race([asyncSettled, new Promise((resolve) => setTimer(() => resolve(false), timeoutMs))])
-    : asyncSettled;
-
-  return { syncOk: false, method: 'async', settled: bounded.then((v) => v === true, () => false) };
 }
 
 // ---------------------------------------------------------------------------------------------

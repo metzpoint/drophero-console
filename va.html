@@ -250,6 +250,15 @@
   <p class="muted" style="margin-top:0">An account you have already made yourself. We never create
     one for you.</p>
 
+  <div class="card" style="margin:12px 0">
+    <div class="who" style="font-size:17px">Before you add the account</div>
+    <p class="muted" style="margin:7px 0 9px">Make sure the TikTok profile uses the official DropHero setup:</p>
+    <div class="script" style="margin-bottom:9px">Find winning products faster 🚀<br>Test products &amp; launch ads with DropHero<br>👇 drophero.app</div>
+    <button class="good full" id="a-copy-bio" type="button" style="margin-bottom:8px">COPY BIO</button>
+    <a class="open" href="https://www.dropbox.com/scl/fi/4akjgyb1e7jciey2vgn29/DropHero-Logo.jpg?rlkey=4v1nb6vp1163ax5n9ow485evf&amp;st=rtvn7laf&amp;dl=1" target="_blank" rel="noopener noreferrer" style="display:block;text-align:center;margin-bottom:8px">DOWNLOAD DROPHERO LOGO</a>
+    <a class="open" href="https://www.dropbox.com/scl/fi/ecn6awq0px1hl048lym5e/DropHero-Promo-Video.mp4?rlkey=okcjgq1x42hh5uzyvepda2j0v&amp;st=y1vjm01q&amp;dl=1" target="_blank" rel="noopener noreferrer" style="display:block;text-align:center">DOWNLOAD DROPHERO PROMO VIDEO</a>
+  </div>
+
   <p class="muted" style="margin-bottom:4px">Names that work well — tap one to use it</p>
   <div class="examples" id="egnames"></div>
 
@@ -373,8 +382,8 @@ import {
   computeCapacity, sentLabel, checkedLabel, followUpLabel,
   normalizeRpc, safeLogLine, copyText, createSequencer,
   savePending, loadPending, clearPending, workState, senderState,
-  passwordProblem, copyForHandoff, AWAITING_SEND, AWAITING_REPLY
-} from './va-portal-logic.mjs';
+  passwordProblem, AWAITING_SEND, AWAITING_REPLY
+} from './va-portal-logic.mjs?v=20260921-integrated';
 
 const sb = createClient('https://aexomkitwnxvpqlmtrik.supabase.co', 'sb_publishable_Y88uWkdq3igd5dMkT1c8JA_qMB_ZB7d',
   { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
@@ -1135,10 +1144,27 @@ const PROBLEM_WORDS = {
   LOGIN_ISSUE: 'Cannot log in', OTHER: 'Something else'
 };
 
+const DROPHERO_PROFILE_BIO = 'Find winning products faster 🚀\nTest products & launch ads with DropHero\n👇 drophero.app';
+const DROPHERO_LOGO_DOWNLOAD = 'https://www.dropbox.com/scl/fi/4akjgyb1e7jciey2vgn29/DropHero-Logo.jpg?rlkey=4v1nb6vp1163ax5n9ow485evf&st=rtvn7laf&dl=1';
+const DROPHERO_VIDEO_DOWNLOAD = 'https://www.dropbox.com/scl/fi/ecn6awq0px1hl048lym5e/DropHero-Promo-Video.mp4?rlkey=okcjgq1x42hh5uzyvepda2j0v&st=y1vjm01q&dl=1';
+const DROPHERO_VA_PORTAL_URL = 'https://metzpoint.github.io/drophero-console/va.html';
+
 function drawAccounts() {
   const list = tt.accounts || [];
   $('tt').innerHTML =
     '<div class="card top" style="margin-bottom:12px">'
+      + '<div class="who" style="font-size:18px">Set up your TikTok profile first</div>'
+      + '<p class="muted" style="margin:8px 0 10px">Use these official DropHero assets before adding a TikTok account here.</p>'
+      + '<div class="script" style="margin-bottom:10px">Find winning products faster 🚀<br>Test products &amp; launch ads with DropHero<br>👇 drophero.app</div>'
+      + '<button class="good full" id="tt-copy-bio" style="margin-bottom:8px">COPY BIO</button>'
+      + '<a class="open" href="' + esc(DROPHERO_LOGO_DOWNLOAD) + '" target="_blank" rel="noopener noreferrer" '
+        + 'style="display:block;text-align:center;margin-bottom:8px">DOWNLOAD DROPHERO LOGO</a>'
+      + '<a class="open" href="' + esc(DROPHERO_VIDEO_DOWNLOAD) + '" target="_blank" rel="noopener noreferrer" '
+        + 'style="display:block;text-align:center;margin-bottom:8px">DOWNLOAD DROPHERO PROMO VIDEO</a>'
+      + '<p class="muted" style="margin:10px 0 0">Portal link to save: <a href="' + esc(DROPHERO_VA_PORTAL_URL) + '">'
+        + esc(DROPHERO_VA_PORTAL_URL) + '</a></p>'
+      + '</div>'
+    + '<div class="card top" style="margin-bottom:12px">'
     + '<div class="acct-head"><div><div class="who">My TikTok accounts</div>'
       + '<div class="meta">' + list.length + (list.length === 1 ? ' account' : ' accounts') + '</div></div>'
       + '</div>'
@@ -1150,6 +1176,15 @@ function drawAccounts() {
     + (list.length ? list.map(acctCard).join('')
         : '<div class="card"><p class="muted" style="margin:0">No accounts yet. Add the first one '
           + 'and Rico will switch it on for you.</p></div>');
+
+  const copyProfileBio = $('tt').querySelector('#tt-copy-bio');
+  if (copyProfileBio) {
+    copyProfileBio.onclick = async () => {
+      const r = await copyNow(DROPHERO_PROFILE_BIO);
+      copyProfileBio.textContent = r.ok ? 'BIO COPIED' : 'COPY THE BIO ABOVE';
+      setTimeout(() => { copyProfileBio.textContent = 'COPY BIO'; }, 1800);
+    };
+  }
 
   $('addbtn').onclick = openAdd;
   for (const b of $('tt').querySelectorAll('[data-problem]')) {
@@ -1172,6 +1207,14 @@ function openAdd() {
   $('addacct').showModal();
 }
 $('a-cancel').onclick = () => $('addacct').close();
+const addCopyBio = $('a-copy-bio');
+if (addCopyBio) {
+  addCopyBio.onclick = async () => {
+    const r = await copyNow(DROPHERO_PROFILE_BIO);
+    addCopyBio.textContent = r.ok ? 'BIO COPIED' : 'COPY THE BIO ABOVE';
+    setTimeout(() => { addCopyBio.textContent = 'COPY BIO'; }, 1800);
+  };
+}
 
 $('a-save').onclick = async () => {
   const user = cleanTikTokHandle($('a-user').value);
@@ -1326,42 +1369,17 @@ function say(text) {
  * subsequent window.open() that needs to be synchronous and inside the same handler, not this call
  * -- see the two-phase send below, which opens TikTok before awaiting the copy result.
  */
-async function copyNow(text) {
-  return copyText(text, { navigator, legacyCopy });
+async function copyNow(text, strictDeviceClipboard = false) {
+  return copyText(text, {
+    navigator,
+    legacyCopy,
+    // For the copy-and-leave DM action, a rejected modern clipboard write must not be hidden by
+    // execCommand returning true in an embedded/cloud browser. That "success" can be a clipboard
+    // on another machine and is exactly how a VA reaches TikTok with nothing to paste.
+    acceptLegacyAfterModernFailure: !strictDeviceClipboard
+  });
 }
 
-/**
- * THE BUG THIS REPLACES, AND WHY IT WAS INVISIBLE.
- *
- * This function reported success while copying nothing. Measured in Chromium against the deployed
- * page, with the real queue of a real VA:
- *
- *     document.activeElement    BUTTON        -- the textarea was never focused
- *     window.getSelection()     ""  (len 0)   -- the document selection was EMPTY
- *     ta.selectionStart/End     0 / 10        -- the textarea's own selection was fine
- *     document.execCommand()    true          -- and it still said yes
- *     clipboard afterwards      unchanged     -- nothing was copied
- *
- * `range.selectNodeContents(ta)` selects a textarea's CHILD NODES. A textarea whose value was set
- * through the `.value` property has none, so that range is empty -- and it then replaced the
- * document selection with that emptiness. The textarea's own selection would have been used
- * instead, but only if the textarea had focus, and nothing ever focused it. execCommand('copy')
- * returns true when the command is merely *enabled*, not when it copied something.
- *
- * WHY THAT MATTERS HERE MORE THAN ANYWHERE ELSE. The caller trusts this return value to decide
- * whether to send the VA to TikTok: "If the copy fails we do NOT leave: there is nothing useful to
- * paste." A false yes defeats exactly that protection -- the VA lands in a real conversation with a
- * real creator and an empty clipboard, which is the failure the two-phase send exists to prevent.
- *
- * THE FIX IS TO STOP TRUSTING execCommand AND CHECK THE SELECTION INSTEAD. Focus the field and
- * select it the ordinary way; if that yields a real selection, copy. Only if it does not do we fall
- * back to the iOS contentEditable+range recipe, which is left intact because this environment has
- * no WebKit to test it against -- it can only help there, and it can no longer clobber a working
- * selection, because it now runs second rather than first.
- *
- * And if neither produces a real selection, this returns false and means it. The caller then shows
- * the message for manual copying instead of sending anyone away empty-handed.
- */
 function legacyCopy(text) {
   const ta = document.createElement('textarea');
   ta.value = text;
@@ -1520,7 +1538,7 @@ function drawWork() {
       + '<p class="muted" id="copystate" style="margin:8px 0 14px">'
       + (c.pending_copy_ok
           ? 'Did that message go out?'
-          : 'We could not copy it for you — if you sent it by hand, say so below.') + '</p>'
+          : 'Automatic copy was blocked. Open the portal directly in Safari, or select and copy the DM below. A cloud browser uses a separate clipboard.') + '</p>'
       + (c.pending_copy_ok ? '' :
           '<textarea readonly id="manual-copy-text" aria-label="The message to copy by hand" style="width:100%;min-height:88px;margin-bottom:12px" '
           + 'onclick="this.select()">' + esc(c.dm_message || '') + '</textarea>'
@@ -1530,7 +1548,9 @@ function drawWork() {
           // had already moved past it. They could copy the DM and have nowhere to paste it.
           + '<button class="good full" id="work-open-tiktok" style="background:#e67e22;'
           + 'border-color:#d35400;color:#fff;padding:18px;font-size:18px;min-height:64px;'
-          + 'margin-bottom:12px">OPEN TIKTOK</button>')
+          + 'margin-bottom:8px">TRY COPY AGAIN &amp; OPEN TIKTOK</button>'
+          + '<button class="full" id="work-open-only" style="min-height:48px;margin-bottom:12px">'
+          + 'I COPIED IT — OPEN TIKTOK</button>')
       + '<div class="acts">'
       + '<button class="full" id="work-sent" style="background:#1e5e46;border-color:#2b7d5f;color:#b6f0d5;'
       + 'min-height:56px;font-size:16px">I SENT THE DM</button>'
@@ -1565,7 +1585,7 @@ function drawWork() {
       + '<div class="meta" style="margin-bottom:12px">' + esc(timeLine) + '</div>'
       + (r.extracted_text ? '<div class="quote" style="margin:10px 0">' + esc(r.extracted_text) + '</div>' : '')
       + '<button class="good full" id="work-reply-open" style="background:#e67e22;border-color:#d35400;'
-      + 'color:#fff;padding:18px;font-size:18px;min-height:64px;margin-top:4px">OPEN TIKTOK</button>'
+      + 'color:#fff;padding:18px;font-size:18px;min-height:64px;margin-top:4px">CHECK CHAT IN TIKTOK</button>'
       + '<p class="muted" style="margin:10px 0 0">Look at the chat, then come back here and tell us '
       + 'what you found.</p>'
       + '<p id="reply-msg" class="fieldmsg"></p></div>';
@@ -1648,8 +1668,9 @@ function wireWorkButtons() {
   // unreliable -- it rejects, or returns a promise that never settles at all. The VA arrived in the
   // chat with an empty clipboard, or with the button still spinning behind them.
   //
-  // The order is now: synchronous copy inside the tap (execCommand, which needs the gesture but not
-  // focus, and completes before anything can steal it), then persist the pending state, then leave.
+  // The order is now: start both clipboard routes inside the tap, await a real result, then persist
+  // the pending state and leave. navigator.clipboard is essential on iPhone: execCommand can return
+  // true inside an embedded browser without putting the text on the device clipboard.
   // If the copy fails we do NOT leave: there is nothing useful to paste, so the message is shown for
   // manual copying instead. Nothing here calls an RPC.
   // ---------------------------------------------------------------------------------------------
@@ -1658,7 +1679,7 @@ function wireWorkButtons() {
     const copyBtn = $('work-copy-dm');
     if (!copyBtn || !t) return;
 
-    copyBtn.onclick = () => {
+    copyBtn.onclick = async () => {
       if (!t.dm_message) {
         const msg = $('dm-msg');
         if (msg) {
@@ -1677,54 +1698,45 @@ function wireWorkButtons() {
         return;
       }
       copyBtn.disabled = true;
+      copyBtn.textContent = 'COPYING…';
 
-      // PERSIST BEFORE ANYTHING ELSE CAN GO WRONG. Whatever happens to the clipboard or the
-      // navigation after this line, returning to the portal lands on this creator and no other.
-      const remember = (copyOk) => setPending({
+      // writeText is invoked synchronously by copyNow, while this tap still owns the iOS user
+      // activation. We then wait for its real result before leaving. Same-tab navigation does not
+      // need popup activation, so there is no reason to guess that a pending write succeeded.
+      const copied = await copyNow(t.dm_message, true);
+
+      setPending({
         task_id: t.task_id,
         handle: t.handle,
         profile_url: profileUrl,
         dm_message: t.dm_message,
         state: AWAITING_SEND,
-        copy_ok: copyOk,
+        copy_ok: copied.ok,
         saved_at: Date.now()
       });
-      remember(false);
 
-      // BOTH CLIPBOARD ROUTES, STARTED INSIDE THIS TAP. The synchronous one is what iOS needs and
-      // it answers immediately; the asynchronous one is a second chance on engines that have
-      // neutered execCommand. See copyForHandoff() for why the order is this way round.
-      const handoff = copyForHandoff(t.dm_message, { navigator, legacyCopy });
-
-      if (handoff.syncOk) {
-        remember(true);
-        leaveForTikTok(profileUrl, t.handle, { sameTab: true });
-        render(); // if the navigation is refused, phase 2 is already on screen
-        return;
-      }
-
-      // The synchronous route failed, so the async one now decides. Bounded inside copyForHandoff,
-      // so this cannot leave the VA on a disabled button forever.
-      const msg = $('dm-msg');
-      if (msg) { msg.textContent = 'Copying…'; msg.className = 'fieldmsg'; }
-      handoff.settled.then((copied) => {
-        if (copied) {
-          remember(true);
-          leaveForTikTok(profileUrl, t.handle, { sameTab: true });
-          render();
-          return;
-        }
-        // BOTH ROUTES FAILED -- the exceptional case, and the only one the VA ever sees a fallback
-        // for. Do not hand them to TikTok with an empty clipboard: there would be nothing to paste
-        // and they would have no way of knowing. Show the message to copy by hand instead, with
-        // OPEN TIKTOK beside it so there is still somewhere to paste it.
+      if (!copied.ok) {
+        // Do not send them to TikTok with an empty clipboard. Show the message, let them copy it by
+        // hand, and keep both confirm buttons available for when they come back.
         copyBtn.disabled = false;
+        copyBtn.textContent = 'COPY DM & OPEN TIKTOK';
+        const msg = $('dm-msg');
         if (msg) {
-          msg.textContent = 'We could not copy it automatically — the message is below, copy it by hand.';
+          msg.textContent = 'Automatic copy was blocked. Open this portal directly in Safari on your phone, '
+            + 'or copy the message below by hand. A cloud browser cannot fill your iPhone clipboard.';
           msg.className = 'fieldmsg bad';
         }
         render();
-      });
+        return;
+      }
+
+      if (!leaveForTikTok(profileUrl, t.handle)) {
+        setPending({
+          task_id: t.task_id, handle: t.handle, profile_url: profileUrl,
+          dm_message: t.dm_message, state: AWAITING_SEND, copy_ok: false, saved_at: Date.now()
+        });
+      }
+      render(); // if the tab survives, phase 2 is already on screen behind TikTok
     };
     return;
   }
@@ -1740,13 +1752,49 @@ function wireWorkButtons() {
     // names -- the persisted profile_url, or their handle when the URL was never recorded -- so a
     // reload cannot send the VA to whoever happens to be at the top of the queue now.
     const openBtn = $('work-open-tiktok');
+    const openOnlyBtn = $('work-open-only');
     if (openBtn) {
-      openBtn.onclick = () => {
-        // Same tab, like the main hand-off: this is the same journey, only with the copy done by
-        // hand. The pending entry is already saved, so coming back lands on this creator again --
-        // with the message still on screen if the copy never worked.
-        leaveForTikTok(c.profile_url || ('https://www.tiktok.com/@' + (c.handle || '')), c.handle,
-                       { sameTab: true });
+      openBtn.onclick = async () => {
+        // This is not an "open only" escape hatch. A previous automatic copy may have been blocked
+        // by iOS, but the next tap is a fresh user gesture and must retry the copy before leaving.
+        // The old handler skipped this step entirely, so TikTok opened with an empty clipboard.
+        if (!c.dm_message) {
+          if (msg) {
+            msg.textContent = 'No approved DM is attached to this creator. Tell Rico before sending.';
+            msg.className = 'fieldmsg bad';
+          }
+          return;
+        }
+        openBtn.disabled = true;
+        openBtn.textContent = 'COPYING…';
+        const copied = await copyNow(c.dm_message, true);
+        if (!copied.ok) {
+          openBtn.disabled = false;
+          openBtn.textContent = 'COPY DM & OPEN TIKTOK';
+          if (msg) {
+            msg.textContent = 'Copy is blocked in this browser. Open the portal directly in Safari, '
+              + 'or tap and hold the DM above and copy it by hand.';
+            msg.className = 'fieldmsg bad';
+          }
+          return;
+        }
+        setPending({
+          task_id: c.task_id,
+          handle: c.handle,
+          profile_url: c.profile_url,
+          dm_message: c.dm_message,
+          state: AWAITING_SEND,
+          copy_ok: true,
+          saved_at: Date.now()
+        });
+        leaveForTikTok(c.profile_url || ('https://www.tiktok.com/@' + (c.handle || '')), c.handle);
+        render();
+      };
+    }
+
+    if (openOnlyBtn) {
+      openOnlyBtn.onclick = () => {
+        leaveForTikTok(c.profile_url || ('https://www.tiktok.com/@' + (c.handle || '')), c.handle);
       };
     }
 
@@ -1852,49 +1900,32 @@ function wireWorkButtons() {
 /**
  * Leave for TikTok in the way the current browser actually allows.
  *
- * window.open is tried first because keeping DropHero alive in its own tab is what makes coming back
- * a tab switch rather than a cold reload. When it is refused -- iOS blocks it outside a narrow
- * gesture window, and standalone PWAs often ignore it entirely -- we navigate this tab instead.
- * Either way the pending state is already in sessionStorage, which is what makes a full reload safe.
+ * Open the real TikTok URL in this tab. Opening a new tab is unreliable in iOS/WebView browsers:
+ * some return a detached WindowProxy and leave a permanent `about:blank`, even for a real user tap.
+ * `_self` is not a popup, so it cannot be popup-blocked. The pending state is already persisted and
+ * the browser Back action returns to the exact confirmation step in DropHero.
  */
-function leaveForTikTok(url, handle = '', opts = {}) {
+function leaveForTikTok(url, handle = '') {
   const safeUrl = safeTikTokProfileUrl(url, handle);
   if (!safeUrl) {
     alert('This TikTok profile link is invalid. Reload the queue or tell Rico.');
     return false;
   }
-
-  // THE DM HAND-OFF LEAVES IN THIS TAB, AND THAT IS DELIBERATE.
-  //
-  // A new tab costs the VA a second action: they have to find their way back. On an iPhone a
-  // popup can also be blocked outright, or open behind the current page, and a popup opened
-  // outside the tap is refused entirely -- which is exactly the case when the asynchronous
-  // clipboard route decides the outcome a few hundred milliseconds late. A top-level navigation
-  // in this tab has none of those problems: it is not a popup, it does not need the gesture, and
-  // the back gesture is the way back.
-  //
-  // What makes that safe is that the task, creator, profile URL and message are already persisted
-  // in sessionStorage before this runs. Returning restores that exact creator with I SENT THE DM
-  // and COULDN'T SEND on screen -- not whatever has since floated to the top of the queue.
-  if (opts.sameTab) {
+  try {
+    // Cancelable for the browser regression harness, which must observe the exact destination
+    // without actually leaving its local fixture. Production has no listener, so this is a no-op.
+    const navEvent = new CustomEvent('dh:tiktok-navigation', {
+      cancelable: true, detail: { url: safeUrl }
+    });
+    if (!window.dispatchEvent(navEvent)) return true;
+    // location.assign is a real same-tab navigation. window.open(..., '_self') still produced an
+    // about:blank WindowProxy in iPhone/cloud WebViews, despite looking equivalent on desktop.
     window.location.assign(safeUrl);
     return true;
+  } catch {
+    alert('TikTok could not be opened. Copy the profile link and try again.');
+    return false;
   }
-
-  let win = null;
-  try {
-    // Opening with the `noopener` feature can legitimately return null even when the new tab did
-    // open. Treating that as a popup block navigated the current portal too, leaving two TikTok
-    // tabs. Open an empty same-origin tab, sever its opener before any external page loads, then
-    // navigate that tab. A real popup block still falls back to this tab.
-    win = window.open('', '_blank');
-    if (win) {
-      win.opener = null;
-      win.location.replace(safeUrl);
-    }
-  } catch { win = null; }
-  if (!win) window.location.assign(safeUrl);
-  return true;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -2151,8 +2182,9 @@ function drawEarnings() {
     + '<div class="card"><p class="earnhead">Already paid</p>'
     + '<div class="money"><span>Paid to you so far</span><span class="amt">'
     + usd(m.paid_cents) + '</span></div>'
-    + '<p class="muted" style="margin:10px 0 0">Rico pays these out by hand. Nothing here can be '
-    + 'changed from this screen — it is counted from what you actually did.</p></div>';
+    + '<p class="muted" style="margin:10px 0 0">Approved VA payouts are handled through FirstPromoter. '
+    + 'Complete your FirstPromoter payout setup when DropHero sends you the onboarding link. '
+    + 'Never send bank details or identity documents in chat.</p></div>';
 }
 
 async function runSearch(token = seq.begin('search')) {
@@ -2189,6 +2221,7 @@ function tierPill(t) {
 function rowHtml(t, opts) {
   const due = t.follow_up_at || t.last_checked_at || t.first_sent_at;
   const profileUrl = safeTikTokProfileUrl(t.profile_url, t.handle);
+  const hasSend = Boolean(t.send_id);
   return '<div class="row" data-task="' + esc(t.task_id) + '">'
     + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">'
       + '<div><div class="who">' + esc(t.display_name || t.handle || 'creator') + '</div>'
@@ -2197,12 +2230,14 @@ function rowHtml(t, opts) {
       + '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end">'
         + tierPill(t)
         + '<span class="pill ' + esc(t.priority) + '">' + esc(t.priority) + '</span></div></div>'
-    + '<p class="muted" style="margin:10px 0 0">Sent ' + esc(when(t.first_sent_at))
-      + ' (' + esc(ago(t.first_sent_at)) + ')'
-      + (t.last_checked_at ? ' · last checked ' + esc(ago(t.last_checked_at)) : '')
-      + (t.follow_up_at ? ' · follow up ' + esc(ago(t.follow_up_at)) : '')
-      + (opts.due && due ? '' : '') + '</p>'
-    + '<details class="prev"><summary>Show the DM that was sent</summary>'
+    + (hasSend
+      ? '<p class="muted" style="margin:10px 0 0">Sent ' + esc(when(t.first_sent_at))
+        + ' (' + esc(ago(t.first_sent_at)) + ')'
+        + (t.last_checked_at ? ' · last checked ' + esc(ago(t.last_checked_at)) : '')
+        + (t.follow_up_at ? ' · follow up ' + esc(ago(t.follow_up_at)) : '')
+        + (opts.due && due ? '' : '') + '</p>'
+      : '<p class="muted" style="margin:10px 0 0">No confirmed DM send is recorded.</p>')
+    + '<details class="prev"><summary>' + (hasSend ? 'Show the DM that was sent' : 'Show the prepared DM') + '</summary>'
       + '<div class="script">' + esc(t.dm_message || '(no message stored)') + '</div></details>'
     + (Array.isArray(t.replies) && t.replies.length
         ? t.replies.map((r) => '<div class="quote">' + esc(r.text)
@@ -2210,26 +2245,29 @@ function rowHtml(t, opts) {
         : '')
     + (profileUrl
         ? '<a class="open" href="' + esc(profileUrl)
-          + '" target="_blank" rel="noopener noreferrer">Open profile</a>'
+          + '">Open profile</a>'
         : '<p class="muted">The TikTok profile link is invalid. Tell Rico.</p>')
     // THE ONE ACTION THAT PAYS A BONUS, GIVEN ITS OWN BUTTON ABOVE THE STATUS GRID.
     //
     // A reply with a photo is worth five times a sent DM, so it must not be one of eight equal
     // buttons. Tapping it opens the camera; the grid below stays exactly as it was for the outcomes
     // that need no evidence.
-    + '<button class="good" data-replied="' + esc(t.task_id) + '" style="margin-bottom:10px">'
-      + 'They replied — add photo</button>'
-    + '<button class="sm" data-copy="1" style="margin-bottom:10px">Copy DM again</button>'
-    + '<p class="muted" style="margin:4px 0 5px">Paste their reply (optional)</p>'
-    + '<textarea data-reply="1" aria-label="What they wrote back" placeholder="What they wrote back"></textarea>'
-    + '<p class="muted" style="margin:10px 0 5px">Note (optional)</p>'
-    + '<textarea data-note="1" aria-label="Note for this creator">' + esc(t.notes || '') + '</textarea>'
-    + '<div class="acts" style="margin-top:11px">'
-      + '<button data-s="NO_REPLY">No reply</button>'
-      + '<button class="bad" data-s="NOT_INTERESTED">Not interested</button>'
-      + '<button data-s="FOLLOW_UP_LATER">Follow up later</button>'
-      + '<button class="bad" data-s="UNREACHABLE">Can\'t reach</button>'
-    + '</div></div>';
+    + (hasSend
+      ? '<button class="good" data-replied="' + esc(t.task_id) + '" style="margin-bottom:10px">'
+        + 'They replied — add photo</button>'
+        + '<button class="sm" data-copy="1" style="margin-bottom:10px">Copy DM again</button>'
+        + '<p class="muted" style="margin:4px 0 5px">Paste their reply (optional)</p>'
+        + '<textarea data-reply="1" placeholder="What they wrote back"></textarea>'
+        + '<p class="muted" style="margin:10px 0 5px">Note (optional)</p>'
+        + '<textarea data-note="1">' + esc(t.notes || '') + '</textarea>'
+        + '<div class="acts" style="margin-top:11px">'
+          + '<button data-s="NO_REPLY">No reply</button>'
+          + '<button class="bad" data-s="NOT_INTERESTED">Not interested</button>'
+          + '<button data-s="FOLLOW_UP_LATER">Follow up later</button>'
+          + '<button class="bad" data-s="UNREACHABLE">Can\'t reach</button>'
+        + '</div>'
+      : '<p class="muted" style="margin:10px 0 0">Reply and photo actions stay locked until a real send is confirmed.</p>')
+    + '</div>';
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -2450,6 +2488,15 @@ async function beginReplyCapture(r) {
   // AI intent classification is not currently available, so every reply must use the one sheet
   // that captures both its screenshot and the VA's required classification. This is also the same
   // idempotent flow used from history: retrying reuses one reply event and one proof check.
+  if (!r?.send_id) {
+    const msg = $('reply-msg');
+    if (msg) {
+      msg.textContent = 'This DM has no confirmed send record. Confirm the send first; no photo was uploaded.';
+      msg.className = 'fieldmsg bad';
+    }
+    if (pending && pending.task_id === r?.task_id) setPending(null);
+    return;
+  }
   openReply(r.task_id, '@' + (r.handle || ''));
 }
 
@@ -2525,11 +2572,12 @@ $('rp-send').onclick = async () => {
   // than calling dh_reply_report again and creating a second reply event.
   let data = replyCtx.report;
   if (!data) {
-    const result = await sb.rpc('dh_reply_report', { p_task_id: replyCtx.task_id });
-    if (result.error || !result.data?.ok) {
-      $('rp-msg').textContent = result.data?.reason === 'NO_SEND_TO_REPLY_TO'
-        ? 'Mark the DM as sent first, then record their reply.'
-        : 'That did not save. Try once more.';
+    let result;
+    try { result = await sb.rpc('dh_reply_report', { p_task_id: replyCtx.task_id }); }
+    catch (error) { result = { error }; }
+    const report = normalizeRpc(result);
+    if (!report.ok) {
+      $('rp-msg').textContent = report.message;
       $('rp-send').disabled = false;
       return;
     }
@@ -2544,7 +2592,8 @@ $('rp-send').onclick = async () => {
   if (!replyCtx.uploaded) {
     const up = await uploadShot(data.proof_check_id, replyCtx.file, 'proofs');
     if (!up.ok) {
-      $('rp-msg').textContent = 'Saved, but the photo did not upload. Try again — no duplicate reply will be created.';
+      $('rp-msg').textContent = 'The reply is saved. ' + (up.message || 'The photo did not upload.')
+        + ' Try again — no duplicate reply will be created.';
       $('rp-send').disabled = false;
       return;
     }
@@ -2552,13 +2601,18 @@ $('rp-send').onclick = async () => {
   }
 
   const text = $('rp-text').value.trim();
-  const classified = await sb.rpc('dh_reply_classify', {
-    p_reply_event_id: data.reply_event_id,
-    p_classification: replyCtx.classification,
-    p_text: text || null
-  });
-  if (classified.error || classified.data?.ok === false) {
-    $('rp-msg').textContent = 'The photo is saved, but the reply details did not save. Try once more.';
+  let classified;
+  try {
+    classified = await sb.rpc('dh_reply_classify', {
+      p_reply_event_id: data.reply_event_id,
+      p_classification: replyCtx.classification,
+      p_text: text || null
+    });
+  } catch (error) { classified = { error }; }
+  const classResult = normalizeRpc(classified);
+  if (!classResult.ok) {
+    $('rp-msg').textContent = 'The photo is saved, but the reply details did not save. '
+      + classResult.message;
     $('rp-send').disabled = false;
     return;
   }
@@ -2582,25 +2636,33 @@ function wireRows(rows) {
     const t = byId.get(el.dataset.task);
     if (!t) continue;
     const copyBtn = el.querySelector('button[data-copy]');
-    copyBtn.onclick = async () => {
-      copyBtn.disabled = true;
-      const r = await copyNow(t.dm_message);
-      copyBtn.disabled = false;
-      copyBtn.textContent = r.ok ? 'Copied' : 'Select the text above';
-    };
+    if (copyBtn) {
+      copyBtn.onclick = async () => {
+        copyBtn.disabled = true;
+        const r = await copyNow(t.dm_message);
+        copyBtn.disabled = false;
+        copyBtn.textContent = r.ok ? 'Copied' : 'Select the text above';
+      };
+    }
     const rep = el.querySelector('button[data-replied]');
-    if (rep) rep.onclick = () => openReply(t.task_id, '@' + (t.handle || ''));
+    if (rep) rep.onclick = () => beginReplyCapture(t);
     for (const b of el.querySelectorAll('button[data-s]')) {
       b.onclick = async () => {
         for (const o of el.querySelectorAll('button[data-s]')) o.disabled = true;
-        const { error } = await sb.rpc('dh_va_update_task', {
-          p_task_id: t.task_id,
-          p_status: b.dataset.s,
-          p_notes: el.querySelector('textarea[data-note]').value.trim() || null,
-          p_reply_text: el.querySelector('textarea[data-reply]').value.trim() || null
-        });
-        if (error) {
-          alert(error.message);
+        let result;
+        try {
+          result = await sb.rpc('dh_va_update_task', {
+            p_task_id: t.task_id,
+            p_status: b.dataset.s,
+            p_notes: el.querySelector('textarea[data-note]')?.value.trim() || null,
+            p_reply_text: el.querySelector('textarea[data-reply]')?.value.trim() || null
+          });
+        } catch (error) {
+          result = { error };
+        }
+        const res = normalizeRpc(result);
+        if (!res.ok) {
+          alert(res.message);
           for (const o of el.querySelectorAll('button[data-s]')) o.disabled = false;
           return;
         }
