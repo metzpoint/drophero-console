@@ -382,7 +382,7 @@ import {
   computeCapacity, sentLabel, checkedLabel, followUpLabel,
   normalizeRpc, safeLogLine, copyText, createSequencer,
   savePending, loadPending, clearPending, workState, senderState,
-  passwordProblem, AWAITING_SEND, AWAITING_REPLY
+  passwordProblem, sessionExpired, SESSION_MAX_DAYS, AWAITING_SEND, AWAITING_REPLY
 } from './va-portal-logic.mjs?v=20260921-integrated';
 
 const sb = createClient('https://aexomkitwnxvpqlmtrik.supabase.co', 'sb_publishable_Y88uWkdq3igd5dMkT1c8JA_qMB_ZB7d',
@@ -819,6 +819,32 @@ async function boot() {
 async function bootOrThrow() {
   const token = seq.begin('boot');
   const { data: { session } } = await sb.auth.getSession();
+
+  // EEN SESSIE VERLOOPT, ZODAT ER AF EN TOE OPNIEUW GETEKEND WORDT.
+  //
+  // persistSession en autoRefreshToken houden een sessie eindeloos in leven: wie één keer inlogt
+  // ziet nooit meer een wachtwoord. Prettig voor een VA op zijn eigen telefoon, maar het betekent
+  // ook dat een toestel dat kwijtraakt of wordt doorgegeven toegang houdt tot de wachtrij, de
+  // verdiensten en het TikTok-account -- zonder dat iemand daar ooit opnieuw voor tekent.
+  //
+  // De teller loopt vanaf de laatste échte aanmelding, die de server meestuurt; niet vanaf een
+  // tijdstempel in de browser, want die kan gewist worden door precies degene die we buiten willen
+  // houden. Ontbreekt de datum, dan blijft de sessie geldig -- zie sessionExpired().
+  if (session && sessionExpired(session.user && session.user.last_sign_in_at)) {
+    pending = null;
+    resetVaMemory();
+    pendingUserId = null;
+    try { await sb.auth.signOut(); } catch { /* het scherm gaat hoe dan ook op slot */ }
+    clearUserState();
+    $('app').hidden = true;
+    $('wrongacct').hidden = true;
+    $('claim').hidden = true;
+    $('login').hidden = false;
+    $('loginmsg').textContent =
+      'For security, please sign in again — it has been more than ' + SESSION_MAX_DAYS
+      + ' days. Nothing is lost: your queue and your earnings are waiting.';
+    return;
+  }
   if (!seq.isCurrent('boot', token)) return;
   if (!session) {
     // Keep the user-scoped pending action in sessionStorage on an unexpected auth expiry. If the

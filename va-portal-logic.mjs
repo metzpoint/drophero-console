@@ -668,3 +668,38 @@ export function passwordProblem(password, { email } = {}) {
 
   return null;
 }
+
+// ---------------------------------------------------------------------------------------------
+// HOE LANG EEN SESSIE MAG DUREN
+//
+// De portal houdt een sessie eindeloos in leven: persistSession en autoRefreshToken samen zorgen
+// dat wie één keer inlogt nooit meer een wachtwoord ziet. Voor een VA op zijn eigen telefoon is
+// dat prettig, maar het betekent ook dat een toestel dat kwijtraakt, wordt doorgegeven of van
+// eigenaar wisselt, toegang houdt tot de wachtrij, de verdiensten en het TikTok-account -- zonder
+// dat iemand daar ooit opnieuw voor hoeft te tekenen.
+//
+// WAAROM last_sign_in_at EN NIET EEN EIGEN TIJDSTEMPEL. De teller moet lopen vanaf de laatste keer
+// dat er écht een wachtwoord is ingevoerd. Dat staat in het gebruikersobject dat de server
+// meestuurt. Een tijdstempel die we zelf in de browser zouden bewaren, kan gewist of teruggezet
+// worden door precies degene die we buiten willen houden; deze niet.
+//
+// GEEN DATUM, GEEN SLOT. Ontbreekt de tijdstempel of is hij onleesbaar, dan blijft de sessie
+// geldig. Iemand buitensluiten op grond van een veld dat we niet konden lezen is erger dan de
+// sessie een keer te lang laten staan -- en het is precies het soort fout dat pas opvalt als een
+// VA midden in zijn werk zijn wachtrij kwijt is.
+// ---------------------------------------------------------------------------------------------
+
+/** Na hoeveel dagen een VA opnieuw met e-mail en wachtwoord moet inloggen. */
+export const SESSION_MAX_DAYS = 30;
+
+/**
+ * @param lastSignInAt de laatste echte aanmelding, uit session.user.last_sign_in_at
+ * @returns true als de sessie te oud is en er opnieuw ingelogd moet worden
+ */
+export function sessionExpired(lastSignInAt, { now = Date.now(), maxDays = SESSION_MAX_DAYS } = {}) {
+  const at = parseInstant(lastSignInAt);
+  if (at === null) return false;
+  const days = Number(maxDays);
+  if (!Number.isFinite(days) || days <= 0) return false;
+  return (now - at) > days * 86400000;
+}
