@@ -90,6 +90,13 @@
       <button id="signin" type="submit">Sign in</button>
     </div>
     <p id="loginmsg" class="muted" style="margin-bottom:0" role="status" aria-live="polite"></p>
+    <!-- Zonder dit kan de eigenaar zichzelf niet herstellen: er is niemand boven hem die een
+         nieuwe uitnodiging kan sturen. type="button" houdt hem buiten het submit-pad. -->
+    <div style="margin-top:10px">
+      <button id="forgotpw" type="button" class="ghost" style="font-size:13px">
+        Forgot your password?</button>
+    </div>
+    <p id="forgotmsg" class="muted" style="margin:8px 0 0" role="status" aria-live="polite"></p>
   </form>
   <p class="muted" style="margin-top:14px">VA account? Open the invitation link your manager sent,
     or use the <a href="./va.html">VA portal</a> if your account is already active.</p>
@@ -213,6 +220,23 @@
   });
 </script>
 
+<dialog id="pwdlg" aria-labelledby="pw-title"
+        style="background:var(--card);color:var(--ink);border:1px solid var(--line);
+               border-radius:12px;padding:20px;max-width:380px;width:92vw">
+  <h3 id="pw-title" style="margin:0 0 12px">Choose a new password</h3>
+  <label class="k" for="pw-new">New password</label>
+  <input id="pw-new" type="password" autocomplete="new-password" aria-label="New password"
+         minlength="8" style="width:100%">
+  <label class="k" for="pw-confirm" style="display:block;margin-top:11px">Repeat it</label>
+  <input id="pw-confirm" type="password" autocomplete="new-password"
+         aria-label="Repeat the new password" minlength="8" style="width:100%">
+  <p id="pw-msg" class="muted" style="margin:10px 0 0" role="status" aria-live="polite"></p>
+  <div style="display:flex;gap:8px;margin-top:14px">
+    <button id="pw-save">Save password</button>
+    <button id="pw-cancel" type="button" class="ghost">Cancel</button>
+  </div>
+</dialog>
+
 <script type="module">
 import { createClient } from './vendor/supabase.mjs';
 const sb = createClient('https://aexomkitwnxvpqlmtrik.supabase.co', 'sb_publishable_Y88uWkdq3igd5dMkT1c8JA_qMB_ZB7d',
@@ -303,6 +327,94 @@ async function signIn(event) {
   }
 }
 $('login-form').addEventListener('submit', signIn);
+
+// ---------------------------------------------------------------------------------------------
+// WACHTWOORD VERGETEN -- EN WAAROM DIT VOOR DE EIGENAAR ANDERS WEEGT.
+//
+// Een VA die zijn wachtwoord kwijt is kan Rico vragen om een nieuwe uitnodiging. Boven Rico zit
+// niemand. Zonder deze route was hij bij een vergeten wachtwoord aangewezen op het Supabase-
+// dashboard, en dus op precies het soort technische handeling dat hij niet hoort te doen.
+//
+// Twee dingen maken het veilig, net als in de VA-portal:
+//  1. Het antwoord is altijd hetzelfde, of het adres nu bestaat of niet -- anders is dit formulier
+//     een werkende test of iemand een DropHero-account heeft.
+//  2. De mail bevat een kortdurende sessie, geen wachtwoord, en die sessie dwingt meteen een nieuw
+//     wachtwoord af.
+//
+// Inloggen zelf verandert niet, dus niemand kan hierdoor buitengesloten raken.
+// ---------------------------------------------------------------------------------------------
+$('forgotpw').onclick = async () => {
+  const btn = $('forgotpw');
+  const msg = $('forgotmsg');
+  const email = ($('email').value || '').trim();
+
+  if (!email || !email.includes('@')) {
+    msg.textContent = 'Type the email address you sign in with first, then press this again.';
+    $('email').focus();
+    return;
+  }
+
+  btn.disabled = true;
+  msg.textContent = 'Sending…';
+
+  const back = location.origin + location.pathname;
+  let failed = null;
+  try {
+    const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: back });
+    if (error) failed = error;
+  } catch (e) { failed = e; }
+
+  if (failed && /fetch|network|timeout/i.test(failed.message || '')) {
+    btn.disabled = false;
+    msg.textContent = 'Could not reach the server. Check your connection and try again.';
+    console.error('[owner-portal] password_reset transport failure');
+    return;
+  }
+  if (failed) console.error('[owner-portal] password_reset refused');
+
+  // Dezelfde zin, hoe het ook afliep. Het verschil hoort niet meetbaar te zijn.
+  msg.textContent = 'If that address has an account, a reset link is on its way. '
+    + 'It expires shortly, so open it soon.';
+};
+
+// Terugkomen uit de herstelmail: Supabase levert een tijdelijke sessie en vuurt PASSWORD_RECOVERY.
+// Zonder deze luisteraar raakt de eigenaar ingelogd zonder ooit een nieuw wachtwoord te kiezen --
+// en staat hij de volgende keer weer buiten, want het oude kent hij nog steeds niet.
+sb.auth.onAuthStateChange((event) => {
+  if (event !== 'PASSWORD_RECOVERY') return;
+  $('login').hidden = true;
+  $('pw-msg').textContent = 'Choose a new password to finish signing in.';
+  $('pw-new').value = ''; $('pw-confirm').value = '';
+  if (!$('pwdlg').open) $('pwdlg').showModal();
+  $('pw-new').focus();
+});
+
+$('pw-cancel').onclick = () => $('pwdlg').close();
+$('pwdlg').addEventListener('close', () => { $('pw-new').value = ''; $('pw-confirm').value = ''; });
+
+$('pw-save').onclick = async () => {
+  const a = $('pw-new').value, b = $('pw-confirm').value, msg = $('pw-msg');
+  if (a.length < 8) { msg.textContent = 'Use at least 8 characters.'; return; }
+  if (a !== b) { msg.textContent = 'The two passwords do not match.'; return; }
+
+  $('pw-save').disabled = true;
+  msg.textContent = 'Saving…';
+  let failed = null;
+  try {
+    const { error } = await sb.auth.updateUser({ password: a });
+    if (error) failed = error;
+  } catch (e) { failed = e; }
+  $('pw-save').disabled = false;
+
+  if (failed) {
+    // Nooit het wachtwoord zelf loggen, ook niet bij een fout.
+    console.error('[owner-portal] password change failed');
+    msg.textContent = 'That did not save. Try once more.';
+    return;
+  }
+  msg.textContent = 'Saved.';
+  setTimeout(() => { $('pwdlg').close(); boot(); }, 900);
+};
 
 $('signout').onclick = async () => {
   $('signout').disabled = true;

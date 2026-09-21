@@ -183,6 +183,15 @@
       <button id="signin" class="full" type="submit">Sign in</button>
     </div>
     <p id="loginmsg" class="muted" style="margin-bottom:0" role="status" aria-live="polite"></p>
+    <!-- A VA who forgets their password had no way back at all: the only route was messaging Rico
+         and waiting. This sends the standard recovery mail. It is a plain button, not a link, so
+         it cannot be mistaken for navigation and cannot be triggered by Enter in the password
+         field (type="button" keeps it out of the form's submit path). -->
+    <div class="acts" style="margin-top:9px">
+      <button id="forgotpw" class="sm full" type="button" style="font-size:13px">
+        Forgot your password?</button>
+    </div>
+    <p id="forgotmsg" class="muted" style="margin:9px 0 0" role="status" aria-live="polite"></p>
     <!-- Only shown when somebody is signed in but this portal cannot serve them. The Sign out
          button lives inside #app, which is exactly what gets hidden in that state, so without
          this one there is no way out of the screen except clearing site data. -->
@@ -632,6 +641,92 @@ $('switchacct').onclick = async () => {
 // fields to confirm a match, and alert() is the only way it can report back, which is what let a
 // mistyped password vanish with a single native dialog and no way to see what was typed.
 // ---------------------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------------------------
+// WACHTWOORD VERGETEN.
+//
+// WAT ER NIET WAS. Niets. Een VA die zijn wachtwoord kwijt was had geen enkele route terug: geen
+// knop, geen link, geen mail. De enige uitweg was Rico berichten en wachten -- en Rico kan een
+// wachtwoord niet eens zien of zetten, dus het werd een nieuwe uitnodiging of een verloren dienst.
+//
+// TWEE DINGEN MAKEN DIT VEILIG.
+//
+// 1. GEEN ENUMERATIE. Het antwoord is altijd hetzelfde, of het adres nu bestaat of niet. Zou de
+//    knop "dat adres kennen we niet" zeggen, dan is dit formulier een gratis werkende lijst van
+//    wie er voor DropHero werkt, uit te lezen door iedereen die de pagina opent. Supabase lekt het
+//    zelf niet; het is deze UI die het alsnog zou kunnen verraden, dus die zegt het ook niet.
+//
+// 2. HET VENSTER IS KORT EN EENMALIG. De mail bevat een tijdelijke sessie, geen wachtwoord. Wie
+//    hem opent komt binnen met een herstel-sessie en moet meteen een nieuw wachtwoord kiezen; de
+//    link vervalt daarna. Er gaat nooit een wachtwoord over de mail.
+//
+// Dit verandert niets aan inloggen zelf, dus de eigenaar en de bestaande VA's kunnen er niet door
+// buitengesloten raken -- het is er alleen bij gekomen.
+// ---------------------------------------------------------------------------------------------
+$('forgotpw').onclick = async () => {
+  const btn = $('forgotpw');
+  const msg = $('forgotmsg');
+  const email = ($('email').value || '').trim();
+
+  if (!email || !email.includes('@')) {
+    msg.textContent = 'Type the email address you sign in with first, then tap this again.';
+    msg.className = 'muted';
+    $('email').focus();
+    return;
+  }
+
+  btn.disabled = true;
+  msg.textContent = 'Sending…';
+  msg.className = 'muted';
+
+  // Terugkomen waar ze vandaan kwamen: een VA op va.html, de eigenaar op index.html. De query- en
+  // fragmentdelen gaan er af, zodat een oude invite-token niet mee terug reist.
+  const back = location.origin + location.pathname;
+  let failed = null;
+  try {
+    const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: back });
+    if (error) failed = error;
+  } catch (e) {
+    failed = e;
+  }
+
+  // ALTIJD DEZELFDE ZIN. Ook als Supabase "user not found" zou teruggeven: dat verschil hoort de
+  // bezoeker niet te kunnen meten. Alleen een echt transportprobleem mag anders klinken, want dan
+  // is er niets verstuurd en moet iemand het opnieuw proberen.
+  const offline = failed && /fetch|network|timeout/i.test(failed.message || '');
+  if (offline) {
+    btn.disabled = false;
+    msg.textContent = 'Could not reach the server. Check your connection and try again.';
+    msg.className = 'muted bad';
+    console.error(safeLogLine('password_reset', { ok: false, kind: 'TRANSPORT', reason: null }, {}));
+    return;
+  }
+  if (failed) {
+    // Geweigerd door de server (te vaak geprobeerd, adres onbekend, wat dan ook). Gelogd voor ons,
+    // niet zichtbaar voor de bezoeker.
+    console.error(safeLogLine('password_reset', { ok: false, kind: 'REJECTED', reason: null }, {}));
+  }
+  msg.textContent = 'If that address has an account, a reset link is on its way. '
+    + 'It expires shortly, so open it soon.';
+  msg.className = 'muted';
+  // De knop blijft uit: nog eens drukken stuurt geen tweede mail en nodigt alleen uit tot spammen.
+};
+
+// TERUGKOMEN UIT DE HERSTELMAIL.
+//
+// De link levert een tijdelijke sessie af en Supabase vuurt PASSWORD_RECOVERY. Zonder deze
+// luisteraar zou de VA gewoon ingelogd raken zonder ooit een nieuw wachtwoord te kiezen -- en de
+// volgende keer weer buitengesloten staan, want het oude wachtwoord kennen ze nog steeds niet.
+sb.auth.onAuthStateChange((event) => {
+  if (event !== 'PASSWORD_RECOVERY') return;
+  $('login').hidden = true;
+  $('claim').hidden = true;
+  $('pw-msg').textContent = 'Choose a new password to finish signing in.';
+  $('pw-msg').className = 'fieldmsg';
+  $('pw-new').value = ''; $('pw-confirm').value = '';
+  if (!$('pwdlg').open) $('pwdlg').showModal();
+  $('pw-new').focus();
+});
+
 $('changepw').onclick = () => {
   $('pw-new').value = ''; $('pw-confirm').value = '';
   $('pw-msg').textContent = ''; $('pw-msg').className = 'fieldmsg';
