@@ -1411,10 +1411,10 @@ function renderPayouts(rows, err) {
     b.onclick = async () => {
       const name = tr.querySelector('b').textContent;
       const amount = tr.querySelectorAll('td')[1].textContent;
-      if (!confirm('Mark ' + amount + ' as paid to ' + name + '?\n\n'
-                   + 'This records the payment. It does not send any money.')) return;
-      const method = prompt('How was it paid? (e.g. Wise, PayPal)') || null;
-      const ref = prompt('Transaction reference (optional)') || null;
+      if (!confirm('Confirm ' + amount + ' was paid to ' + name + ' through FirstPromoter?\n\n'
+                   + 'Process the payout in FirstPromoter first. This button only records the completed FirstPromoter payout in the DropHero ledger; it does not send money.')) return;
+      const method = 'FirstPromoter';
+      const ref = prompt('FirstPromoter payout/reference ID (optional)') || null;
       b.disabled = true;
       const { data, error } = await sb.rpc('dh_admin_payout_mark_paid',
         { p_va: tr.dataset.va, p_method: method, p_reference: ref });
