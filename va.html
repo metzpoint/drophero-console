@@ -250,6 +250,15 @@
   <p class="muted" style="margin-top:0">An account you have already made yourself. We never create
     one for you.</p>
 
+  <div class="card" style="margin:12px 0">
+    <div class="who" style="font-size:17px">Before you add the account</div>
+    <p class="muted" style="margin:7px 0 9px">Make sure the TikTok profile uses the official DropHero setup:</p>
+    <div class="script" style="margin-bottom:9px">Find winning products faster 🚀<br>Test products &amp; launch ads with DropHero<br>👇 drophero.app</div>
+    <button class="good full" id="a-copy-bio" type="button" style="margin-bottom:8px">COPY BIO</button>
+    <a class="open" href="https://www.dropbox.com/scl/fi/4akjgyb1e7jciey2vgn29/DropHero-Logo.jpg?rlkey=4v1nb6vp1163ax5n9ow485evf&amp;st=rtvn7laf&amp;dl=1" target="_blank" rel="noopener noreferrer" style="display:block;text-align:center;margin-bottom:8px">DOWNLOAD DROPHERO LOGO</a>
+    <a class="open" href="https://www.dropbox.com/scl/fi/ecn6awq0px1hl048lym5e/DropHero-Promo-Video.mp4?rlkey=okcjgq1x42hh5uzyvepda2j0v&amp;st=y1vjm01q&amp;dl=1" target="_blank" rel="noopener noreferrer" style="display:block;text-align:center">DOWNLOAD DROPHERO PROMO VIDEO</a>
+  </div>
+
   <p class="muted" style="margin-bottom:4px">Names that work well — tap one to use it</p>
   <div class="examples" id="egnames"></div>
 
@@ -1135,10 +1144,27 @@ const PROBLEM_WORDS = {
   LOGIN_ISSUE: 'Cannot log in', OTHER: 'Something else'
 };
 
+const DROPHERO_PROFILE_BIO = 'Find winning products faster 🚀\\nTest products & launch ads with DropHero\\n👇 drophero.app';
+const DROPHERO_LOGO_DOWNLOAD = 'https://www.dropbox.com/scl/fi/4akjgyb1e7jciey2vgn29/DropHero-Logo.jpg?rlkey=4v1nb6vp1163ax5n9ow485evf&st=rtvn7laf&dl=1';
+const DROPHERO_VIDEO_DOWNLOAD = 'https://www.dropbox.com/scl/fi/ecn6awq0px1hl048lym5e/DropHero-Promo-Video.mp4?rlkey=okcjgq1x42hh5uzyvepda2j0v&st=y1vjm01q&dl=1';
+const DROPHERO_VA_PORTAL_URL = 'https://metzpoint.github.io/drophero-console/va.html';
+
 function drawAccounts() {
   const list = tt.accounts || [];
   $('tt').innerHTML =
     '<div class="card top" style="margin-bottom:12px">'
+      + '<div class="who" style="font-size:18px">Set up your TikTok profile first</div>'
+      + '<p class="muted" style="margin:8px 0 10px">Use these official DropHero assets before adding a TikTok account here.</p>'
+      + '<div class="script" style="margin-bottom:10px">Find winning products faster 🚀<br>Test products &amp; launch ads with DropHero<br>👇 drophero.app</div>'
+      + '<button class="good full" id="tt-copy-bio" style="margin-bottom:8px">COPY BIO</button>'
+      + '<a class="open" href="' + esc(DROPHERO_LOGO_DOWNLOAD) + '" target="_blank" rel="noopener noreferrer" '
+        + 'style="display:block;text-align:center;margin-bottom:8px">DOWNLOAD DROPHERO LOGO</a>'
+      + '<a class="open" href="' + esc(DROPHERO_VIDEO_DOWNLOAD) + '" target="_blank" rel="noopener noreferrer" '
+        + 'style="display:block;text-align:center;margin-bottom:8px">DOWNLOAD DROPHERO PROMO VIDEO</a>'
+      + '<p class="muted" style="margin:10px 0 0">Portal link to save: <a href="' + esc(DROPHERO_VA_PORTAL_URL) + '">'
+        + esc(DROPHERO_VA_PORTAL_URL) + '</a></p>'
+      + '</div>'
+    + '<div class="card top" style="margin-bottom:12px">'
     + '<div class="acct-head"><div><div class="who">My TikTok accounts</div>'
       + '<div class="meta">' + list.length + (list.length === 1 ? ' account' : ' accounts') + '</div></div>'
       + '</div>'
@@ -1150,6 +1176,15 @@ function drawAccounts() {
     + (list.length ? list.map(acctCard).join('')
         : '<div class="card"><p class="muted" style="margin:0">No accounts yet. Add the first one '
           + 'and Rico will switch it on for you.</p></div>');
+
+  const copyProfileBio = $('tt').querySelector('#tt-copy-bio');
+  if (copyProfileBio) {
+    copyProfileBio.onclick = async () => {
+      const r = await copyNow(DROPHERO_PROFILE_BIO);
+      copyProfileBio.textContent = r.ok ? 'BIO COPIED' : 'COPY THE BIO ABOVE';
+      setTimeout(() => { copyProfileBio.textContent = 'COPY BIO'; }, 1800);
+    };
+  }
 
   $('addbtn').onclick = openAdd;
   for (const b of $('tt').querySelectorAll('[data-problem]')) {
@@ -1172,6 +1207,14 @@ function openAdd() {
   $('addacct').showModal();
 }
 $('a-cancel').onclick = () => $('addacct').close();
+const addCopyBio = $('a-copy-bio');
+if (addCopyBio) {
+  addCopyBio.onclick = async () => {
+    const r = await copyNow(DROPHERO_PROFILE_BIO);
+    addCopyBio.textContent = r.ok ? 'BIO COPIED' : 'COPY THE BIO ABOVE';
+    setTimeout(() => { addCopyBio.textContent = 'COPY BIO'; }, 1800);
+  };
+}
 
 $('a-save').onclick = async () => {
   const user = cleanTikTokHandle($('a-user').value);
