@@ -2425,9 +2425,26 @@ async function uploadShot(proofId, file, bucket) {
     up = { error: e };
   }
   if (up.error) {
-    console.error(safeLogLine('proof_storage_upload', { ok: false, kind: 'TRANSPORT', reason: null },
+    // THE BUG THIS REPLACES. Every storage failure was reported as "check your connection". On
+    // 21 September 2026 the real failure was the opposite of a connection problem: the bucket policy
+    // called dh_current_va(), which `authenticated` had no EXECUTE right on, so every upload came
+    // back 403. The VA re-checked their wifi over and over while nothing on their side could ever
+    // have helped. A refusal and a dropped connection need different words, because they need
+    // different actions.
+    const code = String(up.error.statusCode ?? up.error.status ?? '');
+    const geweigerd = code === '401' || code === '403'
+      || /row-level security|not authoriz|unauthorized|permission denied/i.test(String(up.error.message || ''));
+    console.error(safeLogLine('proof_storage_upload',
+                              { ok: false, kind: geweigerd ? 'REJECTED' : 'TRANSPORT',
+                                reason: code ? 'HTTP_' + code : null },
                               { proof: proofId }));
-    return { ok: false, message: 'The photo did not upload. Check your connection and try again.' };
+    return {
+      ok: false,
+      message: geweigerd
+        ? 'We could not save that photo to your account. Sign out, sign in again and try once more — '
+          + 'and if it still refuses, tell us. This one is on us, not on you, and nothing is lost.'
+        : 'The photo did not upload. Check your connection and try again.'
+    };
   }
 
   let res;
@@ -2608,7 +2625,14 @@ async function beginReplyCapture(r) {
 let replyCtx = null;    // { task_id, file, classification, report, uploaded }
 
 function updateReplyReady() {
-  $('rp-send').disabled = !(replyCtx?.file && replyCtx?.classification);
+  const klaar = !!(replyCtx?.file && replyCtx?.classification);
+  $('rp-send').disabled = !klaar;
+  // A GREY BUTTON THAT EXPLAINS NOTHING IS A DEAD END. With the photo chosen but no kind picked,
+  // the VA has done the hard part and the button simply refuses to light up, with no text anywhere
+  // saying why. Say the one thing that is missing, at the moment it becomes the only thing missing.
+  if (!klaar && replyCtx?.file && !replyCtx?.classification) {
+    $('rp-msg').textContent = 'One more tap: choose what kind of reply this is.';
+  }
 }
 
 function openReply(taskId, who) {
