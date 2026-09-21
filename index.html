@@ -394,6 +394,7 @@ sb.auth.onAuthStateChange((event) => {
 });
 
 $('pw-cancel').onclick = () => $('pwdlg').close();
+// Velden bevatten alleen een wachtwoord zolang het venster openstaat.
 $('pwdlg').addEventListener('close', () => { $('pw-new').value = ''; $('pw-confirm').value = ''; });
 
 $('pw-save').onclick = async () => {

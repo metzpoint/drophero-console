@@ -428,6 +428,9 @@ let capacity = null;  // last dh_va_capacity() answer -- the one number the Work
 // option was to send it again. The pending action is written to sessionStorage BEFORE the tab
 // leaves and read back on every boot, so it survives a reload, a tab switch and an app restart.
 let pending = null;   // { task_id, handle, profile_url, dm_message, state, copy_ok } | null
+// Een halfafgemaakte verzending die de backend niet meer aanbiedt. Eén keer melden, dan weg --
+// zie boot(). Draagt geen geld en geen taakstatus; het is alleen wat er tegen de VA gezegd wordt.
+let orphanedSend = null;
 let pendingUserId = null;
 
 /** Persist and mirror in one place, so the variable and the storage can never disagree. */
@@ -883,7 +886,24 @@ async function bootOrThrow() {
     const authorised = pending.state === AWAITING_SEND
       ? queue.some((task) => task && task.task_id === pending.task_id)
       : (data.check_replies || []).some((task) => task && task.task_id === pending.task_id);
-    if (!authorised) setPending(null);
+    // THE BACKEND STAYS THE AUTHORITY -- BUT LOSING THE VA'S WORK IN SILENCE IS NOT PART OF THAT.
+    //
+    // Stored browser content is not enough to render a creator, so an unmatched pending entry is
+    // still dropped here; that rule does not change. What did change is what the VA sees. This
+    // line used to discard the entry and nothing else: a VA who had copied a DM, sent it in
+    // TikTok, and came back after the queue had moved on simply found a different creator on
+    // screen. Their I SENT THE DM was gone, so the send was never recorded and the $0.02 was never
+    // earned -- and nothing on screen ever said so. That is not a queue or payout rule, it is work
+    // disappearing without a word.
+    //
+    // Nothing is sent, recorded or paid here. The handle is kept just long enough to say it out
+    // loud once, so the VA can tell Rico instead of quietly losing the send.
+    if (!authorised) {
+      if (pending.state === AWAITING_SEND && pending.handle) {
+        orphanedSend = { handle: pending.handle, task_id: pending.task_id };
+      }
+      setPending(null);
+    }
   }
   cursor = Math.min(cursor, Math.max(0, queue.length - 1));
   $('hello').textContent = 'Hi ' + ((data.va && data.va.name) || '');
@@ -1563,6 +1583,14 @@ function drawWork() {
     const r = ws.task;
     html += '<div class="card top" style="margin-bottom:14px">'
       + '<div class="who" style="font-size:20px">@' + esc(r.handle || '') + '</div>'
+      // Lukte het kopiëren niet, dan staat de DM hier alsnog. De reis naar TikTok is niet
+      // tegengehouden -- kijken kan ook zonder klembord -- maar plakken moet wel mogelijk blijven.
+      + (r.pending_copy_ok === false && r.dm_message
+          ? '<p class="muted" style="margin:8px 0 6px">We could not copy it for you — here it is:</p>'
+            + '<textarea readonly id="reply-copy-text" aria-label="The DM you sent, to copy by hand" '
+            + 'style="width:100%;min-height:72px;margin-bottom:12px" onclick="this.select()">'
+            + esc(r.dm_message) + '</textarea>'
+          : '')
       + '<p class="muted" style="margin:8px 0 14px">Did they answer you?</p>'
       + '<div class="acts">'
       + '<button class="full" id="work-reply-yes" style="background:#1e5e46;border-color:#2b7d5f;color:#b6f0d5;'
@@ -1586,8 +1614,8 @@ function drawWork() {
       + (r.extracted_text ? '<div class="quote" style="margin:10px 0">' + esc(r.extracted_text) + '</div>' : '')
       + '<button class="good full" id="work-reply-open" style="background:#e67e22;border-color:#d35400;'
       + 'color:#fff;padding:18px;font-size:18px;min-height:64px;margin-top:4px">CHECK CHAT IN TIKTOK</button>'
-      + '<p class="muted" style="margin:10px 0 0">Look at the chat, then come back here and tell us '
-      + 'what you found.</p>'
+      + '<p class="muted" style="margin:10px 0 0">The DM you sent goes on your clipboard, so you can '
+      + 'paste it if you need it. Look at the chat, then come back here and tell us what you found.</p>'
       + '<p id="reply-msg" class="fieldmsg"></p></div>';
 
   } else if (ws.state === 'dm') {
@@ -1633,7 +1661,25 @@ function drawWork() {
   // The task the handlers act on is the one the state machine chose, never queue[cursor]. After a
   // reload the queue has been rebuilt and reordered; the pending task may not even be in it.
   currentWorkTask = ws.task;
+  // DE HALFAFGEMAAKTE VERZENDING DIE NIET MEER TERUG TE VINDEN IS. Bovenaan, want dit gaat over
+  // werk dat de VA al gedaan kan hebben -- niet iets om onderaan weg te stoppen.
+  if (orphanedSend) {
+    html = '<div class="card top" style="margin-bottom:14px;border-color:#5e2020;background:#3a1d1d">'
+      + '<div style="font-size:16px;color:#ffc9c9;margin-bottom:6px">One send could not be matched</div>'
+      + '<p class="muted" style="margin:0">You had a DM open for <b>@' + esc(orphanedSend.handle)
+      + '</b>, but that creator is no longer in your queue, so we cannot record it from here. '
+      + '<b>If you already sent it, tell Rico</b> — otherwise it stays unpaid.</p>'
+      + '<button class="sm full" id="work-orphan-ok" style="margin-top:12px">Got it</button>'
+      + '</div>' + html;
+  }
+
   $('work').innerHTML = html;
+
+  if (orphanedSend) {
+    const ok = $('work-orphan-ok');
+    // Eén keer melden is genoeg; daarna niet blijven zeuren bij elke verversing.
+    if (ok) ok.onclick = () => { orphanedSend = null; render(); };
+  }
   wireWorkButtons();
 }
 
@@ -1850,7 +1896,7 @@ function wireWorkButtons() {
     const r = currentWorkTask;
     const openBtn = $('work-reply-open');
     if (!openBtn || !r) return;
-    openBtn.onclick = () => {
+    openBtn.onclick = async () => {
       const profileUrl = safeTikTokProfileUrl(r.profile_url, r.handle);
       if (!profileUrl) {
         const msg = $('reply-msg');
@@ -1860,12 +1906,39 @@ function wireWorkButtons() {
         }
         return;
       }
+
+      // DE VERSTUURDE DM GAAT MEE NAAR HET KLEMBORD.
+      //
+      // Zonder dit kwam de VA in het gesprek aan zonder de tekst die hij zelf had gestuurd --
+      // terwijl hij hem daar juist nodig kan hebben om na te sturen of terug te lezen. Hij is er
+      // gewoon: de wachtrij levert dm_message ook bij een reply-check mee.
+      //
+      // copy_ok stond hier hardgecodeerd op true terwijl er niets werd gekopieerd. Dat is geen
+      // detail: het terugkeerscherm gebruikt die vlag om te beslissen of het de tekst moet tonen,
+      // dus een vals ja betekende dat de VA hem nooit te zien kreeg. Nu staat er wat er echt is
+      // gebeurd.
+      //
+      // ANDERS DAN BIJ DE DM-HAND-OFF houdt een mislukte kopie de reis NIET tegen. Bij een eerste
+      // DM is er zonder tekst niets te doen in TikTok; bij een reply-check is kijken de hoofdzaak
+      // en is de tekst meegenomen gemak. Tegenhouden zou de VA beletten zijn werk te doen om een
+      // reden die er niet toe doet.
+      openBtn.disabled = true;
+      const eerder = openBtn.textContent;
+      openBtn.textContent = 'COPYING…';
+      let gekopieerd = { ok: false };
+      if (r.dm_message) {
+        try { gekopieerd = await copyNow(r.dm_message, true); } catch { gekopieerd = { ok: false }; }
+      }
+      openBtn.disabled = false;
+      openBtn.textContent = eerder;
+
       setPending({
         task_id: r.task_id,
         handle: r.handle,
         profile_url: profileUrl,
+        dm_message: r.dm_message || null,
         state: AWAITING_REPLY,
-        copy_ok: true,
+        copy_ok: gekopieerd.ok === true,
         saved_at: Date.now()
       });
       leaveForTikTok(profileUrl, r.handle);
