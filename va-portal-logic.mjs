@@ -384,6 +384,12 @@ export function createSequencer() {
 export const PENDING_KEY = 'dh_pending_action_v2';
 const LEGACY_PENDING_KEY = 'dh_pending_action_v1';
 export const AWAITING_SEND = 'AWAITING_SEND_CONFIRMATION';
+/**
+ * RETIRED 22 september 2026, bewust niet verwijderd. De reply-check is uit het werk gehaald, dus
+ * niets schrijft deze waarde nog. Hij blijft bestaan omdat er nog telefoons rondlopen met precies
+ * deze string in sessionStorage: loadPending moet hem kunnen herkennen als "niet meer van ons" en
+ * weggooien, en een test moet dat kunnen vastleggen.
+ */
 export const AWAITING_REPLY = 'AWAITING_REPLY_CONFIRMATION';
 
 /** Storage can be absent or throw (private mode, blocked site data). Never let that break a send. */
@@ -433,8 +439,10 @@ export function loadPending(deps = {}) {
   if (!raw) return null;
   let p;
   try { p = JSON.parse(raw); } catch { clearPending(deps); return null; }
-  if (!p || p.user_id !== deps.userId || !p.task_id
-      || (p.state !== AWAITING_SEND && p.state !== AWAITING_REPLY)) {
+  // AWAITING_SEND is the only half-finished action there is. A stored AWAITING_REPLY entry is a
+  // leftover from the retired reply-check step; it committed nothing, so it is simply dropped here
+  // rather than restored into a screen that no longer exists.
+  if (!p || p.user_id !== deps.userId || !p.task_id || p.state !== AWAITING_SEND) {
     clearPending(deps);
     return null;
   }
@@ -566,23 +574,33 @@ export function senderState(sendFrom) {
  * they have pasted into TikTok but not confirmed outranks a fresh creator, because leaving it
  * unanswered is what loses a send.
  *
- * "empty" is reachable only when there is genuinely nothing: no creator queued, no reply to check,
- * no proof outstanding and nothing half-done. A blocked sender is "blocked", never "empty".
+ * "empty" is reachable only when there is genuinely nothing: no creator queued, no proof
+ * outstanding and nothing half-done. A blocked sender is "blocked", never "empty".
+ *
+ * WHY CHECKING FOR REPLIES IS NO LONGER WORK. 22 september 2026, de eigenaar: "In de eerste sessie
+ * gaat men eerst alle berichten versturen... als ze niet hebben geantwoord hoeven ze dat niet te
+ * melden, aangezien het later wel zo kan zijn."
+ *
+ * Het portaal zette elke verstuurde DM na verloop van tijd terug bovenaan de wachtrij met de vraag
+ * "Did they answer you?". Vrijwel altijd is het antwoord nee -- niemand antwoordt binnen een dag --
+ * en die nee moest wél getikt worden voordat de VA verder kon. Dat is een dwingende vraag stellen
+ * over iets wat nog niet gebeurd is, en hij drong voor op het enige werk dat wél opbrengt.
+ *
+ * Werk is nu versturen. Een antwoord melden is iets wat de VA zelf doet, op het tabblad Chats,
+ * wanneer zij het in TikTok zien -- naam intypen, screenshot erbij. Niets antwoorden is gewoon
+ * doorgaan; de creator blijft staan en kan morgen alsnog geantwoord hebben.
+ *
+ * `replies` blijft binnenkomen en blijft het tabblad Chats vullen; alleen de wachtrij raakt het
+ * niet meer aan.
  */
-export function workState({ pending, proof, replies, queue, sendFrom } = {}) {
-  const replyList = Array.isArray(replies) ? replies : [];
+export function workState({ pending, proof, queue, sendFrom } = {}) {
   const queueList = Array.isArray(queue) ? queue : [];
 
   if (pending && pending.state === AWAITING_SEND) {
     const task = resolvePendingTask(pending, { queue: queueList });
     if (task) return { state: 'awaiting_send', task };
   }
-  if (pending && pending.state === AWAITING_REPLY) {
-    const task = resolvePendingTask(pending, { replies: replyList });
-    if (task) return { state: 'awaiting_reply', task };
-  }
   if (proof && proof.proof_check_id) return { state: 'proof', task: proof };
-  if (replyList.length > 0) return { state: 'reply', task: replyList[0] };
 
   const sender = senderState(sendFrom);
   if (queueList.length > 0) {

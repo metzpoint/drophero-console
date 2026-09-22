@@ -379,7 +379,7 @@
 <script type="module">
 import { createClient } from './vendor/supabase.mjs';
 import {
-  computeCapacity, sentLabel, checkedLabel, followUpLabel,
+  computeCapacity,
   normalizeRpc, safeLogLine, copyText, createSequencer,
   savePending, loadPending, clearPending, workState, senderState,
   passwordProblem, sessionExpired, SESSION_MAX_DAYS, AWAITING_SEND, AWAITING_REPLY
@@ -452,16 +452,18 @@ function clearUserState() {
 // all -- and if it is, it is rarely at the same position.
 let currentWorkTask = null;
 
-// A screenshot just uploaded through the simplified reply flow is excluded from the reply-check
-// list on this screen from that moment on. The backend still legitimately shows the task until the
-// model classifies it -- reply_status stays NULL until then -- but re-asking "did they reply?" about
-// a photo the VA handed over ninety seconds ago reads as the app not having noticed. Keyed by
-// task_id and never persisted: a reload is the natural retry path if classification genuinely stalls.
-const justUploadedReply = new Set();
-
-// results === null means "no search running, show the normal conversations list". An empty array
-// means the search ran and matched nothing, which is a different thing to say on screen.
-const search = { q: '', results: null, timer: 0, focused: false };
+// results === null means "no search running, show the sent-messages list". An empty array means the
+// search ran and matched nothing, which is a different thing to say on screen.
+//
+// WAT HIER STOND. Een Set van net-geüploade screenshots, om te voorkomen dat het werk meteen weer
+// "hebben ze geantwoord?" vroeg over een foto die de VA negentig seconden eerder had ingeleverd.
+// Die vraag bestaat niet meer -- de reply-check is op 22 september 2026 uit het werk gehaald -- en
+// de Set werd daarmee alleen nog gevuld, nooit meer gelezen. Op Chats is hij ook niet nodig: die
+// lijst wordt na het uploaden opnieuw bij de server opgehaald, dus de rij toont wat er dan echt is.
+// `results` is de uitkomst van een zoekopdracht, of null als er geen loopt. `sent` is de lijst
+// waarop het tabblad Chats standaard staat: alles waar deze VA een DM naartoe heeft gestuurd,
+// nieuwste eerst. Zonder die lijst kon je er alleen iets vinden als je de naam al wist.
+const search = { q: '', results: null, timer: 0, focused: false, sent: [] };
 let chatStatus = '';
 
 function resetVaMemory() {
@@ -470,7 +472,6 @@ function resetVaMemory() {
   view = {};
   currentWorkTask = null;
   capacity = null;
-  justUploadedReply.clear();
   search.q = '';
   search.results = null;
   search.focused = false;
@@ -909,9 +910,9 @@ async function bootOrThrow() {
   view = data;
   queue = data.new_dms || [];
   if (pending) {
-    const authorised = pending.state === AWAITING_SEND
-      ? queue.some((task) => task && task.task_id === pending.task_id)
-      : (data.check_replies || []).some((task) => task && task.task_id === pending.task_id);
+    // loadPending laat sinds 22 september 2026 alleen AWAITING_SEND door -- de reply-check is uit
+    // het werk gehaald -- dus dit is de enige soort openstaande handeling die hier nog aankomt.
+    const authorised = queue.some((task) => task && task.task_id === pending.task_id);
     // THE BACKEND STAYS THE AUTHORITY -- BUT LOSING THE VA'S WORK IN SILENCE IS NOT PART OF THAT.
     //
     // Stored browser content is not enough to render a creator, so an unmatched pending entry is
@@ -925,9 +926,7 @@ async function bootOrThrow() {
     // Nothing is sent, recorded or paid here. The handle is kept just long enough to say it out
     // loud once, so the VA can tell Rico instead of quietly losing the send.
     if (!authorised) {
-      if (pending.state === AWAITING_SEND && pending.handle) {
-        orphanedSend = { handle: pending.handle, task_id: pending.task_id };
-      }
+      if (pending.handle) orphanedSend = { handle: pending.handle, task_id: pending.task_id };
       setPending(null);
     }
   }
@@ -1009,8 +1008,11 @@ const loadAccounts = coalesced(loadAccountsOnce);
 
 async function loadMoneyOnce() {
   const token = seq.begin('money');
-  const [moneyRes, proofRes, convosRes] = await Promise.all([
-    sb.rpc('dh_va_earnings_summary'), sb.rpc('dh_va_pending_proof'), sb.rpc('dh_va_conversations')
+  const [moneyRes, proofRes, convosRes, sentRes] = await Promise.all([
+    sb.rpc('dh_va_earnings_summary'), sb.rpc('dh_va_pending_proof'), sb.rpc('dh_va_conversations'),
+    // De verstuurde berichten. Een lege zoekterm betekent sinds migratie 0137 "laat ze allemaal
+    // zien" in plaats van "geen resultaat", zodat het tabblad gevuld is voordat er iets getypt is.
+    sb.rpc('dh_va_search', { p_q: '' })
   ]);
   if (!seq.isCurrent('money', token)) return { ok: false, stale: true };
 
@@ -1023,7 +1025,8 @@ async function loadMoneyOnce() {
   // earnings figure never refreshed for any VA who simply had no proof request waiting. For those
   // two, only a transport error is a failure; an absent row is an answer.
   const optional = (res) => (res.error ? normalizeRpc(res) : { ok: true });
-  const results = [normalizeRpc(moneyRes), optional(proofRes), optional(convosRes)];
+  const results = [normalizeRpc(moneyRes), optional(proofRes), optional(convosRes),
+                   optional(sentRes)];
   const failed = results.find((r) => !r.ok);
   if (failed) {
     console.error(safeLogLine('load_money', failed));
@@ -1036,9 +1039,13 @@ async function loadMoneyOnce() {
   view.money = moneyRes.data || null;
   view.pending_proof = proofRes.data || null;
   view.chats = convosRes.data || [];
+  search.sent = Array.isArray(sentRes.data) ? sentRes.data : [];
   $('n-earn').title = '';
   $('n-earn').textContent = view.money ? usd(view.money.today_total_cents || 0) : '–';
-  $('n-conv').textContent = String(view.chats.length);
+  // Het getal op het tabblad telt de verstuurde berichten, want dat is wat er te doorzoeken valt.
+  // Het telde eerst alleen de chats die al geantwoord hadden -- meestal nul, terwijl het tabblad
+  // wel degelijk iets te bieden had.
+  $('n-conv').textContent = String(search.sent.length || view.chats.length);
   return { ok: true };
 }
 
@@ -1505,8 +1512,6 @@ function render() {
 // advances the queue or touches money until the VA has said, after the fact, that it went out.
 // =====================================================================================================
 function drawWork() {
-  const replies = (view.check_replies || []).filter((r) => !justUploadedReply.has(r.task_id))
-                                             .slice().sort(byDue);
   // ONE STATE MACHINE, NOT FIVE BOOLEANS.
   //
   // THE BUG THIS REPLACES. This used to be `hasNextDM = queue.length > 0 && sendFrom.ok` plus two
@@ -1518,25 +1523,25 @@ function drawWork() {
   const ws = workState({
     pending,
     proof: view.pending_proof,
-    replies,
     queue,
     sendFrom
   });
 
-  // ONE NUMBER ON THE TAB, NOT TWO. The old code wrote the tab chip's own text (new DMs + replies)
-  // in boot(), then drawWork() overwrote the same element with just the reply count AND stacked a
-  // second, separately-numbered red circle on top of it -- two badges, sometimes disagreeing,
-  // depending on which of the two writers ran last. There is exactly one element and one count now:
-  // total actionable items (new DMs ready to send + replies due), red only when a reply is overdue.
-  const newDmCount = queue.length;
-  const replyCount = replies.length;
-  const totalWork = newDmCount + replyCount;
-  if ($('n-work')) $('n-work').textContent = totalWork > 0 ? String(totalWork) : '0';
+  // ONE NUMBER ON THE TAB, AND IT COUNTS WHAT THE TAB CAN ACTUALLY DO.
+  //
+  // The old code wrote the chip's text (new DMs + replies) in boot(), then drawWork() overwrote the
+  // same element with just the reply count AND stacked a second, separately-numbered red circle on
+  // top of it -- two badges, sometimes disagreeing, depending on which writer ran last.
+  //
+  // Sinds 22 september 2026 telt hij alleen nog DM's. De reply-check zit niet meer in het werk, dus
+  // een reply meetellen zou een getal opleveren waar op dit tabblad niets bij te doen valt -- en de
+  // rode "urgent"-rand beloofde spoed voor een handeling die hier niet meer bestaat.
+  if ($('n-work')) $('n-work').textContent = queue.length > 0 ? String(queue.length) : '0';
   const tabEl = $('tab-work');
   if (tabEl) {
     const existing = tabEl.querySelector('.reply-badge');
     if (existing) existing.remove(); // the duplicate this replaces
-    tabEl.classList.toggle('urgent', replyCount > 0);
+    tabEl.classList.remove('urgent');
   }
 
   // WORK HEADER. sendableNow is the one figure dh_va_capacity computed server-side against the VA
@@ -1597,6 +1602,21 @@ function drawWork() {
           + 'margin-bottom:8px">TRY COPY AGAIN &amp; OPEN TIKTOK</button>'
           + '<button class="full" id="work-open-only" style="min-height:48px;margin-bottom:12px">'
           + 'I COPIED IT — OPEN TIKTOK</button>')
+      // BACK IN THE PORTAL WITH THE WRONG TIKTOK ACCOUNT LOGGED IN, AND NO WAY BACK.
+      //
+      // The copy worked, TikTok opened, and only then did the VA see they were signed in as the
+      // wrong sender. They switch account -- and this card offers them nothing but I SENT THE DM
+      // (a lie) and COULDN'T SEND (throws the creator away as UNREACHABLE). The only route back to
+      // that exact creator was the button they had already used, on a card that had moved past it.
+      // The manual-copy variant above has had its way back since the copy fix; the ordinary,
+      // successful path had none.
+      //
+      // It is deliberately the quiet button and not a second main action: the one thing this card
+      // asks for is still whether the message went out. This is the way back for when it did not.
+      + (c.pending_copy_ok
+          ? '<button class="full" id="work-open-again" style="min-height:48px;margin-bottom:12px">'
+            + 'OPEN @' + esc(c.handle || '') + ' IN TIKTOK AGAIN</button>'
+          : '')
       + '<div class="acts">'
       + '<button class="full" id="work-sent" style="background:#1e5e46;border-color:#2b7d5f;color:#b6f0d5;'
       + 'min-height:56px;font-size:16px">I SENT THE DM</button>'
@@ -1604,46 +1624,16 @@ function drawWork() {
       + 'min-height:56px;font-size:16px">COULDN\'T SEND</button>'
       + '</div><p id="dm-msg" class="fieldmsg"></p></div>';
 
-  } else if (ws.state === 'awaiting_reply') {
-    // The reply equivalent: the VA has opened the creator in TikTok and come back.
-    const r = ws.task;
-    html += '<div class="card top" style="margin-bottom:14px">'
-      + '<div class="who" style="font-size:20px">@' + esc(r.handle || '') + '</div>'
-      // Lukte het kopiëren niet, dan staat de DM hier alsnog. De reis naar TikTok is niet
-      // tegengehouden -- kijken kan ook zonder klembord -- maar plakken moet wel mogelijk blijven.
-      + (r.pending_copy_ok === false && r.dm_message
-          ? '<p class="muted" style="margin:8px 0 6px">We could not copy it for you — here it is:</p>'
-            + '<textarea readonly id="reply-copy-text" aria-label="The DM you sent, to copy by hand" '
-            + 'style="width:100%;min-height:72px;margin-bottom:12px" onclick="this.select()">'
-            + esc(r.dm_message) + '</textarea>'
-          : '')
-      + '<p class="muted" style="margin:8px 0 14px">Did they answer you?</p>'
-      + '<div class="acts">'
-      + '<button class="full" id="work-reply-yes" style="background:#1e5e46;border-color:#2b7d5f;color:#b6f0d5;'
-      + 'min-height:56px;font-size:16px">YES, THEY REPLIED</button>'
-      + '<button class="full" id="work-reply-no" style="background:#3a1d1d;border-color:#5e2020;color:#ffc9c9;'
-      + 'min-height:56px;font-size:16px">NO REPLY</button>'
-      + '</div><p id="reply-msg" class="fieldmsg"></p></div>';
-
-  } else if (ws.state === 'reply') {
-    const r = ws.task;
-    // THE BUG THIS REPLACES: this line used to be
-    //   formatSentTime(r.follow_up_at || r.last_checked_at || r.first_sent_at)
-    // under the label "Sent...". follow_up_at is usually in the FUTURE and formatSentTime took
-    // Math.abs of the gap, so a follow-up due in two days read as "Sent 2 days ago".
-    const timeLine = r.follow_up_at ? followUpLabel(r.follow_up_at)
-                    : r.last_checked_at ? checkedLabel(r.last_checked_at)
-                    : sentLabel(r.first_sent_at);
-    html += '<div class="card top" style="margin-bottom:14px">'
-      + '<div class="who" style="font-size:20px;margin-bottom:4px">@' + esc(r.handle || '') + '</div>'
-      + '<div class="meta" style="margin-bottom:12px">' + esc(timeLine) + '</div>'
-      + (r.extracted_text ? '<div class="quote" style="margin:10px 0">' + esc(r.extracted_text) + '</div>' : '')
-      + '<button class="good full" id="work-reply-open" style="background:#e67e22;border-color:#d35400;'
-      + 'color:#fff;padding:18px;font-size:18px;min-height:64px;margin-top:4px">CHECK CHAT IN TIKTOK</button>'
-      + '<p class="muted" style="margin:10px 0 0">The DM you sent goes on your clipboard, so you can '
-      + 'paste it if you need it. Look at the chat, then come back here and tell us what you found.</p>'
-      + '<p id="reply-msg" class="fieldmsg"></p></div>';
-
+  // THE TWO REPLY-CHECK CARDS THAT USED TO SIT HERE ARE GONE.
+  //
+  // CHECK CHAT IN TIKTOK, and the "Did they answer you?" / YES, THEY REPLIED / NO REPLY card the VA
+  // came back to, were removed on 22 september 2026. Nobody answers a cold DM within a day, so the
+  // card almost always asked a question whose honest answer was "not yet" -- and it asked it at the
+  // top of the queue, ahead of the sending that actually earns. Work is sending now.
+  //
+  // Reporting a reply did not disappear with them: it moved to the Chats tab, where the VA types
+  // the creator's name when they see the answer in TikTok themselves, and adds the screenshot. Not
+  // answering is simply carrying on; the creator stays listed and may have answered by tomorrow.
   } else if (ws.state === 'dm') {
     const c = ws.task;
     html += '<div class="card top" style="margin-bottom:14px">'
@@ -1823,9 +1813,15 @@ function wireWorkButtons() {
     // Only rendered on the manual-copy fallback. It goes to the same creator the pending entry
     // names -- the persisted profile_url, or their handle when the URL was never recorded -- so a
     // reload cannot send the VA to whoever happens to be at the top of the queue now.
-    const openBtn = $('work-open-tiktok');
+    // Both of these go to the same creator the pending entry names -- the persisted profile_url, or
+    // their handle when the URL was never recorded -- so a reload cannot send the VA to whoever
+    // happens to be at the top of the queue now. #work-open-tiktok is the manual-copy fallback's
+    // retry; #work-open-again is the way back on the ordinary path, for the VA who arrived in
+    // TikTok as the wrong sender.
+    const openBtn = $('work-open-tiktok') || $('work-open-again');
     const openOnlyBtn = $('work-open-only');
     if (openBtn) {
+      const openLabel = openBtn.textContent;
       openBtn.onclick = async () => {
         // This is not an "open only" escape hatch. A previous automatic copy may have been blocked
         // by iOS, but the next tap is a fresh user gesture and must retry the copy before leaving.
@@ -1842,11 +1838,26 @@ function wireWorkButtons() {
         const copied = await copyNow(c.dm_message, true);
         if (!copied.ok) {
           openBtn.disabled = false;
-          openBtn.textContent = 'COPY DM & OPEN TIKTOK';
-          if (msg) {
-            msg.textContent = 'Copy is blocked in this browser. Open the portal directly in Safari, '
+          openBtn.textContent = openLabel;
+          // NEVER SEND THEM BACK WITH AN EMPTY CLIPBOARD, AND NEVER SAY "COPY IT BY HAND" WITH
+          // NOTHING TO COPY FROM. On the ordinary card there is no DM on screen, so a refusal here
+          // has to turn this into the manual-copy card -- which carries the text and its own way
+          // out -- rather than leaving the VA holding an instruction it cannot follow.
+          setPending({
+            task_id: c.task_id,
+            handle: c.handle,
+            profile_url: c.profile_url,
+            dm_message: c.dm_message,
+            state: AWAITING_SEND,
+            copy_ok: false,
+            saved_at: Date.now()
+          });
+          render();
+          const after = $('dm-msg');
+          if (after) {
+            after.textContent = 'Copy is blocked in this browser. Open the portal directly in Safari, '
               + 'or tap and hold the DM above and copy it by hand.';
-            msg.className = 'fieldmsg bad';
+            after.className = 'fieldmsg bad';
           }
           return;
         }
@@ -1916,84 +1927,15 @@ function wireWorkButtons() {
     return;
   }
 
-  // PHASE 1 OF A REPLY CHECK: open TikTok, and persist that we did, so the answer buttons are
-  // waiting whether the VA switches back or the page reloads underneath them.
-  if (workSubstate === 'reply') {
-    const r = currentWorkTask;
-    const openBtn = $('work-reply-open');
-    if (!openBtn || !r) return;
-    openBtn.onclick = async () => {
-      const profileUrl = safeTikTokProfileUrl(r.profile_url, r.handle);
-      if (!profileUrl) {
-        const msg = $('reply-msg');
-        if (msg) {
-          msg.textContent = 'This creator has no valid TikTok profile link. Tell Rico.';
-          msg.className = 'fieldmsg bad';
-        }
-        return;
-      }
-
-      // DE VERSTUURDE DM GAAT MEE NAAR HET KLEMBORD.
-      //
-      // Zonder dit kwam de VA in het gesprek aan zonder de tekst die hij zelf had gestuurd --
-      // terwijl hij hem daar juist nodig kan hebben om na te sturen of terug te lezen. Hij is er
-      // gewoon: de wachtrij levert dm_message ook bij een reply-check mee.
-      //
-      // copy_ok stond hier hardgecodeerd op true terwijl er niets werd gekopieerd. Dat is geen
-      // detail: het terugkeerscherm gebruikt die vlag om te beslissen of het de tekst moet tonen,
-      // dus een vals ja betekende dat de VA hem nooit te zien kreeg. Nu staat er wat er echt is
-      // gebeurd.
-      //
-      // ANDERS DAN BIJ DE DM-HAND-OFF houdt een mislukte kopie de reis NIET tegen. Bij een eerste
-      // DM is er zonder tekst niets te doen in TikTok; bij een reply-check is kijken de hoofdzaak
-      // en is de tekst meegenomen gemak. Tegenhouden zou de VA beletten zijn werk te doen om een
-      // reden die er niet toe doet.
-      openBtn.disabled = true;
-      const eerder = openBtn.textContent;
-      openBtn.textContent = 'COPYING…';
-      let gekopieerd = { ok: false };
-      if (r.dm_message) {
-        try { gekopieerd = await copyNow(r.dm_message, true); } catch { gekopieerd = { ok: false }; }
-      }
-      openBtn.disabled = false;
-      openBtn.textContent = eerder;
-
-      setPending({
-        task_id: r.task_id,
-        handle: r.handle,
-        profile_url: profileUrl,
-        dm_message: r.dm_message || null,
-        state: AWAITING_REPLY,
-        copy_ok: gekopieerd.ok === true,
-        saved_at: Date.now()
-      });
-      leaveForTikTok(profileUrl, r.handle);
-      render();
-    };
-    return;
-  }
-
-  if (workSubstate === 'awaiting_reply') {
-    const r = currentWorkTask;
-    const yesBtn = $('work-reply-yes');
-    const noBtn = $('work-reply-no');
-    const msg = $('reply-msg');
-    if (!r) return;
-
-    if (yesBtn) yesBtn.onclick = () => beginReplyCapture(r);
-    if (noBtn) {
-      noBtn.onclick = async () => {
-        const res = await withButton(noBtn, 'no_reply', { task: r.task_id },
-          () => sb.rpc('dh_va_update_task', { p_task_id: r.task_id, p_status: 'NO_REPLY' }),
-          async () => {
-            setPending(null);
-            await boot();
-          });
-        if (!res.ok && msg) { msg.textContent = res.message; msg.className = 'fieldmsg bad'; }
-      };
-    }
-    return;
-  }
+  // DE TWEE REPLY-CHECK-AFHANDELINGEN DIE HIER STONDEN, ZIJN WEG.
+  //
+  // `reply` opende de chat in TikTok en zette AWAITING_REPLY weg; `awaiting_reply` boekte daarna
+  // YES (foto-opname) of NO_REPLY. Beide zijn op 22 september 2026 uit het werk gehaald: niemand
+  // antwoordt binnen een dag, dus de vraag kwam vrijwel altijd op "nog niet" uit en drong voor op
+  // het versturen. Een antwoord melden gebeurt nu op het tabblad Chats, op initiatief van de VA.
+  //
+  // beginReplyCapture() blijft bestaan en wordt daar aangeroepen -- de foto, de classificatie, de
+  // 50 cent en de overdracht aan de eigenaar lopen onveranderd door.
 }
 
 /**
@@ -2050,38 +1992,8 @@ function drawDemand() {
 }
 
 // ---------------------------------------------------------------------------------------------
-// CHECK REPLIES. Everyone this VA has written to and not yet heard an outcome from, oldest check
-// due first -- so working top-down is the same as working the ones that have waited longest.
-// ---------------------------------------------------------------------------------------------
-/** Oldest due first. Whatever is due soonest has waited longest, so the top of the list is the
- *  right place to start work. */
-function byDue(a, b) {
-  const at = new Date(a.follow_up_at || a.last_checked_at || a.first_sent_at || 0).getTime();
-  const bt = new Date(b.follow_up_at || b.last_checked_at || b.first_sent_at || 0).getTime();
-  return at - bt;
-}
-
-function drawReplies() {
-  // dh_va_queue already returns these in order, and the page sorts them again anyway: the ordering
-  // is a promise this view makes to the VA, and it should not quietly depend on which query the
-  // rows arrived from. dh_va_search returns the same shape ordered by recency, not by due date.
-  const rows = (view.check_replies || []).slice().sort(byDue);
-  if (!rows.length) {
-    $('list').innerHTML = '<div class="card"><div class="who">Nothing to check</div>'
-      + '<p class="muted">Creators appear here after you mark a DM as sent.</p></div>';
-    return;
-  }
-  $('list').innerHTML =
-    '<p class="muted" style="margin:0 0 10px">' + rows.length
-    + ' sent, waiting on a reply. Oldest first.</p>'
-    + rows.map((t) => rowHtml(t, { due: true })).join('');
-  wireRows(rows);
-}
-
-// ---------------------------------------------------------------------------------------------
-// CONVERSATIONS. Anyone who answered or is being followed up, plus a search that reaches every
-// creator this VA has ever written to -- including the ones past the page limit and the ones marked
-// unreachable, because "can't reach" is often wrong and they answer a week later.
+// DE VERSTUURDE BERICHTEN. Alles waar deze VA een DM naartoe heeft gestuurd, nieuwste eerst, met
+// per creator de verstuurde tekst en de knop om een antwoord te melden.
 // ---------------------------------------------------------------------------------------------
 /**
  * A creator who actually answered, with what to say back.
@@ -2201,8 +2113,15 @@ function wireChats(rows) {
 
 function drawConversations() {
   const chats = view.chats || [];
-  const rows = search.results !== null ? search.results : (view.conversations || []);
-  const box = '<input id="q" type="search" aria-label="Search creators by name or handle" placeholder="Search name or handle"'
+  // DIT TABBLAD IS DE LIJST MET VERSTUURDE BERICHTEN.
+  //
+  // Het stond standaard op view.conversations -- creators met een reply of een follow-up, dus
+  // vrijwel altijd leeg -- met de tekst "Creators appear here once you record a reply or set a
+  // follow-up", terwijl de VA er net tientallen berichten naartoe had gestuurd. Zoeken werkte wel,
+  // maar alleen als je de naam al wist. Nu staat alles waar een DM naartoe ging er meteen op, en
+  // typen versmalt die lijst.
+  const rows = search.results !== null ? search.results : (search.sent || []);
+  const box = '<input id="q" type="search" aria-label="Search the creators you have messaged" placeholder="Type a name to find them"'
             + ' value="' + esc(search.q) + '" autocomplete="off" style="margin-bottom:6px">'
             + '<p id="chatmsg" class="fieldmsg" role="status" aria-live="polite">'
             + esc(chatStatus) + '</p>';
@@ -2212,14 +2131,21 @@ function drawConversations() {
     : '';
   const body = rows.length
     ? '<p class="muted" style="margin:0 0 10px">' + rows.length
-      + (search.results !== null ? ' found' : ' conversations') + '</p>'
+      + (search.results !== null ? ' found' : ' messages sent') + '</p>'
+      // WAT HIER TE DOEN IS, STAAT ER OOK. Niemand antwoordt binnen een dag, dus het portaal vraagt
+      // er niet meer naar. Zien ze in TikTok dat er wél iets terug is gekomen, dan zoeken ze de
+      // naam hier op en zetten ze de foto erbij -- en alleen dan.
+      + (search.results === null
+          ? '<p class="muted" style="margin:-4px 0 12px">Saw an answer in TikTok? Find them here and '
+            + 'add the photo. No answer yet is nothing to report — they may still reply tomorrow.</p>'
+          : '')
       + rows.map((t) => rowHtml(t, { due: false })).join('')
     : '<div class="card"><div class="who">'
-      + (search.results !== null ? 'No match' : 'No conversations yet')
+      + (search.results !== null ? 'No match' : 'Nothing sent yet')
       + '</div><p class="muted">'
       + (search.results !== null
-          ? 'Search looks at every creator you have written to, by name or handle.'
-          : 'Creators appear here once you record a reply or set a follow-up.')
+          ? 'This searches everyone you have messaged, by name or handle.'
+          : 'Every creator you send a DM to appears here, so you can report an answer later.')
       + '</p></div>';
   $('list').innerHTML = box + answered + body;
 
@@ -2741,7 +2667,6 @@ $('rp-send').onclick = async () => {
   }
 
   forgetReplyReport(replyCtx.task_id);
-  justUploadedReply.add(replyCtx.task_id);
   if (pending && pending.task_id === replyCtx.task_id) setPending(null);
   $('replydlg').close();
   say(data.is_first ? 'Saved — first reply from this creator.' : 'Saved.');

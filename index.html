@@ -873,12 +873,38 @@ function renderInterested(rows, err) {
         + '" data-task="' + esc(r.task_id) + '">';
     }
 
+    // WAT ER GEZEGD IS, EN WAT WIJ TERUG ZOUDEN ZEGGEN.
+    //
+    // Dit paneel toonde alleen een handle, een VA, een datum en een miniatuur. Om er iets mee te
+    // doen moest de eigenaar de screenshot opengeklikken, zelf lezen en zelf een antwoord bedenken
+    // -- per creator opnieuw. Het voorstel bestond al (dh_suggested_reply, uit dh_reply_kb); alleen
+    // dit scherm liep eromheen. De affiliate-link blijft handwerk: die staat bewust niet in het
+    // voorstel en wordt hier ook niet verzonnen. Kopiëren, link erin, versturen.
+    const said = r.said ? '<div class="quote" style="margin:8px 0 0;font-size:13px">'
+      + esc(r.said) + '</div>' : '';
+    const kind = r.classification
+      ? '<span class="pill on" style="margin-left:6px">' + esc(r.classification) + '</span>' : '';
+    const proposal = r.suggestion
+      ? '<div style="margin-top:10px">'
+        + '<div class="muted" style="font-size:12px;margin-bottom:4px">Suggested reply'
+        + (r.suggestion_topic ? ' · ' + esc(r.suggestion_topic) : '')
+        + ' — add your affiliate link before sending</div>'
+        + '<textarea readonly class="dh-suggestion" style="width:100%;min-height:72px;font-size:13px" '
+        + 'onclick="this.select()">' + esc(r.suggestion) + '</textarea>'
+        + '<button class="sm" data-copy-suggestion="' + esc(r.task_id) + '" '
+        + 'style="margin-top:6px">Copy suggestion</button>'
+        + '</div>'
+      : '<div class="muted" style="font-size:12px;margin-top:10px">No suggested reply for this one — '
+        + 'read the screenshot and write it by hand.</div>';
+
     return '<div class="row" style="align-items:flex-start;min-height:100px">'
       + '<div style="display:flex;gap:10px;flex:1;min-width:0">'
       + thumb
       + '<div style="flex:1;min-width:0">'
-      + '<div style="font-weight:650">@' + esc(r.handle || 'creator') + '</div>'
+      + '<div style="font-weight:650">@' + esc(r.handle || 'creator') + kind + '</div>'
       + '<div class="muted" style="font-size:12px;margin-top:2px">VA: ' + esc(va_name) + ' · ' + when_text + '</div>'
+      + said
+      + proposal
       + '</div>'
       + '</div>'
       + '<div style="display:flex;gap:6px;flex-direction:column">'
@@ -892,6 +918,24 @@ function renderInterested(rows, err) {
   }).join('');
 
   $('interested').innerHTML = html;
+
+  // Kopiëren zonder het tekstvak aan te raken. Mislukt het, dan zegt de knop dat -- "Copied" boven
+  // een leeg klembord kost de eigenaar een verstuurde DM die nergens op slaat.
+  for (const btn of $('interested').querySelectorAll('button[data-copy-suggestion]')) {
+    btn.onclick = async () => {
+      const box = btn.parentElement.querySelector('textarea.dh-suggestion');
+      if (!box) return;
+      let ok = false;
+      try {
+        await navigator.clipboard.writeText(box.value);
+        ok = true;
+      } catch {
+        try { box.select(); ok = document.execCommand('copy') === true; } catch { ok = false; }
+      }
+      btn.textContent = ok ? 'Copied' : 'Select the text above';
+      setTimeout(() => { btn.textContent = 'Copy suggestion'; }, 2500);
+    };
+  }
 
   // Wire up screenshot images with signed URLs
   for (const img of $('interested').querySelectorAll('img[data-path]')) {
