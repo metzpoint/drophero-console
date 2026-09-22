@@ -201,6 +201,13 @@ export const REASON_TEXT = {
   // "that did not work", which tells a VA nothing about whether to retry, and the upload path used
   // to print the enum itself.
   NOT_YOUR_PROOF: 'That photo request belongs to someone else.',
+  // Uitbetalen. Elke reden die dh_va_payout_request kan geven staat hier, zodat er nooit een
+  // database-enum op een geldscherm belandt -- en zodat de VA weet of hij iets kan doen.
+  BELOW_MINIMUM: 'You are not at the payout minimum yet. Keep going — nothing is lost.',
+  NO_EMAIL_ON_FILE: 'We do not have an email address for you, and a payout account needs one. '
+    + 'Ask Rico to add it; your balance stays exactly as it is.',
+  EMAIL_BELONGS_TO_ANOTHER_VA: 'Another account already uses your email address for payouts. '
+    + 'Tell Rico — this has to be sorted out by hand so nobody is paid the wrong amount.',
   ALREADY_DECIDED: 'That photo has already been checked — nothing more to send.',
   NO_IMAGE: 'No photo was attached. Pick one and send again.',
   NO_SUCH_REPLY: 'We could not find that reply any more.',
@@ -720,4 +727,89 @@ export function sessionExpired(lastSignInAt, { now = Date.now(), maxDays = SESSI
   const days = Number(maxDays);
   if (!Number.isFinite(days) || days <= 0) return false;
   return (now - at) > days * 86400000;
+}
+
+// ---------------------------------------------------------------------------------------------
+// UITBETALEN. WAT ER OP HET SCHERM HOORT TE STAAN, PER TOESTAND.
+//
+// De zes toestanden komen kant-en-klaar uit dh_va_payout_status(); dit bestand verzint ze niet en
+// leidt ze niet opnieuw af. Dat is met opzet: zou de browser de drempel zelf narekenen, dan kon een
+// VA met een aangepaste pagina zichzelf "boven de drempel" laten zien. De server beslist, het
+// scherm vertelt.
+//
+// WAT HIER NOOIT KOMT: een bankrekening, een identiteitsbewijs, een kaartnummer. De VA gaat voor
+// die stap naar FirstPromoter en Stripe; DropHero kent alleen een link erheen.
+// ---------------------------------------------------------------------------------------------
+
+export const PAYOUT_STATES = [
+  'BELOW_MINIMUM', 'SETUP_REQUIRED', 'SETUP_COMPLETE', 'READY_FOR_PAYOUT', 'PAID', 'PAYOUT_ISSUE'
+];
+
+const SYMBOOL = { EUR: '€', USD: '$', GBP: '£' };
+
+/** Bedragen worden nooit naar boven afgerond: niemand wordt blij van een saldo dat later krimpt. */
+export function payoutMoney(cents, currency = 'USD') {
+  const n = Math.floor(Number(cents) || 0) / 100;
+  const sym = SYMBOOL[String(currency).toUpperCase()] || '';
+  return sym ? sym + n.toFixed(2) : n.toFixed(2) + ' ' + String(currency).toUpperCase();
+}
+
+/**
+ * @param {object} status het antwoord van dh_va_payout_state()
+ * @returns {{state, title, detail, action, actionLabel, balance, minimum, tone}}
+ *   action is 'setup' (naar de beveiligde onboarding), 'retry' (opnieuw proberen) of null.
+ */
+export function payoutView(status) {
+  const s = status && typeof status === 'object' ? status : {};
+  const valuta  = s.currency || 'USD';
+  const saldo   = Math.max(0, Number(s.balance_cents) || 0);
+  const drempel = Math.max(0, Number(s.minimum_cents) || 0);
+  const balance = payoutMoney(saldo, valuta);
+  const minimum = payoutMoney(drempel, valuta);
+  // Een onbekende toestand is geen reden om niets te tonen, maar ook geen reden om iets te beloven.
+  // Hij wordt als "onder de drempel" gepresenteerd: dat is de toestand waarin niets wordt aangemaakt
+  // en niets wordt gevraagd, en dus de veiligste om per ongeluk in te staan.
+  const state = PAYOUT_STATES.includes(s.state) ? s.state : 'BELOW_MINIMUM';
+
+  const basis = { state, balance, minimum, action: null, actionLabel: null, tone: 'plain' };
+
+  switch (state) {
+    case 'SETUP_REQUIRED':
+      return { ...basis, action: 'setup', actionLabel: 'SET UP PAYOUT', tone: 'good',
+        title: 'You can set up your payout',
+        detail: 'You have ' + balance + ' ready. The next step happens at FirstPromoter, where you '
+          + 'enter your payment details securely. DropHero never sees or stores them.' };
+
+    case 'SETUP_COMPLETE':
+      return { ...basis,
+        title: 'Payout setup complete',
+        detail: 'Your payout details are set up. You have ' + balance + ' so far; payouts go out '
+          + 'from ' + minimum + '.' };
+
+    case 'READY_FOR_PAYOUT':
+      return { ...basis, action: 'setup', actionLabel: 'CHECK PAYOUT DETAILS', tone: 'good',
+        title: 'Ready for payout',
+        detail: balance + ' is approved and your details are set up. Rico releases payouts through '
+          + 'FirstPromoter.' };
+
+    case 'PAID':
+      return { ...basis,
+        title: 'Paid',
+        detail: 'Everything approved so far has been paid out. New earnings start counting again '
+          + 'from zero.' };
+
+    case 'PAYOUT_ISSUE':
+      // De toon is met opzet geruststellend vóór hij om een handeling vraagt. Dit scherm gaat over
+      // iemands loon; "er is iets misgegaan" zonder "je geld staat er nog" leest als geld kwijt.
+      return { ...basis, action: 'retry', actionLabel: 'TRY AGAIN', tone: 'bad',
+        title: 'Payout setup did not go through',
+        detail: 'Your ' + balance + ' is safe and still counted — nothing was lost. Setting up the '
+          + 'payout account did not work. Try again, and tell Rico if it keeps failing.' };
+
+    case 'BELOW_MINIMUM':
+    default:
+      return { ...basis,
+        title: 'Current balance: ' + balance,
+        detail: 'Payout available from ' + minimum + '.' };
+  }
 }

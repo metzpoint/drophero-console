@@ -382,7 +382,8 @@ import {
   computeCapacity,
   normalizeRpc, safeLogLine, copyText, createSequencer,
   savePending, loadPending, clearPending, workState, senderState,
-  passwordProblem, sessionExpired, SESSION_MAX_DAYS, AWAITING_SEND, AWAITING_REPLY
+  passwordProblem, sessionExpired, SESSION_MAX_DAYS, AWAITING_SEND, AWAITING_REPLY,
+  payoutView
 } from './va-portal-logic.mjs?v=20260921-integrated';
 
 const sb = createClient('https://aexomkitwnxvpqlmtrik.supabase.co', 'sb_publishable_Y88uWkdq3igd5dMkT1c8JA_qMB_ZB7d',
@@ -1008,11 +1009,14 @@ const loadAccounts = coalesced(loadAccountsOnce);
 
 async function loadMoneyOnce() {
   const token = seq.begin('money');
-  const [moneyRes, proofRes, convosRes, sentRes] = await Promise.all([
+  const [moneyRes, proofRes, convosRes, sentRes, payoutRes] = await Promise.all([
     sb.rpc('dh_va_earnings_summary'), sb.rpc('dh_va_pending_proof'), sb.rpc('dh_va_conversations'),
     // De verstuurde berichten. Een lege zoekterm betekent sinds migratie 0137 "laat ze allemaal
     // zien" in plaats van "geen resultaat", zodat het tabblad gevuld is voordat er iets getypt is.
-    sb.rpc('dh_va_search', { p_q: '' })
+    sb.rpc('dh_va_search', { p_q: '' }),
+    // De uitbetaalstatus komt van de server en wordt hier nooit nagerekend: zou de browser de
+    // drempel zelf bepalen, dan kon een aangepaste pagina zichzelf boven de tien zetten.
+    sb.rpc('dh_va_payout_state')
   ]);
   if (!seq.isCurrent('money', token)) return { ok: false, stale: true };
 
@@ -1026,7 +1030,7 @@ async function loadMoneyOnce() {
   // two, only a transport error is a failure; an absent row is an answer.
   const optional = (res) => (res.error ? normalizeRpc(res) : { ok: true });
   const results = [normalizeRpc(moneyRes), optional(proofRes), optional(convosRes),
-                   optional(sentRes)];
+                   optional(sentRes), optional(payoutRes)];
   const failed = results.find((r) => !r.ok);
   if (failed) {
     console.error(safeLogLine('load_money', failed));
@@ -1040,6 +1044,7 @@ async function loadMoneyOnce() {
   view.pending_proof = proofRes.data || null;
   view.chats = convosRes.data || [];
   search.sent = Array.isArray(sentRes.data) ? sentRes.data : [];
+  view.payout = payoutRes.data || null;
   $('n-earn').title = '';
   $('n-earn').textContent = view.money ? usd(view.money.today_total_cents || 0) : '–';
   // Het getal op het tabblad telt de verstuurde berichten, want dat is wat er te doorzoeken valt.
@@ -2206,10 +2211,76 @@ function drawEarnings() {
 
     + '<div class="card"><p class="earnhead">Already paid</p>'
     + '<div class="money"><span>Paid to you so far</span><span class="amt">'
-    + usd(m.paid_cents) + '</span></div>'
-    + '<p class="muted" style="margin:10px 0 0">Approved VA payouts are handled through FirstPromoter. '
-    + 'Complete your FirstPromoter payout setup when DropHero sends you the onboarding link. '
-    + 'Never send bank details or identity documents in chat.</p></div>';
+    + usd(m.paid_cents) + '</span></div></div>'
+
+    + payoutCardHtml();
+
+  wirePayoutCard();
+}
+
+// ---------------------------------------------------------------------------------------------
+// UITBETALEN.
+//
+// WAT HIER STOND. Eén alinea die zei dat uitbetalingen via FirstPromoter lopen en dat er "een
+// onboarding-link" zou komen. Er was geen knop, geen saldo, geen drempel en geen status: de VA kon
+// nergens zien of hij al iets kon krijgen, en er was niets om op te tikken.
+//
+// WAT ER NIET GEBEURT VOORDAT DE DREMPEL GEHAALD IS. Er wordt niets aangemaakt bij FirstPromoter en
+// er wordt nergens om betaalgegevens gevraagd -- niet hier en niet daar. Onder de drempel staat er
+// precies twee dingen: wat er staat, en vanaf welk bedrag er uitbetaald wordt.
+//
+// EN ALS HET WEL ZOVER IS gaat de VA naar FirstPromoter/Stripe om zijn gegevens in te vullen.
+// DropHero ziet ze nooit, bewaart ze nooit en vraagt er nooit naar -- deze pagina kent alleen een
+// link erheen.
+// ---------------------------------------------------------------------------------------------
+function payoutCardHtml() {
+  const v = payoutView(view.payout);
+  const knop = v.action
+    ? '<button class="full" id="payout-go" style="min-height:52px;font-size:16px;margin-top:12px'
+      + (v.tone === 'bad' ? ';background:#3a1d1d;border-color:#5e2020;color:#ffc9c9'
+                          : ';background:#1e5e46;border-color:#2b7d5f;color:#b6f0d5') + '">'
+      + esc(v.actionLabel) + '</button>'
+    : '';
+  return '<div class="card" id="payoutcard" data-state="' + esc(v.state) + '">'
+    + '<p class="earnhead">Payout</p>'
+    + '<div class="who" style="font-size:16px">' + esc(v.title) + '</div>'
+    + '<p class="muted" style="margin:8px 0 0">' + esc(v.detail) + '</p>'
+    + knop
+    + '<p id="payout-msg" class="fieldmsg"></p>'
+    + '<p class="muted" style="margin:10px 0 0">Never send bank details or identity documents in '
+    + 'chat. DropHero will never ask you for them.</p></div>';
+}
+
+function wirePayoutCard() {
+  const b = $('payout-go');
+  if (!b) return;
+  b.onclick = async () => {
+    const msg = $('payout-msg');
+    const res = await withButton(b, 'payout_request', {},
+      () => sb.rpc('dh_va_payout_request'), null);
+    if (!res.ok) {
+      if (msg) { msg.textContent = res.message; msg.className = 'fieldmsg bad'; }
+      return;
+    }
+    // De link komt van de server. Staat er geen, dan is de promotor nog niet klaar -- dan zegt het
+    // scherm dat, in plaats van de VA naar een halve pagina te sturen.
+    const url = res.data && res.data.onboarding_url;
+    if (url && /^https:\/\//i.test(url)) {
+      window.location.assign(url);
+      return;
+    }
+    // EERST OPNIEUW TEKENEN, DAN PAS SCHRIJVEN. render() bouwt deze kaart opnieuw op, inclusief
+    // #payout-msg -- een melding die daarvóór wordt gezet, is meteen weer weg en de VA staat naar
+    // een knop te kijken die niets zei.
+    await loadMoney();
+    render();
+    const na = $('payout-msg');
+    if (na) {
+      na.textContent = 'We are setting up your payout account. This usually takes a few minutes — '
+        + 'check back shortly.';
+      na.className = 'fieldmsg';
+    }
+  };
 }
 
 async function runSearch(token = seq.begin('search')) {
