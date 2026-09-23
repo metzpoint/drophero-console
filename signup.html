@@ -351,6 +351,38 @@ function emailProbleem(waarde) {
   return null;
 }
 
+// WAT DE BEZOEKER TE ZIEN KRIJGT ALS SUPABASE DE AANMELDING WEIGERT.
+//
+// Er stond hier `error.message`, en dat is precies hoe "email rate limit exceeded" op het scherm van
+// een nieuwe DMer belandde. Die zin is voor een ontwikkelaar geschreven: hij noemt een limiet
+// waar de lezer niets aan kan doen, zegt niet of het account nu bestaat, en zegt niet of het zin
+// heeft om het straks nog eens te proberen. Erger nog, hij is niet eens waar voor de lezer -- de
+// limiet zit bij de verzender, niet bij hem.
+//
+// De ruwe tekst gaat vanaf nu naar de console (daar hoort hij, voor wie een storing uitzoekt) en het
+// scherm krijgt een zin die zegt wat er aan de hand is en wat de bezoeker kan doen.
+function aanmeldFoutTekst(error) {
+  const tekst = String((error && error.message) || '').toLowerCase();
+  const code = String((error && error.code) || '').toLowerCase();
+  const status = error && error.status;
+
+  // DE VERZENDLIMIET. Supabase meldt dit als 429, als code over_email_send_rate_limit, of als
+  // "email rate limit exceeded" -- welke van de drie het is, verschilt per versie, dus alle drie.
+  if (status === 429 || code.includes('rate_limit') || tekst.includes('rate limit')) {
+    return 'We couldn’t send your verification email right now. Please try again shortly.';
+  }
+
+  // Het adres is al in gebruik. Geen ruwe providertekst, wel de ene stap die verder helpt.
+  if (tekst.includes('already registered') || tekst.includes('already exists')
+      || code.includes('user_already_exists')) {
+    return 'That email address already has an account. Use Sign in instead.';
+  }
+
+  // Al het overige: wel eerlijk dat het niet gelukt is, zonder een foutcode door te geven waar
+  // niemand buiten dit project iets mee kan.
+  return 'We couldn’t create your account right now. Please try again shortly.';
+}
+
 /** Alle controles op een rij. Geeft null terug als alles klopt, anders het eerste probleem. */
 function controleer(email, pw, pw2) {
   const e = emailProbleem(email);
@@ -408,7 +440,9 @@ $('signup-form').addEventListener('submit', async (e) => {
     if (error) {
       knop.disabled = false;
       knop.textContent = 'Create account';
-      $('err-form').textContent = error.message || 'Creating the account did not work. Try again.';
+      // De ruwe tekst van de provider gaat naar de console, niet naar het scherm.
+      console.error('signup_refused', error.status || '', error.code || '', error.message || '');
+      $('err-form').textContent = aanmeldFoutTekst(error);
       return;
     }
 
