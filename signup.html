@@ -1,0 +1,863 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://aexomkitwnxvpqlmtrik.supabase.co wss://aexomkitwnxvpqlmtrik.supabase.co; img-src data: blob: https://aexomkitwnxvpqlmtrik.supabase.co; base-uri 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0f14">
+<meta name="referrer" content="no-referrer">
+<title>DropHero — Create account</title>
+<style>
+  /* DEZELFDE KLEUREN EN MATEN ALS DE PORTAL, MAAR ALLEEN WAT DEZE PAGINA GEBRUIKT.
+     Niet de hele stylesheet van va-portal.html overgenomen: die draagt tabs, kaarten, pillen en
+     een uitbetaalblok die hier geen van alle voorkomen. Wat hier staat zijn de tokens en de vier
+     elementen die deze pagina echt heeft, met exact dezelfde waarden, zodat de twee schermen naast
+     elkaar niet uit elkaar lopen. */
+  :root{--bg:#0b0f14;--card:#151b24;--line:#232c39;--ink:#e8edf5;--dim:#8b98ab;
+        --ok:#3ddc97;--bad:#ff6b6b;--accent:#6aa6ff}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  [hidden]{display:none!important}
+  html,body{overflow-x:hidden;max-width:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:16px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;
+       padding:max(12px,env(safe-area-inset-top)) 12px calc(30px + env(safe-area-inset-bottom))}
+  main{max-width:460px;margin:0 auto}
+  h1{font-size:19px;margin:4px 0 2px}
+  .sub{color:var(--dim);font-size:12px;margin:0 0 14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;
+        margin-bottom:11px;min-width:0;overflow-wrap:anywhere}
+  label.muted{display:block}
+  input{font:inherit;background:#10161e;color:var(--ink);border:1px solid var(--line);
+         border-radius:11px;padding:11px;min-height:44px;width:100%;max-width:100%}
+  input[aria-invalid="true"]{border-color:#5e2020}
+  button{font:inherit;background:#1d2836;color:var(--ink);border:1px solid var(--line);
+         border-radius:11px;padding:12px;min-height:48px;cursor:pointer;width:100%}
+  button.good{background:#173d2e;border-color:#1e5e46;color:#b6f0d5}
+  button[disabled]{opacity:.55;cursor:default}
+  .muted{color:var(--dim);font-size:12px}
+  /* DE FOUT STAAT BIJ HET VELD, NIET IN EEN DIALOOG. Een systeemvenster op een telefoon dekt het
+     formulier af, haalt wat er getypt was uit beeld en is met een duim weggetikt voordat het
+     gelezen is. Deze regel blijft staan tot het veld klopt, en de schermlezer krijgt hem mee via
+     role="alert". */
+  .err{color:var(--bad);font-size:12px;margin:5px 0 0;min-height:0}
+  .err:empty{display:none}
+  .row{margin-top:11px}
+  /* Het vinkje zelf blijft duimformaat; het label loopt ernaast door en is ook aan te tikken. */
+  .agree{display:flex;align-items:flex-start;gap:10px}
+  .agree input{width:22px;height:22px;min-height:22px;flex:0 0 auto;margin-top:1px;accent-color:#3ddc97}
+  .agree label{font-size:13px;color:var(--dim);line-height:1.4}
+  .agree a{color:var(--accent)}
+  .script{background:#10161e;border:1px solid var(--line);border-radius:11px;padding:12px;
+          white-space:pre-wrap;font-size:14px;line-height:1.5;margin:0 0 11px}
+  a.open{display:block;text-align:center;background:#1d3050;border:1px solid #2b4a7d;color:#cfe0ff;
+         border-radius:11px;padding:15px;margin-bottom:8px;text-decoration:none;font-weight:650;
+         font-size:16px;min-height:52px}
+  .earnhead{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.05em}
+  .ttrow{display:flex;align-items:center;justify-content:space-between;gap:9px;
+         padding:9px 0;border-top:1px solid var(--line)}
+  .ttrow:first-child{border-top:0}
+  .tthandle{font-size:15px;overflow-wrap:anywhere}
+  .pill{font-size:11px;padding:3px 9px;border-radius:999px;border:1px solid var(--line);
+        color:var(--dim);white-space:nowrap}
+  .foot{color:var(--dim);font-size:13px;text-align:center;margin:14px 0 0}
+  .foot a{color:var(--accent)}
+  .done .big{font-size:20px;font-weight:650;line-height:1.25;margin:0 0 6px}
+  .done p{margin:0;color:var(--dim);font-size:14px;line-height:1.5}
+  .tick{width:40px;height:40px;border-radius:999px;background:#173d2e;border:1px solid #1e5e46;
+        display:flex;align-items:center;justify-content:center;color:var(--ok);font-size:21px;
+        margin:0 0 11px}
+</style></head><body>
+
+<main>
+
+<!-- HET FORMULIER. Drie velden, één knop. Er wordt niets anders gevraagd: een naam, een capaciteit
+     of een rol zou hier alleen maar een veld zijn dat de browser mag invullen, en precies daarom
+     staat het er niet. Wat iemand hier mag bepalen, is zijn e-mailadres en zijn wachtwoord. -->
+<section id="form-view">
+  <h1>DropHero</h1><p class="sub">Create your account.</p>
+
+  <form class="card" id="signup-form" novalidate>
+    <label class="muted" for="email">Email</label>
+    <input id="email" name="email" type="email" autocomplete="email" inputmode="email"
+           autocapitalize="off" spellcheck="false" required
+           aria-describedby="err-email">
+    <p class="err" id="err-email" role="alert"></p>
+
+    <div class="row">
+      <label class="muted" for="pw">Password</label>
+      <input id="pw" name="password" type="password" autocomplete="new-password" required
+             aria-describedby="err-pw">
+      <p class="err" id="err-pw" role="alert"></p>
+    </div>
+
+    <div class="row">
+      <label class="muted" for="pw2">Repeat password</label>
+      <input id="pw2" name="password2" type="password" autocomplete="new-password" required
+             aria-describedby="err-pw2">
+      <p class="err" id="err-pw2" role="alert"></p>
+    </div>
+
+    <!-- ÉÉN VINKJE, TWEE LINKS, GEEN ALINEA. Wie hier een juridische paragraaf neerzet, laat mensen
+         afhaken op een scherm waar ze alleen een account wilden. De tekst staat op de twee pagina's
+         zelf; die openen in een nieuw tabblad, zodat wat al is ingetypt niet verdwijnt. -->
+    <div class="row agree">
+      <input id="agree" type="checkbox">
+      <label for="agree">I agree to the <a href="./terms.html" target="_blank"
+        rel="noopener noreferrer">Terms</a> and acknowledge the <a href="./privacy.html"
+        target="_blank" rel="noopener noreferrer">Privacy Policy</a>.</label>
+    </div>
+    <p class="err" id="err-agree" role="alert"></p>
+
+    <div class="row">
+      <button id="create" class="good" type="submit">Create account</button>
+    </div>
+
+    <!-- Voor alles wat niet aan één veld hangt: een weigering van de server, of een verbinding die
+         het niet deed. -->
+    <p class="err" id="err-form" role="alert" style="margin-top:9px"></p>
+  </form>
+
+  <p class="foot">Already have an account? <a id="signin-link" href="./va.html">Sign in</a></p>
+  <!-- Wie is aangemeld, zijn adres heeft bevestigd en daarna de browser heeft gesloten, komt hier
+       weer binnen. Geen aparte pagina en geen tweede link in de mail. -->
+  <p class="foot">Already started? <a href="#" id="resume-link">Continue setup</a></p>
+</section>
+
+<!-- NA DE AANMELDING. Geen doorverwijzing en geen tweede knop: er valt op dit moment niets te doen
+     behalve de mail openen. -->
+<section id="done-view" class="done" hidden>
+  <h1>DropHero</h1><p class="sub">One step left.</p>
+  <div class="card">
+    <div class="tick" aria-hidden="true">✓</div>
+    <p class="big" id="done-title">Check your email</p>
+    <p id="done-body">Confirm your email address to continue setting up your DropHero account.</p>
+  </div>
+  <p class="foot">Already have an account? <a href="./va.html">Sign in</a></p>
+</section>
+
+<!-- DE TERUGKOMST UIT DE BEVESTIGINGSMAIL. Eén scherm voor alle uitkomsten: bezig, gelukt, of
+     niet gelukt met de reden erbij. Geen doorverwijzing naar de portal -- de volgende stap is het
+     opzetten van een TikTok-account en die bestaat nog niet. -->
+<section id="callback-view" class="done" hidden>
+  <h1>DropHero</h1><p class="sub" id="cb-sub">Confirming your email…</p>
+  <div class="card">
+    <div class="tick" id="cb-tick" aria-hidden="true" hidden>✓</div>
+    <p class="big" id="cb-title" tabindex="-1">Confirming your email…</p>
+    <p id="cb-body">One moment.</p>
+
+    <!-- ALLEEN ALS HET VINKJE HIER NIET TERUG TE VINDEN IS. Wie de mail op een ander toestel opent
+         dan waar hij zich aanmeldde, heeft de markering niet bij zich. Dan wordt er één keer om
+         gevraagd -- hetzelfde vinkje, dezelfde twee links -- in plaats van stilzwijgend aan te
+         nemen dat het ooit is aangevinkt. Op het gewone pad blijft dit blok verborgen. -->
+    <div id="cb-agree-blok" hidden style="margin-top:13px">
+      <div class="agree">
+        <input id="cb-agree" type="checkbox">
+        <label for="cb-agree">I agree to the <a href="./terms.html" target="_blank"
+          rel="noopener noreferrer">Terms</a> and acknowledge the <a href="./privacy.html"
+          target="_blank" rel="noopener noreferrer">Privacy Policy</a>.</label>
+      </div>
+      <p class="err" id="cb-agree-err" role="alert"></p>
+      <div style="margin-top:11px">
+        <button id="cb-continue" class="good" type="button">Continue</button>
+      </div>
+    </div>
+  </div>
+  <p class="foot" id="cb-foot" hidden>Already have an account? <a href="./va.html">Sign in</a></p>
+  <!-- De enige weg vooruit na de bevestiging. Geen doorverwijzing naar de portal: die is voor
+       mensen die al zijn goedgekeurd. -->
+  <div class="row" id="cb-next" hidden>
+    <button id="cb-start-tiktok" class="good" type="button">Set up your TikTok account</button>
+  </div>
+</section>
+
+<!-- WEER VERDER NA HET SLUITEN VAN DE BROWSER. Inloggen met hetzelfde adres en wachtwoord waarmee
+     is aangemeld; daarna komt de server vertellen waar deze persoon staat. -->
+<section id="signin-view" hidden>
+  <h1>DropHero</h1><p class="sub">Continue your setup.</p>
+  <form class="card" id="signin-form" novalidate>
+    <label class="muted" for="si-email">Email</label>
+    <input id="si-email" type="email" autocomplete="email" inputmode="email"
+           autocapitalize="off" spellcheck="false">
+    <div class="row">
+      <label class="muted" for="si-pw">Password</label>
+      <input id="si-pw" type="password" autocomplete="current-password">
+    </div>
+    <div class="row">
+      <button id="si-go" class="good" type="submit">Continue</button>
+    </div>
+    <p class="err" id="si-msg" role="alert" style="margin-top:9px"></p>
+  </form>
+  <p class="foot"><a href="#" id="si-back">Back to sign up</a></p>
+</section>
+
+<!-- HET INLEVEREN. Eerst de officiële profielopzet, dan één veld en drie vinkjes. -->
+<section id="tiktok-view" hidden>
+  <h1>DropHero</h1><p class="sub" id="tt-sub">Add your TikTok account.</p>
+
+  <div class="card">
+    <p class="big" style="font-size:17px;margin:0 0 4px">Before you add the account</p>
+    <p class="muted" style="margin:0 0 9px">An account you have already made yourself. We never
+      create one for you. Make sure the profile uses the official DropHero setup:</p>
+    <div class="script" id="tt-bio">Find winning products faster 🚀
+Test products &amp; launch ads with DropHero
+👇 drophero.app</div>
+    <button class="good" id="tt-copy-bio" type="button" style="margin-bottom:8px">COPY BIO</button>
+    <a class="open" href="https://www.dropbox.com/scl/fi/4akjgyb1e7jciey2vgn29/DropHero-Logo.jpg?rlkey=4v1nb6vp1163ax5n9ow485evf&amp;st=rtvn7laf&amp;dl=1"
+       target="_blank" rel="noopener noreferrer">DOWNLOAD DROPHERO LOGO</a>
+    <a class="open" href="https://www.dropbox.com/scl/fi/ecn6awq0px1hl048lym5e/DropHero-Promo-Video.mp4?rlkey=okcjgq1x42hh5uzyvepda2j0v&amp;st=y1vjm01q&amp;dl=1"
+       target="_blank" rel="noopener noreferrer">DOWNLOAD DROPHERO PROMO VIDEO</a>
+  </div>
+
+  <form class="card" id="tt-form" novalidate>
+    <label class="muted" for="tt-user">TikTok username</label>
+    <input id="tt-user" placeholder="drophero.partners01" autocapitalize="none"
+           autocomplete="off" spellcheck="false">
+    <p class="err" id="tt-err-user" role="alert"></p>
+
+    <p class="muted" style="margin:15px 0 7px">Before we can switch it on, please confirm:</p>
+    <div class="agree"><input id="tt-img" type="checkbox">
+      <label for="tt-img">The DropHero picture is on the profile</label></div>
+    <div class="agree" style="margin-top:8px"><input id="tt-bio-ok" type="checkbox">
+      <label for="tt-bio-ok">The DropHero bio is on the profile</label></div>
+    <div class="agree" style="margin-top:8px"><input id="tt-vid" type="checkbox">
+      <label for="tt-vid">The DropHero video is posted and set to public</label></div>
+    <p class="err" id="tt-err-confirm" role="alert"></p>
+
+    <div class="row">
+      <button id="tt-save" class="good" type="submit">Add account</button>
+    </div>
+    <p class="err" id="tt-msg" role="alert" style="margin-top:9px"></p>
+  </form>
+
+  <!-- Wat er al is ingeleverd, met de stand erbij. -->
+  <div class="card" id="tt-list-card" hidden>
+    <p class="earnhead" style="margin:0 0 9px">Your TikTok accounts</p>
+    <div id="tt-list"></div>
+  </div>
+</section>
+
+<!-- NA HET INLEVEREN. -->
+<section id="added-view" class="done" hidden>
+  <h1>DropHero</h1><p class="sub">Nothing else to do right now.</p>
+  <div class="card">
+    <div class="tick" aria-hidden="true">✓</div>
+    <p class="big" id="added-title" tabindex="-1">Account added</p>
+    <p id="added-body">Waiting for approval.</p>
+  </div>
+  <div class="card" id="added-list-card">
+    <p class="earnhead" style="margin:0 0 9px">Your TikTok accounts</p>
+    <div id="added-list"></div>
+  </div>
+  <div class="row">
+    <button id="added-another" class="good" type="button">Add another TikTok account</button>
+  </div>
+  <!-- Eén knop, geen klok die op de achtergrond staat te pollen: de aanvrager kijkt zelf wanneer
+       hij wil. Hij vraagt niets nieuws op -- het is dezelfde leesfunctie als altijd. -->
+  <div class="row">
+    <button id="added-check" type="button">Check approval status</button>
+  </div>
+  <p class="muted" id="added-check-msg" role="status" aria-live="polite" style="margin-top:9px"></p>
+</section>
+
+<!-- Wie al echte toegang heeft, hoort hier niet. -->
+<section id="portal-view" class="done" hidden>
+  <h1>DropHero</h1><p class="sub">You already have access.</p>
+  <div class="card">
+    <div class="tick" aria-hidden="true">✓</div>
+    <p class="big" id="portal-title" tabindex="-1">Approved</p>
+    <p id="portal-body">Your account is ready.</p>
+  </div>
+  <div class="row"><a class="open" id="portal-open" href="./va.html">Open VA portal</a></div>
+</section>
+
+</main>
+
+<script type="module">
+import { createClient } from './vendor/supabase.mjs';
+// HET WACHTWOORDBELEID KOMT UIT DE PORTAL, NIET UIT DEZE PAGINA. passwordProblem() is de regel die
+// bij het claimen van een uitnodiging al gold en die door tests/console/test-va-portal-logic.mjs
+// wordt bewaakt. Hem hier overschrijven zou betekenen dat twee schermen twee verschillende
+// minimumeisen stellen, en dat de zwakste van de twee het beleid wordt.
+import { passwordProblem } from './va-portal-logic.mjs';
+
+// DE URL WORDT EERST GELEZEN, DAN PAS DE CLIENT GEMAAKT.
+//
+// Met detectSessionInUrl aan haalt de client het fragment uit de adresbalk weg zodra hij initialiseert
+// -- terecht, want een access token hoort niet in de geschiedenis of in een gedeelde link te blijven
+// staan. Maar dat betekent ook dat wie er later naar kijkt, niets meer vindt. Vandaar deze twee
+// regels, vóór createClient: hierna is dit de enige plek die nog weet hoe de bezoeker binnenkwam.
+const BINNENKOMST = { hash: location.hash || '', query: location.search || '' };
+
+// WAT ER PRECIES IS VERANDERD TEN OPZICHTE VAN DE VORIGE VERSIE, EN WAT MET OPZET NIET.
+//
+// detectSessionInUrl staat nu aan. Dat moet: de bevestigingslink van Supabase komt terug met de
+// tokens in het fragment, en zonder deze vlag leest niemand ze. Het is ook de enige wijziging --
+// persistSession en autoRefreshToken blijven uit, en dat is geen voorzichtigheid maar het verschil
+// tussen wel en niet in de weg lopen bij een VA die op ditzelfde toestel in de portal werkt.
+//
+// Nagemeten in de gepinde bundel in console/vendor/, niet aangenomen:
+//   * met persistSession: false neemt de client de tak `this.memoryStorage = {}` -- er wordt niets
+//     naar localStorage geschreven, dus de opgeslagen sessie van de portal blijft onaangeroerd;
+//   * het BroadcastChannel waarmee tabbladen elkaars in- en uitloggen volgen, wordt alleen
+//     aangemaakt `&& this.persistSession &&` -- staat die uit, dan is er geen kanaal en kan deze
+//     pagina een openstaand portaaltabblad dus niets laten weten;
+//   * flowType is standaard "implicit", dus de terugkomst draagt de tokens in het fragment en er is
+//     geen code_verifier uit opslag nodig. Was het PKCE geweest, dan zou persistSession uitzetten
+//     de bevestiging juist onmogelijk maken.
+// De sessie die hier ontstaat leeft dus alleen in deze pagina, en is na een herlaadbeurt weg.
+const sb = createClient('https://aexomkitwnxvpqlmtrik.supabase.co', 'sb_publishable_Y88uWkdq3igd5dMkT1c8JA_qMB_ZB7d',
+  { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: true } });
+
+const $ = (id) => document.getElementById(id);
+const VELDEN = ['email', 'pw', 'pw2'];
+
+// DE VERSIE DIE DEZE PAGINA TOONT. Alleen om te onthouden dát er is aangevinkt; wat er uiteindelijk
+// wordt vastgelegd, bepaalt de server -- dh_record_legal_acceptance() heeft nul argumenten en draagt
+// de versie zelf, zodat de browser er geen andere van kan maken.
+const LEGAL_VERSIE = '2026-09-23';
+const LEGAL_SLEUTEL = 'dh_legal_ok';
+
+// HET VINKJE MOET DE BEVESTIGINGSMAIL OVERLEVEN. Tussen het aanvinken en het terugkomen uit de mail
+// zit een herlaadbeurt en soms een ander tabblad. Deze markering is geen bewijs -- bewijs is de rij
+// die de server schrijft -- maar hij zorgt dat de pagina bij terugkomst weet dat het vinkje echt is
+// gezet, in plaats van dat zomaar aan te nemen. Staat hij er niet (andere telefoon, andere browser,
+// schoongemaakte opslag), dan wordt er één keer om gevraagd op het bevestigingsscherm.
+function onthoudAkkoord() {
+  try { localStorage.setItem(LEGAL_SLEUTEL, LEGAL_VERSIE); } catch { /* privémodus: geen ramp */ }
+}
+function eerderAkkoord() {
+  try { return localStorage.getItem(LEGAL_SLEUTEL) === LEGAL_VERSIE; } catch { return false; }
+}
+
+function fout(veld, tekst) {
+  $('err-' + veld).textContent = tekst || '';
+  const invoer = $(veld);
+  if (invoer) invoer.setAttribute('aria-invalid', tekst ? 'true' : 'false');
+}
+
+function wisFouten() {
+  for (const v of VELDEN) fout(v, '');
+  $('err-agree').textContent = '';
+  $('err-form').textContent = '';
+}
+
+// WAT ER VAN EEN ADRES WORDT GEVRAAGD. Bewust smal: één apenstaartje, iets ervoor, en erna een
+// punt met minstens twee tekens erachter, zonder spaties. Een strengere regex weigert geldige
+// adressen -- dat is een bekende manier om echte mensen buiten te sluiten -- en de echte controle
+// is toch de bevestigingsmail: wie het adres niet heeft, komt niet verder.
+function emailProbleem(waarde) {
+  const v = (waarde || '').trim();
+  if (!v) return 'Fill in your email address.';
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v)) return 'That does not look like an email address.';
+  return null;
+}
+
+/** Alle controles op een rij. Geeft null terug als alles klopt, anders het eerste probleem. */
+function controleer(email, pw, pw2) {
+  const e = emailProbleem(email);
+  if (e) return { veld: 'email', tekst: e };
+  if (!pw) return { veld: 'pw', tekst: 'Choose a password.' };
+  const zwak = passwordProblem(pw, { email });
+  if (zwak) return { veld: 'pw', tekst: zwak };
+  if (!pw2) return { veld: 'pw2', tekst: 'Repeat your password.' };
+  if (pw !== pw2) return { veld: 'pw2', tekst: 'The two passwords differ.' };
+  if (!$('agree').checked) {
+    return { veld: 'agree', tekst: 'Please agree to the Terms to continue.' };
+  }
+  return null;
+}
+
+// Zodra iemand een veld verbetert, verdwijnt de melding erbij. Een foutregel die blijft staan
+// terwijl het veld al klopt, leest als "het mag nog steeds niet".
+for (const v of VELDEN) $(v).addEventListener('input', () => fout(v, ''));
+$('agree').addEventListener('change', () => fout('agree', ''));
+
+$('signup-form').addEventListener('submit', async (e) => {
+  // form-action staat in het CSP op 'none', dus een echte submit zou hier stilvallen. Dit is ook
+  // de enige plek waar het formulier iets doet.
+  e.preventDefault();
+  wisFouten();
+
+  const email = $('email').value.trim();
+  const pw = $('pw').value;
+  const pw2 = $('pw2').value;
+
+  const probleem = controleer(email, pw, pw2);
+  if (probleem) {
+    fout(probleem.veld, probleem.tekst);
+    $(probleem.veld).focus();
+    return;
+  }
+
+  const knop = $('create');
+  knop.disabled = true;
+  knop.textContent = 'Creating account…';
+
+  try {
+    // TWEE VELDEN EN EEN TERUGWEG. Geen rol, geen va_id, geen status, geen naam, geen capaciteit --
+    // en ook geen options.data, want alles wat daarin staat komt als user_metadata mee uit de
+    // browser en is dus door de browser te kiezen. Wat iemand mag worden, wordt server-side bepaald.
+    //
+    // emailRedirectTo is het enige dat er bij mag: het bepaalt waar de link in de mail naartoe
+    // wijst en verder niets. Query en fragment gaan eraf -- dezelfde voorzorg die de portal bij het
+    // wachtwoordherstel neemt -- zodat een fragment van een eerdere bevestiging niet mee terugreist
+    // en Supabase een adres krijgt dat exact op de toegestane lijst kan staan.
+    const terug = location.origin + location.pathname;
+    const { error } = await sb.auth.signUp(
+      { email, password: pw, options: { emailRedirectTo: terug } });
+
+    if (error) {
+      knop.disabled = false;
+      knop.textContent = 'Create account';
+      $('err-form').textContent = error.message || 'Creating the account did not work. Try again.';
+      return;
+    }
+
+    // Pas onthouden als de aanmelding werkelijk is doorgekomen. Andersom zou de markering blijven
+    // staan van een poging die nooit een account heeft opgeleverd.
+    onthoudAkkoord();
+    toon('done-view');
+    staat('sent');
+    $('done-title').focus?.();
+  } catch (err) {
+    // NIET STIL WEGSLIKKEN. Een verbinding die het niet deed, is iets anders dan een geweigerde
+    // aanmelding, en de persoon hoort te weten dat er niets is aangemaakt.
+    knop.disabled = false;
+    knop.textContent = 'Create account';
+    $('err-form').textContent = 'Could not reach DropHero. Check your connection and try again.';
+    console.error('signup_transport', err && err.message);
+  }
+});
+
+// =================================================================================================
+// TERUG UIT DE BEVESTIGINGSMAIL
+//
+// Supabase doet de bevestiging zelf; hier wordt geen eigen code verstuurd en geen eigen token
+// gecontroleerd. Wat deze pagina doet is: merken dát iemand terugkomt, nagaan of er werkelijk een
+// geldige sessie bij hoort, en dan één keer dh_va_apply() aanroepen.
+//
+// WAAROM DE AANVRAAG NIET UIT JAVASCRIPT WORDT GESCHREVEN. dh_va_apply() heeft nul argumenten,
+// leest het adres en email_confirmed_at rechtstreeks uit auth.users, en weigert een onbevestigd
+// adres zelf (migratie 0141). Een controle híér zou een tweede mening zijn die de browser kan
+// overslaan. De server beslist; deze pagina laat alleen het antwoord zien.
+// =================================================================================================
+
+const SECTIES = ['form-view', 'done-view', 'callback-view', 'signin-view', 'tiktok-view',
+                 'added-view', 'portal-view'];
+function toon(sectie) {
+  for (const id of SECTIES) $(id).hidden = (id !== sectie);
+}
+
+function staat(naam) { document.documentElement.setAttribute('data-state', naam); }
+
+function terugmelding({ sub, titel, tekst, gelukt = false, signin = false }) {
+  $('cb-sub').textContent = sub;
+  $('cb-title').textContent = titel;
+  $('cb-body').textContent = tekst;
+  $('cb-tick').hidden = !gelukt;
+  $('cb-foot').hidden = !signin;
+  $('cb-next').hidden = true;      // alleen het geslaagde scherm zet hem weer aan
+}
+
+function mislukt(titel, tekst, { signin = false } = {}) {
+  terugmelding({ sub: 'Something went wrong.', titel, tekst, signin });
+  staat('failed');
+}
+
+/** Wat de server terugstuurde, vertaald naar iets wat een mens kan lezen. */
+const REDEN = {
+  // De server houdt vol dat het adres nog niet bevestigd is. Dan is de link aangeklikt voordat de
+  // bevestiging rond was, of hoort hij bij een ander adres dan waar de persoon nu op zit.
+  EMAIL_NOT_VERIFIED: ['Your email address is not confirmed yet',
+    'Open the most recent confirmation email and use the link in it.'],
+  EMAIL_ALREADY_KNOWN: ['That email address is already in use',
+    'There is already a DropHero account for this address. Sign in instead.'],
+  ALREADY_HAS_ACCESS: ['You already have a DropHero account',
+    'Nothing to set up here — sign in and you are ready to work.'],
+  NOT_SIGNED_IN: ['This confirmation link is no longer valid',
+    'Confirmation links expire. Create your account again to get a fresh one.']
+};
+
+/**
+ * Vraagt één keer om het vinkje, op het bevestigingsscherm, en wacht tot er op Continue wordt
+ * getikt. Geeft true zodra er is aangevinkt. Komt alleen voor als de markering van de aanmelding
+ * hier niet te vinden is -- een ander toestel, een andere browser, of opslag die leeg is.
+ */
+function vraagAkkoordEenmalig() {
+  return new Promise((resolve) => {
+    terugmelding({
+      sub: 'One thing first.',
+      titel: 'Confirm you agree to the Terms',
+      tekst: 'You are signing in from a different browser than the one you signed up with, so we '
+           + 'are asking once more.'
+    });
+    staat('needs-agree');
+    $('cb-agree-blok').hidden = false;
+    $('cb-agree').addEventListener('change', () => { $('cb-agree-err').textContent = ''; });
+    $('cb-continue').addEventListener('click', () => {
+      if (!$('cb-agree').checked) {
+        $('cb-agree-err').textContent = 'Please agree to the Terms to continue.';
+        return;
+      }
+      $('cb-agree-blok').hidden = true;
+      onthoudAkkoord();
+      staat('confirming');
+      terugmelding({ sub: 'Confirming your email…', titel: 'Confirming your email…',
+                     tekst: 'One moment.' });
+      resolve(true);
+    });
+  });
+}
+
+async function verwerkTerugkomst() {
+  toon('callback-view');
+  staat('confirming');
+  terugmelding({ sub: 'Confirming your email…', titel: 'Confirming your email…', tekst: 'One moment.' });
+
+  // 1. EEN LINK DIE AL GEWEIGERD IS. Supabase zet de reden in het fragment (of in de query) in
+  //    plaats van een sessie af te leveren. Verlopen, al gebruikt, of gemanipuleerd -- voor de
+  //    bezoeker is dat één en hetzelfde geval, en de foutcode van de provider hoort niet op het
+  //    scherm.
+  const params = new URLSearchParams(
+    (BINNENKOMST.hash.startsWith('#') ? BINNENKOMST.hash.slice(1) : BINNENKOMST.hash)
+    || (BINNENKOMST.query.startsWith('?') ? BINNENKOMST.query.slice(1) : BINNENKOMST.query));
+  if (params.get('error') || params.get('error_code')) {
+    mislukt('This confirmation link is no longer valid',
+      'Confirmation links expire and can be used only once. Create your account again to get a new one.');
+    return;
+  }
+
+  // 2. IS ER ECHT EEN SESSIE? Niet "staat er iets in de adresbalk" maar "heeft de client er een
+  //    sessie van kunnen maken". getUser() gaat daarna langs de server: een token dat lokaal goed
+  //    lijkt maar het niet is, valt hier om en niet pas bij de RPC.
+  let gebruiker = null;
+  try {
+    const { data: s } = await sb.auth.getSession();
+    if (!s || !s.session) {
+      mislukt('This confirmation link is no longer valid',
+        'Confirmation links expire and can be used only once. Create your account again to get a new one.');
+      return;
+    }
+    const { data: u, error: uerr } = await sb.auth.getUser();
+    if (uerr || !u || !u.user) {
+      mislukt('We could not confirm who you are',
+        'The confirmation link did not give us a valid session. Create your account again to get a new one.');
+      return;
+    }
+    gebruiker = u.user;
+  } catch (err) {
+    mislukt('We could not reach DropHero',
+      'Check your connection and open the link from your email again.');
+    console.error('confirm_session', err && err.message);
+    return;
+  }
+
+  // 3. HET AKKOORD, VÓÓR DE AANVRAAG. Eerst nagaan dát het vinkje is gezet, dan het server-side
+  //    vastleggen, en pas daarna de aanvraag maken. Andersom zou er een account bestaan waar geen
+  //    aanvaarding bij hoort, en precies dat is wat deze laag moet voorkomen.
+  if (!eerderAkkoord()) {
+    const akkoord = await vraagAkkoordEenmalig();
+    if (!akkoord) return;              // de bezoeker is blijven staan; er is niets aangemaakt
+  }
+
+  try {
+    // Nul argumenten: de user_id komt uit auth.uid() en de twee versienummers staan in de functie.
+    // De browser kan dus geen andere gebruiker en geen andere versie laten vastleggen.
+    const { data, error } = await sb.rpc('dh_record_legal_acceptance');
+    if (error || !data || !data.ok) {
+      console.error('legal_acceptance', (error && error.message) || (data && data.reason));
+      mislukt('We could not finish setting up your account',
+        'Open the link from your email again in a moment. Nothing was lost.');
+      return;
+    }
+  } catch (err) {
+    console.error('legal_acceptance_transport', err && err.message);
+    mislukt('We could not reach DropHero',
+      'Check your connection and open the link from your email again.');
+    return;
+  }
+
+  // 4. DE AANVRAAG. Twee keer dezelfde link openen mag geen tweede identiteit opleveren en ook geen
+  //    foutmelding: dh_va_apply() geeft een bestaande aanvraag ongewijzigd terug (created = false)
+  //    en houdt gelijktijdige aanroepen achter een slot (migratie 0142). Deze pagina hoeft daar dus
+  //    niets voor te doen behalve het antwoord lezen.
+  let antwoord = null;
+  try {
+    const { data, error } = await sb.rpc('dh_va_apply');
+    if (error) {
+      // GEEN DATABASEDETAIL OP HET SCHERM. Een foutmelding uit Postgres kan een tabelnaam, een
+      // constraint of een stukje van de zoekopdracht bevatten. Die gaat naar de console, niet naar
+      // de bezoeker.
+      console.error('dh_va_apply_error', error.message);
+      mislukt('We could not finish setting up your account',
+        'Your email is confirmed. Open the link again in a moment and we will pick up where we left off.');
+      return;
+    }
+    antwoord = data;
+  } catch (err) {
+    console.error('dh_va_apply_transport', err && err.message);
+    mislukt('We could not reach DropHero',
+      'Check your connection and open the link from your email again.');
+    return;
+  }
+
+  if (antwoord && antwoord.ok) {
+    terugmelding({
+      sub: 'You are in.',
+      titel: 'Email confirmed',
+      tekst: 'Your DropHero account has been created. Your TikTok account setup is the next step.',
+      gelukt: true
+    });
+    staat('confirmed');
+    $('cb-next').hidden = false;
+    $('cb-title').focus?.();
+    return;
+  }
+
+  const reden = (antwoord && antwoord.reason) || '';
+  const bekend = REDEN[reden];
+  if (bekend) {
+    mislukt(bekend[0], bekend[1],
+      { signin: reden === 'ALREADY_HAS_ACCESS' || reden === 'EMAIL_ALREADY_KNOWN' });
+    return;
+  }
+  // Een reden die deze pagina niet kent, is nog steeds een antwoord -- en wordt niet doorgegeven.
+  console.error('dh_va_apply_reason', reden || '(leeg)');
+  mislukt('We could not finish setting up your account',
+    'Open the link from your email again in a moment. Nothing was lost.');
+}
+
+// IS DIT EEN TERUGKOMST? Alleen als de adresbalk er ook echt naar uitziet. Wie signup.html gewoon
+// opent, hoort het formulier te zien en niet een scherm dat op een mislukte bevestiging lijkt.
+function isTerugkomst() {
+  const s = (BINNENKOMST.hash + ' ' + BINNENKOMST.query);
+  return /(^|[#?&\s])(access_token|refresh_token|error|error_code|error_description|token_hash|type=signup|type=email)/.test(s);
+}
+
+if (isTerugkomst()) {
+  verwerkTerugkomst();
+} else {
+  staat('form');
+}
+
+// =================================================================================================
+// HET TIKTOK-DEEL
+//
+// Alles hieronder werkt op de ingelogde aanvrager en op niemand anders: dh_applicant_state() en
+// dh_applicant_add_tiktok() zoeken de werkidentiteit zelf op via auth.uid(). Deze pagina stuurt
+// dus geen va_id, geen status, geen niveau en geen limiet mee -- die velden bestaan niet als
+// argument, en daarom kan er hier ook niets over verzonnen worden.
+// =================================================================================================
+
+const STATUS_TEKST = {
+  WAITING_APPROVAL: 'Waiting for approval',
+  ACTIVE: 'Approved',
+  PAUSED: 'Paused',
+  REVIEW_REQUIRED: 'Being reviewed',
+  RETIRED: 'Retired'
+};
+
+function lijstHtml(accounts) {
+  if (!accounts || !accounts.length) return '<p class="muted" style="margin:0">Nothing yet.</p>';
+  return accounts.map((a) => {
+    const naam = String(a.username || '').replace(/[&<>"']/g, '');
+    const st = STATUS_TEKST[a.status] || 'Waiting for approval';
+    return '<div class="ttrow"><span class="tthandle">@' + naam + '</span>'
+         + '<span class="pill">' + st + '</span></div>';
+  }).join('');
+}
+
+function toonLijst(accounts) {
+  $('tt-list').innerHTML = lijstHtml(accounts);
+  $('added-list').innerHTML = lijstHtml(accounts);
+  $('tt-list-card').hidden = !(accounts && accounts.length);
+}
+
+/** Haalt de eigen stand op en zet het juiste scherm neer. */
+async function naarEigenStand({ nieuw = false } = {}) {
+  let s;
+  try {
+    const { data, error } = await sb.rpc('dh_applicant_state');
+    if (error) throw new Error(error.message);
+    s = data;
+  } catch (err) {
+    console.error('applicant_state', err && err.message);
+    $('si-msg').textContent = 'Could not reach DropHero. Try again in a moment.';
+    toon('signin-view'); staat('signin');
+    return;
+  }
+
+  if (s && s.access === 'PORTAL') { toon('portal-view'); staat('portal'); return; }
+  if (!s || !s.ok) {
+    // Ingelogd, maar er hoort geen aanvraag bij dit adres.
+    $('si-msg').textContent = 'There is no signup for this account yet. Create one first.';
+    toon('signin-view'); staat('signin');
+    return;
+  }
+
+  toonLijst(s.accounts);
+  if (nieuw) {
+    toon('added-view'); staat('added'); $('added-title').focus?.();
+  } else {
+    toon('tiktok-view'); staat('onboarding');
+  }
+}
+
+// DE BIO KOPIËREN. Twee wegen, net als in de portal: de moderne API waar die er is, en anders een
+// selectie met execCommand -- op iOS is dat nog steeds de enige route die binnen een tik werkt.
+$('tt-copy-bio').addEventListener('click', async () => {
+  const tekst = $('tt-bio').innerText;
+  let ok = false;
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = tekst;
+    ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+  } catch { ok = false; }
+  if (!ok && navigator.clipboard) {
+    try { await navigator.clipboard.writeText(tekst); ok = true; } catch { ok = false; }
+  }
+  $('tt-copy-bio').textContent = ok ? 'BIO COPIED' : 'COPY BIO';
+  setTimeout(() => { $('tt-copy-bio').textContent = 'COPY BIO'; }, 1800);
+});
+
+$('tt-user').addEventListener('input', () => { $('tt-err-user').textContent = ''; });
+for (const id of ['tt-img', 'tt-bio-ok', 'tt-vid']) {
+  $(id).addEventListener('change', () => { $('tt-err-confirm').textContent = ''; });
+}
+
+$('tt-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('tt-err-user').textContent = ''; $('tt-err-confirm').textContent = ''; $('tt-msg').textContent = '';
+
+  const naam = $('tt-user').value.trim().replace(/^@/, '');
+  if (!naam) { $('tt-err-user').textContent = 'Fill in your TikTok username.'; $('tt-user').focus(); return; }
+  const drie = $('tt-img').checked && $('tt-bio-ok').checked && $('tt-vid').checked;
+  if (!drie) {
+    $('tt-err-confirm').textContent =
+      'Please confirm the picture, the bio and the public video first.';
+    return;
+  }
+
+  const knop = $('tt-save');
+  knop.disabled = true; knop.textContent = 'Adding…';
+  try {
+    // Eén veld en drie vinkjes. De profiellink, de status, het niveau en de limiet komen van de
+    // server -- er is hier domweg niets anders om mee te sturen.
+    const { data, error } = await sb.rpc('dh_applicant_add_tiktok', {
+      p_username: naam, p_confirm_image: true, p_confirm_bio: true, p_confirm_video: true
+    });
+    knop.disabled = false; knop.textContent = 'Add account';
+
+    if (error) {
+      console.error('applicant_add_tiktok', error.message);
+      $('tt-msg').textContent = 'That did not go through. Try again in a moment.';
+      return;
+    }
+    if (!data || !data.ok) {
+      if (data && data.reason === 'USE_THE_PORTAL') { toon('portal-view'); staat('portal'); return; }
+      if (data && (data.reason === 'BAD_USERNAME')) {
+        $('tt-err-user').textContent = data.error || 'That username does not look right.';
+        $('tt-user').focus();
+        return;
+      }
+      if (data && data.reason === 'ALREADY_REGISTERED') {
+        $('tt-err-user').textContent = data.error || 'That account is already registered.';
+        $('tt-user').focus();
+        return;
+      }
+      $('tt-msg').textContent = (data && data.error)
+        || 'That did not go through. Try again in a moment.';
+      return;
+    }
+
+    // Leeg het formulier: het volgende account begint schoon, en een dubbele tik voegt niets
+    // tweemaal toe.
+    $('tt-user').value = '';
+    for (const id of ['tt-img', 'tt-bio-ok', 'tt-vid']) $(id).checked = false;
+    await naarEigenStand({ nieuw: true });
+  } catch (err) {
+    knop.disabled = false; knop.textContent = 'Add account';
+    console.error('applicant_add_tiktok_transport', err && err.message);
+    $('tt-msg').textContent = 'Could not reach DropHero. Check your connection and try again.';
+  }
+});
+
+$('added-another').addEventListener('click', () => {
+  $('tt-sub').textContent = 'Add another TikTok account.';
+  toon('tiktok-view'); staat('onboarding'); $('tt-user').focus();
+});
+
+$('cb-start-tiktok').addEventListener('click', () => { naarEigenStand(); });
+
+// ZELF KIJKEN OF ER AL IETS IS GOEDGEKEURD. Dezelfde leesfunctie als altijd; wat er verandert is
+// alleen wat de server antwoordt zodra de eigenaar op Approve heeft getikt.
+$('added-check').addEventListener('click', async () => {
+  const knop = $('added-check');
+  knop.disabled = true; knop.textContent = 'Checking…';
+  $('added-check-msg').textContent = '';
+  try {
+    const { data, error } = await sb.rpc('dh_applicant_state');
+    knop.disabled = false; knop.textContent = 'Check approval status';
+    if (error) throw new Error(error.message);
+    if (data && data.access === 'PORTAL') {
+      toon('portal-view'); staat('portal'); $('portal-title').focus?.();
+      return;
+    }
+    // Nog niet: de lijst bijwerken, want een account kan intussen van status zijn veranderd,
+    // en verder blijft het scherm staan waar het stond.
+    if (data && data.accounts) toonLijst(data.accounts);
+    $('added-check-msg').textContent = 'Still waiting for approval.';
+  } catch (err) {
+    knop.disabled = false; knop.textContent = 'Check approval status';
+    console.error('check_approval', err && err.message);
+    $('added-check-msg').textContent = 'Could not reach DropHero. Try again in a moment.';
+  }
+});
+
+// =================================================================================================
+// WEER VERDER NA HET SLUITEN VAN DE BROWSER
+// =================================================================================================
+
+$('resume-link').addEventListener('click', (e) => {
+  e.preventDefault();
+  $('si-msg').textContent = '';
+  toon('signin-view'); staat('signin'); $('si-email').focus();
+});
+$('si-back').addEventListener('click', (e) => {
+  e.preventDefault();
+  toon('form-view'); staat('form');
+});
+
+$('signin-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('si-msg').textContent = '';
+  const email = $('si-email').value.trim();
+  const pw = $('si-pw').value;
+  if (!email || !pw) { $('si-msg').textContent = 'Fill in your email and password.'; return; }
+
+  const knop = $('si-go');
+  knop.disabled = true; knop.textContent = 'Checking…';
+  try {
+    const { error } = await sb.auth.signInWithPassword({ email, password: pw });
+    knop.disabled = false; knop.textContent = 'Continue';
+    if (error) {
+      // Eén zin voor elke afwijzing: of het adres bestaat, hoort een bezoeker niet te kunnen meten.
+      $('si-msg').textContent = 'That email and password do not match.';
+      return;
+    }
+    await naarEigenStand();
+  } catch (err) {
+    knop.disabled = false; knop.textContent = 'Continue';
+    console.error('resume_signin', err && err.message);
+    $('si-msg').textContent = 'Could not reach DropHero. Check your connection and try again.';
+  }
+});
+
+// Zodat een test kan zien dat het script echt gedraaid heeft in plaats van op een stille
+// CSP-weigering te zijn gestrand.
+document.documentElement.setAttribute('data-signup-ready', '1');
+</script>
+</body></html>
