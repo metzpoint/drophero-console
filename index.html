@@ -1153,7 +1153,12 @@ function renderTikTok(vas, err) {
       + '<th>Controls</th></tr>'
       + (v.accounts || []).map((a) => {
           const [cls, word] = TT_STATE[a.display_state] || ['', a.display_state];
-          return '<tr><td>@' + esc(a.username) + '</td>'
+          // DE NAAM IS DE LINK NAAR HET PROFIEL. Goedkeuren betekent kijken of het account er
+          // werkelijk uitziet zoals afgesproken, en dat was tot nu toe: naam overtypen, zelf een
+          // TikTok-adres bouwen, terugkomen. profileAnchor() gebruikt de profile_url die de server
+          // al meestuurt, laat 'm door dezelfde hostcontrole lopen als de creatorlijst, en opent
+          // hem in een nieuw tabblad -- zodat het overzicht blijft staan waar het stond.
+          return '<tr><td>' + profileAnchor(a.profile_url, '@' + a.username, a.username) + '</td>'
             + '<td class="n">' + a.level + '</td>'
             + '<td class="n">' + a.sent_today + '/' + a.daily_limit + '</td>'
             + '<td><span class="pill ' + cls + '">' + esc(word) + '</span>'
