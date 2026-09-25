@@ -9,7 +9,13 @@
 <style>
   :root{--bg:#0b0f14;--card:#151b24;--line:#232c39;--ink:#e8edf5;--dim:#8b98ab;
         --ok:#3ddc97;--warn:#ffb454;--bad:#ff6b6b;--accent:#6aa6ff}
-  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;
+    scrollbar-width:thin;scrollbar-color:#3a4658 transparent}
+  *::-webkit-scrollbar{width:6px;height:6px}
+  *::-webkit-scrollbar-track{background:transparent}
+  *::-webkit-scrollbar-thumb{background:#3a4658;border-radius:999px}
+  *::-webkit-scrollbar-thumb:hover{background:#536178}
+  *::-webkit-scrollbar-corner{background:transparent}
   [hidden]{display:none!important}
   html,body{overflow-x:hidden;max-width:100%}
   body{margin:0;background:var(--bg);color:var(--ink);
@@ -43,6 +49,23 @@
   button.good{background:#173d2e;border-color:#1e5e46;color:#b6f0d5}
   button.bad{background:#3a1d1d;border-color:#5e2020;color:#ffc9c9}
   button.sm{min-height:38px;padding:8px;font-size:13px}
+  /* Retry rows: handle left, TRY AGAIN right. Global button{width:100%} would otherwise claim the
+     whole row, squeeze the handle to ~0, and overflow-wrap:anywhere on .card would print one
+     character per line. */
+  .retry-row{display:flex;flex-direction:row;flex-wrap:nowrap;align-items:center;gap:10px;
+             margin-top:8px;min-width:0}
+  .retry-row .retry-handle{flex:1 1 auto;min-width:0;font-size:15px;font-weight:600;
+             white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .retry-row button{flex:0 0 auto;width:auto;padding:8px 14px;white-space:nowrap}
+  /* Five rows visible; the rest scroll inside the card so a long couldn't-send list does not
+     push the whole Work tab down the phone. */
+  .retry-list{max-height:calc(5 * 46px);overflow-y:auto;-webkit-overflow-scrolling:touch;
+              margin-top:2px;padding-right:4px;
+              scrollbar-width:thin;scrollbar-color:#3a4658 transparent}
+  .retry-list::-webkit-scrollbar{width:5px}
+  .retry-list::-webkit-scrollbar-track{background:transparent}
+  .retry-list::-webkit-scrollbar-thumb{background:#3a4658;border-radius:999px}
+  .retry-list::-webkit-scrollbar-thumb:hover{background:#536178}
   input,textarea{font:inherit;background:#10161e;color:var(--ink);border:1px solid var(--line);
          border-radius:11px;padding:11px;min-height:44px;width:100%;max-width:100%}
   textarea{min-height:64px}
@@ -389,7 +412,7 @@ import {
   savePending, loadPending, clearPending, workState, senderState,
   passwordProblem, sessionExpired, SESSION_MAX_DAYS, AWAITING_SEND, AWAITING_REPLY,
   payoutView
-} from './va-portal-logic.mjs?v=20260921-integrated';
+} from './va-portal-logic.mjs?v=20260925-retry';
 
 const sb = createClient('https://aexomkitwnxvpqlmtrik.supabase.co', 'sb_publishable_Y88uWkdq3igd5dMkT1c8JA_qMB_ZB7d',
   { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
@@ -418,6 +441,8 @@ function safeTikTokProfileUrl(value, handle = '') {
 }
 
 let queue = [];       // NEW DMS only: creators nobody has written to yet
+let retryQueue = [];  // Pre-send UNREACHABLE: couldn't-send, eligible for TRY AGAIN
+let forceWorkTaskId = null; // After TRY AGAIN, this creator becomes the active Work card
 let cursor = 0;       // which one is on screen
 let view = {};        // the whole three-part payload from dh_va_queue
 let tab = 'work';     // 'work' | 'tt' | 'conv' | 'earn'
@@ -474,6 +499,8 @@ let chatStatus = '';
 
 function resetVaMemory() {
   queue = [];
+  retryQueue = [];
+  forceWorkTaskId = null;
   cursor = 0;
   view = {};
   currentWorkTask = null;
@@ -929,10 +956,17 @@ async function bootOrThrow() {
 
   view = data;
   queue = data.new_dms || [];
+  retryQueue = data.retry_dms || [];
+  // A forced retry target that is no longer in the live queue (sent, reassigned, or still
+  // unreachable) must not pin Work forever.
+  if (forceWorkTaskId && !queue.some((t) => t && t.task_id === forceWorkTaskId)) {
+    forceWorkTaskId = null;
+  }
   if (pending) {
     // loadPending laat sinds 22 september 2026 alleen AWAITING_SEND door -- de reply-check is uit
     // het werk gehaald -- dus dit is de enige soort openstaande handeling die hier nog aankomt.
-    const authorised = queue.some((task) => task && task.task_id === pending.task_id);
+    const authorised = queue.some((task) => task && task.task_id === pending.task_id)
+      || retryQueue.some((task) => task && task.task_id === pending.task_id);
     // THE BACKEND STAYS THE AUTHORITY -- BUT LOSING THE VA'S WORK IN SILENCE IS NOT PART OF THAT.
     //
     // Stored browser content is not enough to render a creator, so an unmatched pending entry is
@@ -1548,6 +1582,8 @@ function drawWork() {
     pending,
     proof: view.pending_proof,
     queue,
+    retry: retryQueue,
+    forceTaskId: forceWorkTaskId,
     sendFrom
   });
 
@@ -1698,6 +1734,30 @@ function drawWork() {
       + 'Check back later.</p></div>';
   }
 
+  // RETRY COULDN'T-SEND. Creators marked UNREACHABLE before a send stay available here until the
+  // VA taps TRY AGAIN (reopens to ASSIGNED and becomes the active Work card) or a send is booked.
+  if (retryQueue.length > 0) {
+    html += '<div class="card" style="margin-bottom:14px">'
+      + '<div class="who" style="font-size:16px;margin-bottom:8px">Retry couldn\'t-send ('
+      + retryQueue.length + ')</div>'
+      + '<p class="muted" style="margin:0 0 10px">Marked couldn\'t send earlier — try the same DM again '
+      + 'if you got through later.</p>'
+      + '<div class="retry-list">';
+    for (const t of retryQueue) {
+      if (!t || !t.task_id) continue;
+      html += '<div class="retry-row">'
+        + '<div class="retry-handle">@' + esc(t.handle || '') + '</div>'
+        + '<button class="sm" type="button" data-retry-task="' + esc(t.task_id) + '">'
+        + 'TRY AGAIN</button>'
+        + '</div>';
+    }
+    html += '</div>';
+    if (retryQueue.length > 5) {
+      html += '<p class="muted" style="margin:8px 0 0">Showing 5 — scroll for the rest.</p>';
+    }
+    html += '<p id="retry-msg" class="fieldmsg"></p></div>';
+  }
+
   // The task the handlers act on is the one the state machine chose, never queue[cursor]. After a
   // reload the queue has been rebuilt and reordered; the pending task may not even be in it.
   currentWorkTask = ws.task;
@@ -1723,6 +1783,51 @@ function drawWork() {
   wireWorkButtons();
 }
 
+/**
+ * Reopen one couldn't-send creator and put them on the active Work card immediately.
+ *
+ * TRY AGAIN calls dh_va_retry_unreachable (UNREACHABLE → ASSIGNED). On success the task is
+ * prepended to the local new_dms queue, removed from retryQueue, and forceWorkTaskId pins that
+ * creator as the Work card even if a later boot reorders new_dms.
+ */
+async function retryUnreachable(btn, taskId) {
+  if (!taskId) return;
+  const msg = $('retry-msg');
+  const res = await withButton(btn, 'retry_unreachable', { task: taskId },
+    () => sb.rpc('dh_va_retry_unreachable', { p_task_id: taskId }),
+    async (r) => {
+      const payload = r.data || {};
+      const reopened = {
+        task_id: payload.task_id || taskId,
+        handle: payload.handle,
+        display_name: payload.display_name,
+        profile_url: payload.profile_url,
+        platform: payload.platform,
+        priority: payload.priority,
+        status: payload.status || 'ASSIGNED',
+        notes: payload.notes,
+        created_at: payload.created_at,
+        dm_message: payload.dm_message,
+        dm_status: payload.dm_status,
+        dm_angle: payload.dm_angle,
+        followers: payload.followers,
+        tier_1: payload.tier_1
+      };
+      // Prefer fields already known from the retry list if the RPC omitted any display fields.
+      const fromList = retryQueue.find((t) => t && t.task_id === taskId);
+      const task = { ...(fromList || {}), ...reopened, status: 'ASSIGNED' };
+
+      retryQueue = retryQueue.filter((t) => !t || t.task_id !== taskId);
+      queue = [task, ...queue.filter((t) => t && t.task_id !== taskId)];
+      forceWorkTaskId = task.task_id;
+      render();
+    });
+  if (!res.ok && msg) {
+    msg.textContent = res.message;
+    msg.className = 'fieldmsg bad';
+  }
+}
+
 /** Every button drawWork can render, wired in one place so none of them is forgotten. */
 /**
  * Every button drawWork can render, wired in one place so none of them is forgotten.
@@ -1734,6 +1839,11 @@ function drawWork() {
  * call away from booking money outside the two-phase flow.
  */
 function wireWorkButtons() {
+  // Retry list is independent of the primary Work card — wire it even when proof/blocked/empty.
+  for (const btn of document.querySelectorAll('[data-retry-task]')) {
+    btn.onclick = () => retryUnreachable(btn, btn.getAttribute('data-retry-task'));
+  }
+
   if (workSubstate === 'proof') {
     const b = $('work-proof');
     if (b) b.onclick = () => openProof(view.pending_proof);
@@ -1817,10 +1927,12 @@ function wireWorkButtons() {
       }
 
       if (!leaveForTikTok(profileUrl, t.handle)) {
-        setPending({
-          task_id: t.task_id, handle: t.handle, profile_url: profileUrl,
-          dm_message: t.dm_message, state: AWAITING_SEND, copy_ok: false, saved_at: Date.now()
-        });
+        // Copy already succeeded; keep phase 2 with copy_ok so they can open again or confirm.
+        const msg = $('dm-msg');
+        if (msg && copied.ok) {
+          msg.textContent = 'DM is copied. Allow popups, then use OPEN IN TIKTOK AGAIN.';
+          msg.className = 'fieldmsg bad';
+        }
       }
       render(); // if the tab survives, phase 2 is already on screen behind TikTok
     };
@@ -1913,6 +2025,7 @@ function wireWorkButtons() {
           async (r) => {
             // The pending state is cleared only once the backend has confirmed. A failure leaves it
             // in place so the VA can try again after a reload.
+            forceWorkTaskId = null;
             setPending(null);
             const workEl = $('work');
             if (workEl) {
@@ -1939,6 +2052,7 @@ function wireWorkButtons() {
           // UNREACHABLE ONLY. No send row, no earning -- dh_va_update_task, never record_send.
           () => sb.rpc('dh_va_update_task', { p_task_id: c.task_id, p_status: 'UNREACHABLE' }),
           async () => {
+            forceWorkTaskId = null;
             setPending(null);
             await boot();
           });
@@ -1963,12 +2077,14 @@ function wireWorkButtons() {
 }
 
 /**
- * Leave for TikTok in the way the current browser actually allows.
+ * Open the creator's TikTok profile in a new tab only.
  *
- * Open the real TikTok URL in this tab. Opening a new tab is unreliable in iOS/WebView browsers:
- * some return a detached WindowProxy and leave a permanent `about:blank`, even for a real user tap.
- * `_self` is not a popup, so it cannot be popup-blocked. The pending state is already persisted and
- * the browser Back action returns to the exact confirmation step in DropHero.
+ * Pending confirmation already lives in sessionStorage, so the portal tab stays on phase 2
+ * (I SENT THE DM / COULDN'T SEND) while TikTok opens beside it.
+ *
+ * Do NOT pass "noopener" to window.open: with that feature many browsers return null even when
+ * the tab did open, which used to trip the same-tab fallback and load TikTok twice (new tab +
+ * this tab). Null the opener ourselves after a successful open.
  */
 function leaveForTikTok(url, handle = '') {
   const safeUrl = safeTikTokProfileUrl(url, handle);
@@ -1983,10 +2099,15 @@ function leaveForTikTok(url, handle = '') {
       cancelable: true, detail: { url: safeUrl }
     });
     if (!window.dispatchEvent(navEvent)) return true;
-    // location.assign is a real same-tab navigation. window.open(..., '_self') still produced an
-    // about:blank WindowProxy in iPhone/cloud WebViews, despite looking equivalent on desktop.
-    window.location.assign(safeUrl);
-    return true;
+    const win = window.open(safeUrl, '_blank');
+    if (win) {
+      try { win.opener = null; } catch { /* cross-origin / already detached */ }
+      return true;
+    }
+    // Popup genuinely blocked — stay on the portal and tell the VA rather than navigating away
+    // (navigating this tab used to happen together with a successful new tab).
+    alert('Your browser blocked opening TikTok in a new tab. Allow popups for this site, then try again.');
+    return false;
   } catch {
     alert('TikTok could not be opened. Copy the profile link and try again.');
     return false;

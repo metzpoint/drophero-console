@@ -177,6 +177,11 @@ export function followUpLabel(followUpAt, now = Date.now()) {
 /** Reasons the server returns that a VA can act on, in their words rather than the enum's. */
 export const REASON_TEXT = {
   NO_SUCH_TASK: 'That creator is no longer in your queue.',
+  NOT_A_VA: 'This account is not set up as a VA.',
+  NOT_UNREACHABLE: 'That creator is not waiting for a retry.',
+  ALREADY_SENT: 'That DM was already recorded as sent.',
+  SUPERSEDED: 'That creator was replaced by a newer task.',
+  DM_NOT_READY: 'That DM is not ready to send again yet.',
   NOT_YOUR_TASK: 'That creator is assigned to someone else now.',
   NOT_YOUR_ACCOUNT: 'That TikTok account is not yours.',
   NO_SUCH_ACCOUNT: 'That TikTok account no longer exists.',
@@ -475,7 +480,7 @@ export function clearPending(deps = {}) {
 /** Find the task the pending entry refers to by id in data authorised for the current VA. */
 export function resolvePendingTask(pending, lists = {}) {
   if (!pending) return null;
-  const pools = [lists.queue, lists.replies].filter(Array.isArray);
+  const pools = [lists.queue, lists.replies, lists.retry].filter(Array.isArray);
   for (const pool of pools) {
     const hit = pool.find((t) => t && t.task_id === pending.task_id);
     if (hit) return { ...hit, ...pendingOverlay(pending) };
@@ -483,6 +488,23 @@ export function resolvePendingTask(pending, lists = {}) {
   // Stored browser content is never enough authority to render a creator. If the current backend
   // payload does not contain the task, the caller discards the pending state and shows current work.
   return null;
+}
+
+/**
+ * Pick which queued creator Work should show first.
+ *
+ * After TRY AGAIN, the reopened task must become the active card immediately — not buried behind
+ * the rest of new_dms. forceTaskId wins when that id is still in the queue; otherwise fall through
+ * to queue[0] (normal top-of-queue work).
+ */
+export function pickWorkTask(queue, forceTaskId) {
+  const list = Array.isArray(queue) ? queue : [];
+  if (list.length === 0) return null;
+  if (forceTaskId) {
+    const forced = list.find((t) => t && t.task_id === forceTaskId);
+    if (forced) return forced;
+  }
+  return list[0];
 }
 
 function pendingOverlay(pending) {
@@ -600,18 +622,20 @@ export function senderState(sendFrom) {
  * `replies` blijft binnenkomen en blijft het tabblad Chats vullen; alleen de wachtrij raakt het
  * niet meer aan.
  */
-export function workState({ pending, proof, queue, sendFrom } = {}) {
+export function workState({ pending, proof, queue, sendFrom, forceTaskId, retry } = {}) {
   const queueList = Array.isArray(queue) ? queue : [];
+  const retryList = Array.isArray(retry) ? retry : [];
 
   if (pending && pending.state === AWAITING_SEND) {
-    const task = resolvePendingTask(pending, { queue: queueList });
+    const task = resolvePendingTask(pending, { queue: queueList, retry: retryList });
     if (task) return { state: 'awaiting_send', task };
   }
   if (proof && proof.proof_check_id) return { state: 'proof', task: proof };
 
   const sender = senderState(sendFrom);
-  if (queueList.length > 0) {
-    if (sender.ok) return { state: 'dm', task: queueList[0], sender };
+  const next = pickWorkTask(queueList, forceTaskId);
+  if (next) {
+    if (sender.ok) return { state: 'dm', task: next, sender };
     return { state: 'blocked', task: null, sender };
   }
 
