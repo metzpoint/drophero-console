@@ -198,9 +198,14 @@
     <div class="acts" id="wrongacct" hidden style="margin-top:13px">
       <button id="switchacct" class="full" type="button">Sign out and use another account</button>
     </div>
+    <p class="muted" id="applicant-continue" hidden style="margin:13px 0 0">
+      <a id="continue-setup" href="./signup.html">Continue setup</a>
+    </p>
   </form>
-  <p class="muted">First time? Open the invitation link your manager sent you — that is where you
-    choose your password.</p>
+  <p style="margin:16px 0 6px;text-align:center">
+    <a id="create-account" href="./signup.html">Create account</a>
+  </p>
+  <p class="muted">Have an invitation? Open the invitation link your manager sent you.</p>
 </div>
 
 <div id="claim" hidden>
@@ -208,10 +213,10 @@
   <form class="card" id="claim-form">
     <p class="muted">You were invited as</p>
     <p class="who" id="claimemail" style="font-size:16px">…</p>
-    <label class="muted" for="claimpw" style="display:block;margin-top:13px">Choose a password</label>
-    <input id="claimpw" type="password" autocomplete="new-password" required minlength="8">
+    <label class="muted" for="claimpw" style="display:block;margin-top:13px">Choose a password (at least 12 characters)</label>
+    <input id="claimpw" type="password" autocomplete="new-password" required minlength="12">
     <label class="muted" for="claimpw2" style="display:block;margin-top:11px">Repeat it</label>
-    <input id="claimpw2" type="password" autocomplete="new-password" required minlength="8">
+    <input id="claimpw2" type="password" autocomplete="new-password" required minlength="12">
     <div class="acts" style="margin-top:13px">
       <button id="claimgo" class="good full" type="submit">Create my account</button>
     </div>
@@ -303,11 +308,11 @@
 
 <dialog id="pwdlg" aria-labelledby="password-title"><div class="sheet">
   <h2 id="password-title" style="margin:0 0 4px;font-size:20px">Change password</h2>
-  <p class="muted" style="margin-top:0">At least 8 characters. You will use this the next time you sign in.</p>
+  <p class="muted" style="margin-top:0">At least 12 characters. Do not use DropHero, your email, or a common word such as admin or password. You will use this the next time you sign in.</p>
   <p class="muted" style="margin:13px 0 4px">New password</p>
-  <input id="pw-new" type="password" aria-label="New password" autocomplete="new-password">
+  <input id="pw-new" type="password" aria-label="New password" autocomplete="new-password" minlength="12">
   <p class="muted" style="margin:11px 0 4px">Confirm new password</p>
-  <input id="pw-confirm" type="password" aria-label="Repeat the new password" autocomplete="new-password">
+  <input id="pw-confirm" type="password" aria-label="Repeat the new password" autocomplete="new-password" minlength="12">
   <p id="pw-msg" class="fieldmsg"></p>
   <div class="acts" style="margin-top:10px">
     <button id="pw-save" class="good full">Change password</button>
@@ -598,10 +603,8 @@ async function offerClaim() {
 async function claimInvite(event) {
   event?.preventDefault();
   const pw = $('claimpw').value;
-  // The first password a VA ever chooses here is the one they keep for months. "At least 8
-  // characters" let "password" and "12345678" through, and those are the first two guesses anyone
-  // makes. passwordProblem() names what is wrong instead of only counting, so the person can fix it
-  // in one go rather than guessing at a rule.
+  // The first password a VA ever chooses here is the one they keep for months.
+  // passwordProblem() names what is wrong, including a password shorter than 12 characters.
   const weak = passwordProblem(pw, { email: $('claimemail').textContent });
   if (weak) { $('claimmsg').textContent = weak; return; }
   if (pw !== $('claimpw2').value) { $('claimmsg').textContent = 'The two passwords differ.'; return; }
@@ -860,6 +863,7 @@ async function bootOrThrow() {
     $('loginmsg').textContent = '';
     $('login').hidden = true;
     $('claim').hidden = true;
+    $('applicant-continue').hidden = true;
     // An invitation link takes precedence over the sign-in form: someone arriving with one has no
     // account yet, and showing them a password box they cannot use is how people give up.
     if (INVITE) { await offerClaim(); } else { $('login').hidden = false; }
@@ -883,6 +887,18 @@ async function bootOrThrow() {
     // exception means the wrong door; anything else is a fault and says so.
     $('login').hidden = false; $('app').hidden = true;
     if (/no va is linked/i.test(error.message || '')) {
+      // An applicant has a session but no VA row yet. Do not auto-forward: signup.html does not
+      // persist this portal session, so they must sign in again there.
+      try {
+        const { data: stand } = await sb.rpc('dh_applicant_state');
+        if (stand && stand.ok && stand.access === 'APPLICANT') {
+          $('loginmsg').textContent =
+            'Your account is not a VA yet. Continue setup to finish adding your TikTok accounts.';
+          $('applicant-continue').hidden = false;
+          $('wrongacct').hidden = false;
+          return;
+        }
+      } catch { /* fall through to the owner / invite wording */ }
       // NAME THE ACCOUNT, BECAUSE THE USUAL CAUSE IS THE WRONG ONE.
       //
       // "This account is not set up as a VA yet" reads as a broken system to the one person most
@@ -896,16 +912,19 @@ async function bootOrThrow() {
         (who ? 'You are signed in as ' + who + '. That account is not a VA' : 'This account is not a VA')
         + ', so it has no queue and no Accounts tab. The VA portal needs the VA login — a different '
         + 'address from the owner one. Sign in with it below, or ask Rico for an invitation link.';
+      $('applicant-continue').hidden = true;
       $('wrongacct').hidden = false;
     } else {
       $('loginmsg').textContent =
         'Signed in, but the queue could not be loaded — this is a fault on our side, not your '
         + 'account. Please tell Rico. (' + (error.message || 'unknown error') + ')';
+      $('applicant-continue').hidden = true;
       $('wrongacct').hidden = false;
     }
     return;
   }
   $('wrongacct').hidden = true;
+  $('applicant-continue').hidden = true;
   $('login').hidden = true; $('app').hidden = false;
 
   view = data;

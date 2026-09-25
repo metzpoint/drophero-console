@@ -128,8 +128,13 @@
   <h1>DropHero</h1><p class="sub">One step left.</p>
   <div class="card">
     <div class="tick" aria-hidden="true">✓</div>
-    <p class="big" id="done-title">Check your email</p>
+    <p class="big" id="done-title" tabindex="-1">Check your email</p>
     <p id="done-body">Confirm your email address to continue setting up your DropHero account.</p>
+    <p class="muted" style="margin-top:11px">Open the link in your browser, not inside the mail app.</p>
+    <div class="row">
+      <button id="resend" type="button">Resend confirmation email</button>
+    </div>
+    <p class="muted" id="resend-msg" role="status" aria-live="polite" style="margin-top:9px"></p>
   </div>
   <p class="foot">Already have an account? <a href="./va.html">Sign in</a></p>
 </section>
@@ -185,8 +190,30 @@
       <button id="si-go" class="good" type="submit">Continue</button>
     </div>
     <p class="err" id="si-msg" role="alert" style="margin-top:9px"></p>
+    <div class="row">
+      <button id="si-forgot" type="button">Forgot your password?</button>
+    </div>
+    <p class="muted" id="si-forgot-msg" role="status" aria-live="polite" style="margin-top:9px"></p>
   </form>
   <p class="foot"><a href="#" id="si-back">Back to sign up</a></p>
+</section>
+
+<section id="pw-reset-view" hidden>
+  <h1>DropHero</h1><p class="sub">Choose a new password.</p>
+  <form class="card" id="pw-reset-form" novalidate>
+    <label class="muted" for="npw">New password</label>
+    <input id="npw" name="password" type="password" autocomplete="new-password" required>
+    <p class="err" id="err-npw" role="alert"></p>
+    <div class="row">
+      <label class="muted" for="npw2">Repeat password</label>
+      <input id="npw2" name="password2" type="password" autocomplete="new-password" required>
+      <p class="err" id="err-npw2" role="alert"></p>
+    </div>
+    <div class="row">
+      <button id="npw-go" class="good" type="submit">Save password</button>
+    </div>
+    <p class="err" id="npw-msg" role="alert" style="margin-top:9px"></p>
+  </form>
 </section>
 
 <!-- HET INLEVEREN. Eerst de officiële profielopzet, dan één veld en drie vinkjes. -->
@@ -315,17 +342,28 @@ const VELDEN = ['email', 'pw', 'pw2'];
 // de versie zelf, zodat de browser er geen andere van kan maken.
 const LEGAL_VERSIE = '2026-09-23';
 const LEGAL_SLEUTEL = 'dh_legal_ok';
+let laatstEmail = '';
 
-// HET VINKJE MOET DE BEVESTIGINGSMAIL OVERLEVEN. Tussen het aanvinken en het terugkomen uit de mail
-// zit een herlaadbeurt en soms een ander tabblad. Deze markering is geen bewijs -- bewijs is de rij
-// die de server schrijft -- maar hij zorgt dat de pagina bij terugkomst weet dat het vinkje echt is
-// gezet, in plaats van dat zomaar aan te nemen. Staat hij er niet (andere telefoon, andere browser,
-// schoongemaakte opslag), dan wordt er één keer om gevraagd op het bevestigingsscherm.
-function onthoudAkkoord() {
-  try { localStorage.setItem(LEGAL_SLEUTEL, LEGAL_VERSIE); } catch { /* privémodus: geen ramp */ }
+// Per gebruiker, nooit één vlag voor het hele toestel: op een gedeelde telefoon hoort het vinkje
+// van de één niet voor de ander te tellen. Geen user_id betekent geen markering.
+function legalSleutel(userId) {
+  return LEGAL_SLEUTEL + ':' + userId;
 }
-function eerderAkkoord() {
-  try { return localStorage.getItem(LEGAL_SLEUTEL) === LEGAL_VERSIE; } catch { return false; }
+function onthoudAkkoord(userId) {
+  if (!userId) return;
+  try { localStorage.setItem(legalSleutel(userId), LEGAL_VERSIE); } catch { /* privémodus: geen ramp */ }
+}
+function eerderAkkoord(userId) {
+  if (!userId) return false;
+  try { return localStorage.getItem(legalSleutel(userId)) === LEGAL_VERSIE; } catch { return false; }
+}
+
+function authFout(error) {
+  const msg = (error && error.message) || '';
+  if (/not confirmed|email not confirmed/i.test(msg)) {
+    return 'Your email address is not confirmed yet. Open the most recent confirmation email.';
+  }
+  return 'That did not work. Check the details and try again.';
 }
 
 function fout(veld, tekst) {
@@ -349,38 +387,6 @@ function emailProbleem(waarde) {
   if (!v) return 'Fill in your email address.';
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v)) return 'That does not look like an email address.';
   return null;
-}
-
-// WAT DE BEZOEKER TE ZIEN KRIJGT ALS SUPABASE DE AANMELDING WEIGERT.
-//
-// Er stond hier `error.message`, en dat is precies hoe "email rate limit exceeded" op het scherm van
-// een nieuwe DMer belandde. Die zin is voor een ontwikkelaar geschreven: hij noemt een limiet
-// waar de lezer niets aan kan doen, zegt niet of het account nu bestaat, en zegt niet of het zin
-// heeft om het straks nog eens te proberen. Erger nog, hij is niet eens waar voor de lezer -- de
-// limiet zit bij de verzender, niet bij hem.
-//
-// De ruwe tekst gaat vanaf nu naar de console (daar hoort hij, voor wie een storing uitzoekt) en het
-// scherm krijgt een zin die zegt wat er aan de hand is en wat de bezoeker kan doen.
-function aanmeldFoutTekst(error) {
-  const tekst = String((error && error.message) || '').toLowerCase();
-  const code = String((error && error.code) || '').toLowerCase();
-  const status = error && error.status;
-
-  // DE VERZENDLIMIET. Supabase meldt dit als 429, als code over_email_send_rate_limit, of als
-  // "email rate limit exceeded" -- welke van de drie het is, verschilt per versie, dus alle drie.
-  if (status === 429 || code.includes('rate_limit') || tekst.includes('rate limit')) {
-    return 'We couldn’t send your verification email right now. Please try again shortly.';
-  }
-
-  // Het adres is al in gebruik. Geen ruwe providertekst, wel de ene stap die verder helpt.
-  if (tekst.includes('already registered') || tekst.includes('already exists')
-      || code.includes('user_already_exists')) {
-    return 'That email address already has an account. Use Sign in instead.';
-  }
-
-  // Al het overige: wel eerlijk dat het niet gelukt is, zonder een foutcode door te geven waar
-  // niemand buiten dit project iets mee kan.
-  return 'We couldn’t create your account right now. Please try again shortly.';
 }
 
 /** Alle controles op een rij. Geeft null terug als alles klopt, anders het eerste probleem. */
@@ -434,21 +440,26 @@ $('signup-form').addEventListener('submit', async (e) => {
     // wachtwoordherstel neemt -- zodat een fragment van een eerdere bevestiging niet mee terugreist
     // en Supabase een adres krijgt dat exact op de toegestane lijst kan staan.
     const terug = location.origin + location.pathname;
-    const { error } = await sb.auth.signUp(
+    const { data, error } = await sb.auth.signUp(
       { email, password: pw, options: { emailRedirectTo: terug } });
 
     if (error) {
       knop.disabled = false;
       knop.textContent = 'Create account';
-      // De ruwe tekst van de provider gaat naar de console, niet naar het scherm.
-      console.error('signup_refused', error.status || '', error.code || '', error.message || '');
-      $('err-form').textContent = aanmeldFoutTekst(error);
+      $('err-form').textContent = authFout(error);
       return;
     }
 
-    // Pas onthouden als de aanmelding werkelijk is doorgekomen. Andersom zou de markering blijven
-    // staan van een poging die nooit een account heeft opgeleverd.
-    onthoudAkkoord();
+    laatstEmail = email;
+    onthoudAkkoord(data && data.user && data.user.id);
+    if (data && data.session) {
+      toon('callback-view');
+      staat('confirming');
+      terugmelding({ sub: 'Confirming your email…', titel: 'Confirming your email…',
+                     tekst: 'One moment.' });
+      await rondMaken();
+      return;
+    }
     toon('done-view');
     staat('sent');
     $('done-title').focus?.();
@@ -475,8 +486,8 @@ $('signup-form').addEventListener('submit', async (e) => {
 // overslaan. De server beslist; deze pagina laat alleen het antwoord zien.
 // =================================================================================================
 
-const SECTIES = ['form-view', 'done-view', 'callback-view', 'signin-view', 'tiktok-view',
-                 'added-view', 'portal-view'];
+const SECTIES = ['form-view', 'done-view', 'callback-view', 'signin-view', 'pw-reset-view',
+                 'tiktok-view', 'added-view', 'portal-view'];
 function toon(sectie) {
   for (const id of SECTIES) $(id).hidden = (id !== sectie);
 }
@@ -508,14 +519,119 @@ const REDEN = {
   ALREADY_HAS_ACCESS: ['You already have a DropHero account',
     'Nothing to set up here — sign in and you are ready to work.'],
   NOT_SIGNED_IN: ['This confirmation link is no longer valid',
-    'Confirmation links expire. Create your account again to get a fresh one.']
+    'Confirmation links expire. Create your account again to get a fresh one.'],
+  USE_INVITE_LINK: ['You were invited',
+    'This address already has an invitation. Open the invitation link your manager sent you.'],
+  TERMS_NOT_ACCEPTED: ['Please agree to the Terms',
+    'Open the link from your email again and agree to the Terms to continue.']
 };
 
 /**
- * Vraagt één keer om het vinkje, op het bevestigingsscherm, en wacht tot er op Continue wordt
- * getikt. Geeft true zodra er is aangevinkt. Komt alleen voor als de markering van de aanmelding
- * hier niet te vinden is -- een ander toestel, een andere browser, of opslag die leeg is.
+ * Legal + apply + eigen stand. Eén pad voor de bevestigingsmail, voor "Continue setup", en voor
+ * een signUp die meteen een sessie teruggeeft. De browser stuurt nergens een user_id of versie mee.
  */
+async function rondMaken({ gebruiker = null, vanuit = 'resume' } = {}) {
+  toon('callback-view');
+  if (document.documentElement.getAttribute('data-state') !== 'needs-agree') {
+    staat('confirming');
+    const bezig = vanuit === 'callback'
+      ? { sub: 'Confirming your email…', titel: 'Confirming your email…', tekst: 'One moment.' }
+      : { sub: 'Finishing your setup…', titel: 'Finishing your setup…', tekst: 'One moment.' };
+    terugmelding(bezig);
+  }
+
+  if (!gebruiker) {
+    try {
+      const { data: s } = await sb.auth.getSession();
+      if (!s || !s.session) {
+        mislukt('This confirmation link is no longer valid',
+          'Confirmation links expire and can be used only once. Create your account again to get a new one.');
+        return false;
+      }
+      const { data: u, error: uerr } = await sb.auth.getUser();
+      if (uerr || !u || !u.user) {
+        mislukt('We could not confirm who you are',
+          'Sign in again to continue setting up your account.');
+        return false;
+      }
+      gebruiker = u.user;
+    } catch (err) {
+      mislukt('We could not reach DropHero',
+        'Check your connection and try again.');
+      console.error('rondmaken_session', err && err.message);
+      return false;
+    }
+  }
+
+  if (!eerderAkkoord(gebruiker.id)) {
+    const akkoord = await vraagAkkoordEenmalig();
+    if (!akkoord) return false;
+  }
+  onthoudAkkoord(gebruiker.id);
+
+  try {
+    const { data, error } = await sb.rpc('dh_record_legal_acceptance');
+    if (error || !data || !data.ok) {
+      console.error('legal_acceptance', (error && error.message) || (data && data.reason));
+      mislukt('We could not finish setting up your account',
+        'Open the link from your email again in a moment. Nothing was lost.');
+      return false;
+    }
+  } catch (err) {
+    console.error('legal_acceptance_transport', err && err.message);
+    mislukt('We could not reach DropHero',
+      'Check your connection and try again.');
+    return false;
+  }
+
+  let antwoord = null;
+  try {
+    const { data, error } = await sb.rpc('dh_va_apply');
+    if (error) {
+      console.error('dh_va_apply_error', error.message);
+      mislukt('We could not finish setting up your account',
+        'Your email is confirmed. Try again in a moment and we will pick up where we left off.');
+      return false;
+    }
+    antwoord = data;
+  } catch (err) {
+    console.error('dh_va_apply_transport', err && err.message);
+    mislukt('We could not reach DropHero',
+      'Check your connection and try again.');
+    return false;
+  }
+
+  if (antwoord && antwoord.ok) {
+    if (vanuit === 'callback') {
+      terugmelding({
+        sub: 'You are in.',
+        titel: 'Email confirmed',
+        tekst: 'Your DropHero account has been created. Your TikTok account setup is the next step.',
+        gelukt: true
+      });
+      staat('confirmed');
+      $('cb-next').hidden = false;
+      $('cb-title').focus?.();
+      return true;
+    }
+    await naarEigenStand();
+    return true;
+  }
+
+  const reden = (antwoord && antwoord.reason) || '';
+  const bekend = REDEN[reden];
+  if (bekend) {
+    mislukt(bekend[0], bekend[1],
+      { signin: reden === 'ALREADY_HAS_ACCESS' || reden === 'EMAIL_ALREADY_KNOWN'
+                 || reden === 'USE_INVITE_LINK' });
+    return false;
+  }
+  console.error('dh_va_apply_reason', reden || '(leeg)');
+  mislukt('We could not finish setting up your account',
+    'Try again in a moment. Nothing was lost.');
+  return false;
+}
+
 function vraagAkkoordEenmalig() {
   return new Promise((resolve) => {
     terugmelding({
@@ -533,7 +649,6 @@ function vraagAkkoordEenmalig() {
         return;
       }
       $('cb-agree-blok').hidden = true;
-      onthoudAkkoord();
       staat('confirming');
       terugmelding({ sub: 'Confirming your email…', titel: 'Confirming your email…',
                      tekst: 'One moment.' });
@@ -588,87 +703,54 @@ async function verwerkTerugkomst() {
   // 3. HET AKKOORD, VÓÓR DE AANVRAAG. Eerst nagaan dát het vinkje is gezet, dan het server-side
   //    vastleggen, en pas daarna de aanvraag maken. Andersom zou er een account bestaan waar geen
   //    aanvaarding bij hoort, en precies dat is wat deze laag moet voorkomen.
-  if (!eerderAkkoord()) {
-    const akkoord = await vraagAkkoordEenmalig();
-    if (!akkoord) return;              // de bezoeker is blijven staan; er is niets aangemaakt
-  }
-
-  try {
-    // Nul argumenten: de user_id komt uit auth.uid() en de twee versienummers staan in de functie.
-    // De browser kan dus geen andere gebruiker en geen andere versie laten vastleggen.
-    const { data, error } = await sb.rpc('dh_record_legal_acceptance');
-    if (error || !data || !data.ok) {
-      console.error('legal_acceptance', (error && error.message) || (data && data.reason));
-      mislukt('We could not finish setting up your account',
-        'Open the link from your email again in a moment. Nothing was lost.');
-      return;
-    }
-  } catch (err) {
-    console.error('legal_acceptance_transport', err && err.message);
-    mislukt('We could not reach DropHero',
-      'Check your connection and open the link from your email again.');
-    return;
-  }
-
-  // 4. DE AANVRAAG. Twee keer dezelfde link openen mag geen tweede identiteit opleveren en ook geen
-  //    foutmelding: dh_va_apply() geeft een bestaande aanvraag ongewijzigd terug (created = false)
-  //    en houdt gelijktijdige aanroepen achter een slot (migratie 0142). Deze pagina hoeft daar dus
-  //    niets voor te doen behalve het antwoord lezen.
-  let antwoord = null;
-  try {
-    const { data, error } = await sb.rpc('dh_va_apply');
-    if (error) {
-      // GEEN DATABASEDETAIL OP HET SCHERM. Een foutmelding uit Postgres kan een tabelnaam, een
-      // constraint of een stukje van de zoekopdracht bevatten. Die gaat naar de console, niet naar
-      // de bezoeker.
-      console.error('dh_va_apply_error', error.message);
-      mislukt('We could not finish setting up your account',
-        'Your email is confirmed. Open the link again in a moment and we will pick up where we left off.');
-      return;
-    }
-    antwoord = data;
-  } catch (err) {
-    console.error('dh_va_apply_transport', err && err.message);
-    mislukt('We could not reach DropHero',
-      'Check your connection and open the link from your email again.');
-    return;
-  }
-
-  if (antwoord && antwoord.ok) {
-    terugmelding({
-      sub: 'You are in.',
-      titel: 'Email confirmed',
-      tekst: 'Your DropHero account has been created. Your TikTok account setup is the next step.',
-      gelukt: true
-    });
-    staat('confirmed');
-    $('cb-next').hidden = false;
-    $('cb-title').focus?.();
-    return;
-  }
-
-  const reden = (antwoord && antwoord.reason) || '';
-  const bekend = REDEN[reden];
-  if (bekend) {
-    mislukt(bekend[0], bekend[1],
-      { signin: reden === 'ALREADY_HAS_ACCESS' || reden === 'EMAIL_ALREADY_KNOWN' });
-    return;
-  }
-  // Een reden die deze pagina niet kent, is nog steeds een antwoord -- en wordt niet doorgegeven.
-  console.error('dh_va_apply_reason', reden || '(leeg)');
-  mislukt('We could not finish setting up your account',
-    'Open the link from your email again in a moment. Nothing was lost.');
+  await rondMaken({ gebruiker, vanuit: 'callback' });
 }
 
 // IS DIT EEN TERUGKOMST? Alleen als de adresbalk er ook echt naar uitziet. Wie signup.html gewoon
 // opent, hoort het formulier te zien en niet een scherm dat op een mislukte bevestiging lijkt.
 function isTerugkomst() {
   const s = (BINNENKOMST.hash + ' ' + BINNENKOMST.query);
-  return /(^|[#?&\s])(access_token|refresh_token|error|error_code|error_description|token_hash|type=signup|type=email)/.test(s);
+  return /(^|[#?&\s])(access_token|refresh_token|error|error_code|error_description|token_hash|type=signup|type=email|type=recovery)/.test(s);
+}
+
+function isHerstel() {
+  const s = (BINNENKOMST.hash + ' ' + BINNENKOMST.query);
+  return /(^|[#?&\s])type=recovery/.test(s);
+}
+
+async function verwerkHerstel() {
+  const params = new URLSearchParams(
+    (BINNENKOMST.hash.startsWith('#') ? BINNENKOMST.hash.slice(1) : BINNENKOMST.hash)
+    || (BINNENKOMST.query.startsWith('?') ? BINNENKOMST.query.slice(1) : BINNENKOMST.query));
+  if (params.get('error') || params.get('error_code')) {
+    toon('callback-view');
+    mislukt('This reset link is no longer valid',
+      'Request a new password reset from the sign-in screen.');
+    return;
+  }
+  try {
+    const { data: s } = await sb.auth.getSession();
+    if (!s || !s.session) {
+      toon('callback-view');
+      mislukt('This reset link is no longer valid',
+        'Request a new password reset from the sign-in screen.');
+      return;
+    }
+  } catch (err) {
+    toon('callback-view');
+    mislukt('We could not reach DropHero',
+      'Check your connection and try again.');
+    console.error('recovery_session', err && err.message);
+    return;
+  }
+  toon('pw-reset-view');
+  staat('pw-reset');
+  $('npw').focus?.();
 }
 
 if (isTerugkomst()) {
-  verwerkTerugkomst();
+  if (isHerstel()) verwerkHerstel();
+  else verwerkTerugkomst();
 } else {
   staat('form');
 }
@@ -690,19 +772,33 @@ const STATUS_TEKST = {
   RETIRED: 'Retired'
 };
 
-function lijstHtml(accounts) {
-  if (!accounts || !accounts.length) return '<p class="muted" style="margin:0">Nothing yet.</p>';
-  return accounts.map((a) => {
-    const naam = String(a.username || '').replace(/[&<>"']/g, '');
-    const st = STATUS_TEKST[a.status] || 'Waiting for approval';
-    return '<div class="ttrow"><span class="tthandle">@' + naam + '</span>'
-         + '<span class="pill">' + st + '</span></div>';
-  }).join('');
+function vulLijst(el, accounts) {
+  el.replaceChildren();
+  if (!accounts || !accounts.length) {
+    const p = document.createElement('p');
+    p.className = 'muted';
+    p.style.margin = '0';
+    p.textContent = 'Nothing yet.';
+    el.appendChild(p);
+    return;
+  }
+  for (const a of accounts) {
+    const rij = document.createElement('div');
+    rij.className = 'ttrow';
+    const naam = document.createElement('span');
+    naam.className = 'tthandle';
+    naam.textContent = '@' + String(a.username || '');
+    const pil = document.createElement('span');
+    pil.className = 'pill';
+    pil.textContent = STATUS_TEKST[a.status] || 'Waiting for approval';
+    rij.append(naam, pil);
+    el.appendChild(rij);
+  }
 }
 
 function toonLijst(accounts) {
-  $('tt-list').innerHTML = lijstHtml(accounts);
-  $('added-list').innerHTML = lijstHtml(accounts);
+  vulLijst($('tt-list'), accounts);
+  vulLijst($('added-list'), accounts);
   $('tt-list-card').hidden = !(accounts && accounts.length);
 }
 
@@ -729,7 +825,7 @@ async function naarEigenStand({ nieuw = false } = {}) {
   }
 
   toonLijst(s.accounts);
-  if (nieuw) {
+  if (nieuw || (s.accounts && s.accounts.length)) {
     toon('added-view'); staat('added'); $('added-title').focus?.();
   } else {
     toon('tiktok-view'); staat('onboarding');
@@ -766,8 +862,13 @@ $('tt-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   $('tt-err-user').textContent = ''; $('tt-err-confirm').textContent = ''; $('tt-msg').textContent = '';
 
-  const naam = $('tt-user').value.trim().replace(/^@/, '');
+  const naam = $('tt-user').value.trim().replace(/^@/, '').toLowerCase();
   if (!naam) { $('tt-err-user').textContent = 'Fill in your TikTok username.'; $('tt-user').focus(); return; }
+  if (!/^[a-z0-9._]{2,24}$/.test(naam)) {
+    $('tt-err-user').textContent = 'That username does not look right.';
+    $('tt-user').focus();
+    return;
+  }
   const drie = $('tt-img').checked && $('tt-bio-ok').checked && $('tt-vid').checked;
   if (!drie) {
     $('tt-err-confirm').textContent =
@@ -800,6 +901,13 @@ $('tt-form').addEventListener('submit', async (e) => {
       if (data && data.reason === 'ALREADY_REGISTERED') {
         $('tt-err-user').textContent = data.error || 'That account is already registered.';
         $('tt-user').focus();
+        return;
+      }
+      if (data && (data.reason === 'ACCOUNT_LIMIT' || data.reason === 'RATE_LIMITED')) {
+        $('tt-msg').textContent = data.error
+          || (data.reason === 'ACCOUNT_LIMIT'
+            ? 'You have added the maximum number of TikTok accounts for now.'
+            : 'Please wait a few minutes before adding another account.');
         return;
       }
       $('tt-msg').textContent = (data && data.error)
@@ -878,15 +986,96 @@ $('signin-form').addEventListener('submit', async (e) => {
     const { error } = await sb.auth.signInWithPassword({ email, password: pw });
     knop.disabled = false; knop.textContent = 'Continue';
     if (error) {
-      // Eén zin voor elke afwijzing: of het adres bestaat, hoort een bezoeker niet te kunnen meten.
-      $('si-msg').textContent = 'That email and password do not match.';
+      $('si-msg').textContent = authFout(error);
       return;
     }
-    await naarEigenStand();
+    await rondMaken({ vanuit: 'resume' });
   } catch (err) {
     knop.disabled = false; knop.textContent = 'Continue';
     console.error('resume_signin', err && err.message);
     $('si-msg').textContent = 'Could not reach DropHero. Check your connection and try again.';
+  }
+});
+
+$('resend').addEventListener('click', async () => {
+  $('resend-msg').textContent = '';
+  if (!laatstEmail) {
+    $('resend-msg').textContent = 'Create your account again to get a new confirmation email.';
+    return;
+  }
+  const knop = $('resend');
+  knop.disabled = true;
+  try {
+    const { error } = await sb.auth.resend({ type: 'signup', email: laatstEmail });
+    knop.disabled = false;
+    $('resend-msg').textContent = error
+      ? authFout(error)
+      : 'A new confirmation email is on its way. Open the link in your browser, not inside the mail app.';
+  } catch (err) {
+    knop.disabled = false;
+    console.error('resend', err && err.message);
+    $('resend-msg').textContent = 'Could not reach DropHero. Check your connection and try again.';
+  }
+});
+
+$('si-forgot').addEventListener('click', async () => {
+  $('si-forgot-msg').textContent = '';
+  const email = $('si-email').value.trim();
+  if (emailProbleem(email)) {
+    $('si-forgot-msg').textContent = 'Fill in your email address first.';
+    return;
+  }
+  const knop = $('si-forgot');
+  knop.disabled = true;
+  try {
+    const terug = location.origin + location.pathname;
+    const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: terug });
+    knop.disabled = false;
+    $('si-forgot-msg').textContent = error
+      ? authFout(error)
+      : 'If that address has an account, a reset email is on its way.';
+  } catch (err) {
+    knop.disabled = false;
+    console.error('forgot_password', err && err.message);
+    $('si-forgot-msg').textContent = 'Could not reach DropHero. Check your connection and try again.';
+  }
+});
+
+$('npw').addEventListener('input', () => { $('err-npw').textContent = ''; });
+$('npw2').addEventListener('input', () => { $('err-npw2').textContent = ''; });
+
+$('pw-reset-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('err-npw').textContent = '';
+  $('err-npw2').textContent = '';
+  $('npw-msg').textContent = '';
+  const pw = $('npw').value;
+  const pw2 = $('npw2').value;
+  let email = '';
+  try {
+    const { data: u } = await sb.auth.getUser();
+    email = (u && u.user && u.user.email) || '';
+  } catch { /* de servercontrole blijft over */ }
+  if (!pw) { $('err-npw').textContent = 'Choose a password.'; $('npw').focus(); return; }
+  const zwak = passwordProblem(pw, { email });
+  if (zwak) { $('err-npw').textContent = zwak; $('npw').focus(); return; }
+  if (!pw2) { $('err-npw2').textContent = 'Repeat your password.'; $('npw2').focus(); return; }
+  if (pw !== pw2) { $('err-npw2').textContent = 'The two passwords differ.'; $('npw2').focus(); return; }
+
+  const knop = $('npw-go');
+  knop.disabled = true; knop.textContent = 'Saving…';
+  try {
+    const { error } = await sb.auth.updateUser({ password: pw });
+    knop.disabled = false; knop.textContent = 'Save password';
+    if (error) {
+      $('npw-msg').textContent = authFout(error);
+      return;
+    }
+    await rondMaken({ vanuit: 'resume' });
+  } catch (err) {
+    knop.disabled = false; knop.textContent = 'Save password';
+    console.error('password_update', err && err.message);
+    $('npw-msg').textContent = 'Could not reach DropHero. Check your connection and try again.';
   }
 });
 

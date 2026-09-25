@@ -637,8 +637,8 @@ export function workState({ pending, proof, queue, sendFrom } = {}) {
 // een rijtje cijfers.
 // ---------------------------------------------------------------------------------------------
 
-/** Acht tekens is de bodem die Supabase zelf al afdwingt; hier alleen herhaald voor de melding. */
-export const MIN_PASSWORD_LENGTH = 8;
+/** New passwords. Signing in with an older, shorter password still works. */
+export const MIN_PASSWORD_LENGTH = 12;
 
 // Alleen wachtwoorden die in werkelijke breach-lijsten structureel bovenaan staan.
 const NOTORIOUS = new Set([

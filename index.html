@@ -114,25 +114,14 @@
     <button data-p="ALL" aria-pressed="true">All time</button>
   </div>
 
-  <!-- GOEDKEUREN STAAT BOVENAAN, OMDAT HET HET ENIGE IS DAT IEMAND ANDERS TEGENHOUDT.
-       Alle andere blokken op deze pagina zijn iets om te lézen: een cijfer, een verloop, een
-       lijst. Dit blok is het enige waar een mens aan de andere kant op staat te wachten -- een
-       nieuwe DMer die zijn TikTok-account heeft ingericht en niet verder kan tot hier één keer
-       wordt getikt. Dat hoort niet halverwege een pagina met twintig kopjes te liggen.
-       Er komt geen tweede goedkeurpad bij: deze knop roept exact dezelfde beveiligde
-       dh_tiktok_admin_action(..., 'APPROVE', ...) aan als de knop verderop bij "TikTok accounts",
-       en leest uit dezelfde dh_tiktok_admin_overview(). Alleen de plek is nieuw. -->
-  <h2 id="approvals">TikTok approvals <small class="muted">waiting for you</small></h2>
-  <div class="card" id="ttapprovals"><div class="muted">loading…</div></div>
-
-  <h2>Overview</h2>
-  <div class="grid" id="kpis"></div>
-
   <h2>Needs your attention</h2>
   <div class="card" id="attention"><div class="muted">loading…</div></div>
 
   <h2>Interested creators <small class="muted">awaiting your follow-up</small></h2>
   <div class="card" id="interested"><div class="muted">loading…</div></div>
+
+  <h2>Overview</h2>
+  <div class="grid" id="kpis"></div>
 
   <h2>Budget</h2>
   <div class="card" id="budget"></div>
@@ -235,12 +224,13 @@
         style="background:var(--card);color:var(--ink);border:1px solid var(--line);
                border-radius:12px;padding:20px;max-width:380px;width:92vw">
   <h3 id="pw-title" style="margin:0 0 12px">Choose a new password</h3>
+  <p class="muted" style="margin:0 0 12px">At least 12 characters. Do not use DropHero, your email, or a common word such as admin or password.</p>
   <label class="k" for="pw-new">New password</label>
   <input id="pw-new" type="password" autocomplete="new-password" aria-label="New password"
-         minlength="8" style="width:100%">
+         minlength="12" style="width:100%">
   <label class="k" for="pw-confirm" style="display:block;margin-top:11px">Repeat it</label>
   <input id="pw-confirm" type="password" autocomplete="new-password"
-         aria-label="Repeat the new password" minlength="8" style="width:100%">
+         aria-label="Repeat the new password" minlength="12" style="width:100%">
   <p id="pw-msg" class="muted" style="margin:10px 0 0" role="status" aria-live="polite"></p>
   <div style="display:flex;gap:8px;margin-top:14px">
     <button id="pw-save">Save password</button>
@@ -570,7 +560,6 @@ async function bootOnce() {
     sb.rpc('dh_owner_supply_pipeline')
   ]);
   renderSupply(supply.data, supply.error);
-  renderApprovals(tiktok.data, tiktok.error);
   renderTikTok(tiktok.data, tiktok.error);
   renderPerformance(perf.data, perf.error);
   renderProofs(proofs.data, proofs.error);
@@ -1142,86 +1131,6 @@ const TT_REASON = {
   LOGIN_ISSUE: 'cannot log in', OTHER: 'reported a problem'
 };
 
-// ---------------------------------------------------------------------------------------------
-// DE WACHTRIJ BOVENAAN.
-//
-// Eén regel per account dat op WAITING_APPROVAL staat, uit dezelfde payload die het blok "TikTok
-// accounts" verderop ook gebruikt -- er wordt niets extra's opgehaald en er bestaat geen tweede
-// bron van waarheid over wie er wacht.
-//
-// Drie dingen moeten in één oogopslag kloppen: wíe het is (de naam is meteen de link naar het
-// profiel, zodat controleren één tik is in plaats van overtypen), dát het wacht (het pilletje),
-// en de knop -- breed genoeg om met een duim te raken zonder te mikken. Geen keuzelijstje, geen
-// "weet je het zeker": één tik is de handeling. De beveiliging zit in de RPC, niet in een popup,
-// en een popup die je twintig keer per week wegklikt beschermt allang niets meer.
-//
-// Mislukken mag hier geen alert() worden. Een alert zet de hele pagina stil voor iets dat één
-// regel betreft; de melding hoort bij de regel waar hij over gaat, zodat de rest van de wachtrij
-// gewoon doorwerkt.
-// ---------------------------------------------------------------------------------------------
-function renderApprovals(vas, err) {
-  if (err) {
-    $('ttapprovals').innerHTML = '<div class="muted">could not load — ' + esc(err.message) + '</div>';
-    return;
-  }
-
-  const wachtend = [];
-  for (const v of vas || []) {
-    for (const a of (v.accounts || [])) {
-      if (a.status === 'WAITING_APPROVAL') wachtend.push({ a: a, va: v.va_name || 'VA' });
-    }
-  }
-
-  if (!wachtend.length) {
-    $('ttapprovals').innerHTML = '<div class="muted">No TikTok accounts waiting for approval.</div>';
-    return;
-  }
-
-  $('ttapprovals').innerHTML = wachtend.map((w) =>
-    '<div class="row" data-pending="' + esc(w.a.account_id) + '">'
-    + '<span>'
-      + '<span style="font-size:15px">'
-        + profileAnchor(w.a.profile_url, '@' + w.a.username, w.a.username) + '</span>'
-      + ' <span class="pill warnp">waiting for approval</span>'
-      + '<div class="muted" style="margin-top:3px">' + esc(w.va) + '</div>'
-      + '<div class="muted" data-approvemsg="' + esc(w.a.account_id) + '" role="status"'
-        + ' aria-live="polite" style="margin-top:3px;color:var(--bad)"></div>'
-    + '</span>'
-    + '<button data-approve="' + esc(w.a.account_id) + '"'
-      + ' style="min-width:124px;min-height:48px;font-weight:600">Approve</button>'
-    + '</div>').join('');
-
-  for (const b of $('ttapprovals').querySelectorAll('[data-approve]')) {
-    b.onclick = async () => {
-      const id = b.dataset.approve;
-      const msg = $('ttapprovals').querySelector('[data-approvemsg="' + CSS.escape(id) + '"]');
-      if (msg) msg.textContent = '';
-      b.disabled = true;
-      b.textContent = 'Approving…';
-
-      // Exact dezelfde aanroep als de knop bij "TikTok accounts". p_value blijft null: goedkeuren
-      // kent geen getal, en niveau en limiet blijven wat de server ervan vindt (1 en 25).
-      const { data, error } = await sb.rpc('dh_tiktok_admin_action',
-        { p_account_id: id, p_action: 'APPROVE', p_value: null });
-
-      if (error || !data || !data.ok) {
-        b.disabled = false;
-        b.textContent = 'Approve';
-        const tekst = (error && error.message) || (data && data.error) || 'That did not work.';
-        if (msg) msg.textContent = tekst; else alert(tekst);
-        return;
-      }
-
-      // Pas wég na een geslaagde verversing. De regel laten verdwijnen op het moment dat de RPC
-      // "ok" zegt zou sneller voelen, maar dan staat er iets op het scherm dat niet meer uit de
-      // database komt. boot() haalt het overzicht opnieuw op en tekent deze lijst opnieuw: dit
-      // account staat dan niet meer op WAITING_APPROVAL en valt er vanzelf uit -- de andere
-      // wachtende accounts worden door deze handeling niet aangeraakt.
-      await boot();
-    };
-  }
-}
-
 function renderTikTok(vas, err) {
   if (err) { $('ttadmin').innerHTML = '<div class="muted">could not load — ' + esc(err.message) + '</div>'; return; }
   const rows = (vas || []).filter((v) => (v.accounts_total || 0) > 0);
@@ -1245,12 +1154,7 @@ function renderTikTok(vas, err) {
       + '<th>Controls</th></tr>'
       + (v.accounts || []).map((a) => {
           const [cls, word] = TT_STATE[a.display_state] || ['', a.display_state];
-          // DE NAAM IS DE LINK NAAR HET PROFIEL. Goedkeuren betekent kijken of het account er
-          // werkelijk uitziet zoals afgesproken, en dat was tot nu toe: naam overtypen, zelf een
-          // TikTok-adres bouwen, terugkomen. profileAnchor() gebruikt de profile_url die de server
-          // al meestuurt, laat 'm door dezelfde hostcontrole lopen als de creatorlijst, en opent
-          // hem in een nieuw tabblad -- zodat het overzicht blijft staan waar het stond.
-          return '<tr><td>' + profileAnchor(a.profile_url, '@' + a.username, a.username) + '</td>'
+          return '<tr><td>@' + esc(a.username) + '</td>'
             + '<td class="n">' + a.level + '</td>'
             + '<td class="n">' + a.sent_today + '/' + a.daily_limit + '</td>'
             + '<td><span class="pill ' + cls + '">' + esc(word) + '</span>'
@@ -1510,8 +1414,16 @@ async function renderProofs(rows, err) {
     for (const b of card.querySelectorAll('button[data-d]')) {
       b.onclick = async () => {
         for (const o of card.querySelectorAll('button[data-d]')) o.disabled = true;
-        const note = b.dataset.d === 'REJECT'
-          ? (prompt('Why is this being rejected? (the VA is not paid for it)') || null) : null;
+        let note = null;
+        if (b.dataset.d === 'REJECT') {
+          const typed = prompt('Why is this being rejected? (the VA is not paid for it)');
+          if (typed === null || typed.trim().length < 8) {
+            for (const o of card.querySelectorAll('button[data-d]')) o.disabled = false;
+            if (typed !== null) alert('Write a reason of at least 8 characters. Nothing was rejected.');
+            return;
+          }
+          note = typed.trim();
+        }
         const { data, error } = await sb.rpc('dh_admin_proof_decide',
           { p_proof_check_id: card.dataset.proof, p_decision: b.dataset.d, p_notes: note });
         if (error || !data?.ok) { alert(error?.message || data?.reason || 'failed'); boot(); return; }
