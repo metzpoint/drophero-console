@@ -107,9 +107,6 @@
   <p class="sub" id="asof">loading…</p>
   <div id="banners"></div>
 
-  <h2>TikTok accounts waiting for approval</h2>
-  <div class="card" id="approvals"><div class="muted">loading…</div></div>
-
   <div class="chips" id="periods">
     <button data-p="TODAY">Today</button>
     <button data-p="7D">7 days</button>
@@ -122,6 +119,17 @@
 
   <h2>Interested creators <small class="muted">awaiting your follow-up</small></h2>
   <div class="card" id="interested"><div class="muted">loading…</div></div>
+
+  <!-- GOEDKEUREN STAAT BOVENAAN, OMDAT HET HET ENIGE IS DAT IEMAND ANDERS TEGENHOUDT.
+       Alle andere blokken op deze pagina zijn iets om te lézen: een cijfer, een verloop, een
+       lijst. Dit blok is het enige waar een mens aan de andere kant op staat te wachten -- een
+       nieuwe DMer die zijn TikTok-account heeft ingericht en niet verder kan tot hier één keer
+       wordt getikt. Dat hoort niet halverwege een pagina met twintig kopjes te liggen.
+       Er komt geen tweede goedkeurpad bij: deze knop roept exact dezelfde beveiligde
+       dh_tiktok_admin_action(..., 'APPROVE', ...) aan als de knop verderop bij "TikTok accounts",
+       en leest uit dezelfde dh_tiktok_admin_overview(). Alleen de plek is nieuw. -->
+  <h2 id="approvals">TikTok approvals <small class="muted">waiting for you</small></h2>
+  <div class="card" id="ttapprovals"><div class="muted">loading…</div></div>
 
   <h2>Overview</h2>
   <div class="grid" id="kpis"></div>
@@ -1135,62 +1143,110 @@ const TT_REASON = {
   LOGIN_ISSUE: 'cannot log in', OTHER: 'reported a problem'
 };
 
-// APPROVALS, AT THE TOP, ON THEIR OWN.
+// ---------------------------------------------------------------------------------------------
+// DE WACHTRIJ BOVENAAN.
 //
-// Approving a new sender is the owner's most frequent daily action, and the per-VA table below is
-// the wrong place for it: it sits eight sections down, the button lives in a Controls column beside
-// five others, and on a phone that column is behind a horizontal scroll. So the waiting accounts get
-// their own section here -- the same accounts, read from the same dh_tiktok_admin_overview payload
-// the table already loads, and the same dh_tiktok_admin_action('APPROVE') call. There is no second
-// approval path: this is one more button onto the existing one.
+// Eén regel per account dat op WAITING_APPROVAL staat, uit dezelfde payload die het blok "TikTok
+// accounts" verderop ook gebruikt -- er wordt niets extra's opgehaald en er bestaat geen tweede
+// bron van waarheid over wie er wacht.
 //
-// No confirmation prompt. Approval is reversible from the table below (Pause), so a dialog would buy
-// nothing and cost a tap on every single approval.
+// Drie dingen moeten in één oogopslag kloppen: wíe het is (de naam is meteen de link naar het
+// profiel, zodat controleren één tik is in plaats van overtypen), dát het wacht (het pilletje),
+// en de knop -- breed genoeg om met een duim te raken zonder te mikken. Geen keuzelijstje, geen
+// "weet je het zeker": één tik is de handeling. De beveiliging zit in de RPC, niet in een popup,
+// en een popup die je twintig keer per week wegklikt beschermt allang niets meer.
+//
+// Mislukken mag hier geen alert() worden. Een alert zet de hele pagina stil voor iets dat één
+// regel betreft; de melding hoort bij de regel waar hij over gaat, zodat de rest van de wachtrij
+// gewoon doorwerkt.
+// ---------------------------------------------------------------------------------------------
+// ACCOUNTS WAARVAN DE SERVER AL "ok" ZEI, MAAR DIE NOG IN EEN ANTWOORD KUNNEN ZITTEN.
+//
+// Waarom dit bestaat. De pagina verversching zich ook zelf: setInterval elke 30 seconden, een
+// realtime-melding op dh_contact_tasks, en visibilitychange. boot() heeft een herintredingsslot --
+// loopt er al een, dan zet een tweede aanroep alleen bootRequested en wacht op de lopende. Die
+// lopende kan begonnen zijn VÓÓR het goedkeuren, en haalt dus een overzicht op waarin dit account
+// nog WAITING_APPROVAL is. Die oudere gegevens worden dan getekend: de regel komt terug, met een
+// nieuwe, ingeschakelde knop. In productie is dat precies gebeurd -- twee APPROVED-events op
+// @drophero04_2026, zes seconden na elkaar, omdat de regel terugkwam en er opnieuw geklikt werd.
+//
+// Een geslaagde goedkeuring is daarom een feit dat deze pagina onthoudt. De regel verdwijnt meteen
+// en kan door geen enkel laat antwoord terugkomen. Het is geen verzonnen toestand: de server heeft
+// ok gezegd en de nieuwe status meegestuurd.
+const goedgekeurdInDezeSessie = new Set();
+
 function renderApprovals(vas, err) {
   if (err) {
-    $('approvals').innerHTML = '<div class="muted">could not load — ' + esc(err.message) + '</div>';
-    return;
-  }
-  // The overview is grouped per VA; approvals are not. Flatten, keeping the VA name on each row so
-  // the owner still knows whose account is being approved.
-  const waiting = (vas || []).flatMap((v) =>
-    (v.accounts || []).filter((a) => a.status === 'WAITING_APPROVAL')
-      .map((a) => ({ a, va: v.va_name || 'VA' })));
-
-  if (!waiting.length) {
-    $('approvals').innerHTML = '<div class="muted">No TikTok accounts waiting for approval.</div>';
+    $('ttapprovals').innerHTML = '<div class="muted">could not load — ' + esc(err.message) + '</div>';
     return;
   }
 
-  $('approvals').innerHTML = waiting.map((w) =>
-    '<div class="row">'
-    + '<span><b style="font-size:15px">'
-      + profileAnchor(w.a.profile_url, '@' + w.a.username, w.a.username) + '</b>'
-      + '<span class="pill warnp" style="margin-left:8px">needs approval</span>'
-      + '<div class="muted">' + esc(w.va)
-      + (w.a.account_created_on ? ' · registered ' + esc(w.a.account_created_on) : '') + '</div>'
-      + '<div class="muted" data-approvemsg="' + esc(w.a.account_id) + '"></div></span>'
+  const wachtend = [];
+  const nogSteedsWachtend = new Set();
+  for (const v of vas || []) {
+    for (const a of (v.accounts || [])) {
+      if (a.status !== 'WAITING_APPROVAL') continue;
+      nogSteedsWachtend.add(a.account_id);
+      if (goedgekeurdInDezeSessie.has(a.account_id)) continue;
+      wachtend.push({ a: a, va: v.va_name || 'VA' });
+    }
+  }
+  // Zodra een verversing het account niet meer als wachtend opgeeft, is het onthouden niet langer
+  // nodig. Daarmee blijft de lijst ook kloppen als de eigenaar een account later opnieuw op
+  // WAITING_APPROVAL zet: dan is dit geen blijvende blinde vlek.
+  for (const id of goedgekeurdInDezeSessie) {
+    if (!nogSteedsWachtend.has(id)) goedgekeurdInDezeSessie.delete(id);
+  }
+
+  if (!wachtend.length) {
+    $('ttapprovals').innerHTML = '<div class="muted">No TikTok accounts waiting for approval.</div>';
+    return;
+  }
+
+  $('ttapprovals').innerHTML = wachtend.map((w) =>
+    '<div class="row" data-pending="' + esc(w.a.account_id) + '">'
+    + '<span>'
+      + '<span style="font-size:15px">'
+        + profileAnchor(w.a.profile_url, '@' + w.a.username, w.a.username) + '</span>'
+      + ' <span class="pill warnp">waiting for approval</span>'
+      + '<div class="muted" style="margin-top:3px">' + esc(w.va) + '</div>'
+      + '<div class="muted" data-approvemsg="' + esc(w.a.account_id) + '" role="status"'
+        + ' aria-live="polite" style="margin-top:3px;color:var(--bad)"></div>'
+    + '</span>'
     + '<button data-approve="' + esc(w.a.account_id) + '"'
-      + ' style="min-width:124px;min-height:48px;font-size:15px">Approve</button>'
+      + ' style="min-width:124px;min-height:48px;font-weight:600">Approve</button>'
     + '</div>').join('');
 
-  for (const b of $('approvals').querySelectorAll('[data-approve]')) {
+  for (const b of $('ttapprovals').querySelectorAll('[data-approve]')) {
     b.onclick = async () => {
       const id = b.dataset.approve;
-      const msg = $('approvals').querySelector('[data-approvemsg="' + CSS.escape(id) + '"]');
+      const msg = $('ttapprovals').querySelector('[data-approvemsg="' + CSS.escape(id) + '"]');
       if (msg) msg.textContent = '';
       b.disabled = true;
+      b.textContent = 'Approving…';
+
+      // Exact dezelfde aanroep als de knop bij "TikTok accounts". p_value blijft null: goedkeuren
+      // kent geen getal, en niveau en limiet blijven wat de server ervan vindt (1 en 25).
       const { data, error } = await sb.rpc('dh_tiktok_admin_action',
         { p_account_id: id, p_action: 'APPROVE', p_value: null });
+
       if (error || !data || !data.ok) {
         b.disabled = false;
-        // Inline rather than alert(): the failure belongs next to the row it is about, and an alert
-        // would hide which of several rows refused.
-        if (msg) {
-          msg.textContent = 'Not approved — '
-            + ((error && error.message) || (data && data.error) || 'that did not work.');
-        }
+        b.textContent = 'Approve';
+        const tekst = (error && error.message) || (data && data.error) || 'That did not work.';
+        if (msg) msg.textContent = tekst; else alert(tekst);
         return;
+      }
+
+      // Eerst vastleggen dát het gelukt is, dan pas verversen. Andersom -- alleen boot() aanroepen
+      // en de lijst laten beslissen -- was de fout: een verversing die al liep kon de regel met
+      // oudere gegevens terugzetten, en dan keurt de eigenaar hetzelfde account twee keer goed.
+      goedgekeurdInDezeSessie.add(id);
+      const rij = $('ttapprovals').querySelector('[data-pending="' + CSS.escape(id) + '"]');
+      if (rij) rij.remove();
+      // Anders staat er na de laatste goedkeuring een leeg vak in plaats van de zin.
+      if (!$('ttapprovals').querySelector('[data-pending]')) {
+        $('ttapprovals').innerHTML = '<div class="muted">No TikTok accounts waiting for approval.</div>';
       }
       await boot();
     };
