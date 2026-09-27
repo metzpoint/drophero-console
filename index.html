@@ -107,6 +107,9 @@
   <p class="sub" id="asof">loading…</p>
   <div id="banners"></div>
 
+  <h2>TikTok accounts waiting for approval</h2>
+  <div class="card" id="approvals"><div class="muted">loading…</div></div>
+
   <div class="chips" id="periods">
     <button data-p="TODAY">Today</button>
     <button data-p="7D">7 days</button>
@@ -560,6 +563,7 @@ async function bootOnce() {
     sb.rpc('dh_owner_supply_pipeline')
   ]);
   renderSupply(supply.data, supply.error);
+  renderApprovals(tiktok.data, tiktok.error);
   renderTikTok(tiktok.data, tiktok.error);
   renderPerformance(perf.data, perf.error);
   renderProofs(proofs.data, proofs.error);
@@ -1130,6 +1134,68 @@ const TT_REASON = {
   TEMPORARY_RESTRICTION: 'temporarily restricted', ACCOUNT_WARNING: 'account warning',
   LOGIN_ISSUE: 'cannot log in', OTHER: 'reported a problem'
 };
+
+// APPROVALS, AT THE TOP, ON THEIR OWN.
+//
+// Approving a new sender is the owner's most frequent daily action, and the per-VA table below is
+// the wrong place for it: it sits eight sections down, the button lives in a Controls column beside
+// five others, and on a phone that column is behind a horizontal scroll. So the waiting accounts get
+// their own section here -- the same accounts, read from the same dh_tiktok_admin_overview payload
+// the table already loads, and the same dh_tiktok_admin_action('APPROVE') call. There is no second
+// approval path: this is one more button onto the existing one.
+//
+// No confirmation prompt. Approval is reversible from the table below (Pause), so a dialog would buy
+// nothing and cost a tap on every single approval.
+function renderApprovals(vas, err) {
+  if (err) {
+    $('approvals').innerHTML = '<div class="muted">could not load — ' + esc(err.message) + '</div>';
+    return;
+  }
+  // The overview is grouped per VA; approvals are not. Flatten, keeping the VA name on each row so
+  // the owner still knows whose account is being approved.
+  const waiting = (vas || []).flatMap((v) =>
+    (v.accounts || []).filter((a) => a.status === 'WAITING_APPROVAL')
+      .map((a) => ({ a, va: v.va_name || 'VA' })));
+
+  if (!waiting.length) {
+    $('approvals').innerHTML = '<div class="muted">No TikTok accounts waiting for approval.</div>';
+    return;
+  }
+
+  $('approvals').innerHTML = waiting.map((w) =>
+    '<div class="row">'
+    + '<span><b style="font-size:15px">'
+      + profileAnchor(w.a.profile_url, '@' + w.a.username, w.a.username) + '</b>'
+      + '<span class="pill warnp" style="margin-left:8px">needs approval</span>'
+      + '<div class="muted">' + esc(w.va)
+      + (w.a.account_created_on ? ' · registered ' + esc(w.a.account_created_on) : '') + '</div>'
+      + '<div class="muted" data-approvemsg="' + esc(w.a.account_id) + '"></div></span>'
+    + '<button data-approve="' + esc(w.a.account_id) + '"'
+      + ' style="min-width:124px;min-height:48px;font-size:15px">Approve</button>'
+    + '</div>').join('');
+
+  for (const b of $('approvals').querySelectorAll('[data-approve]')) {
+    b.onclick = async () => {
+      const id = b.dataset.approve;
+      const msg = $('approvals').querySelector('[data-approvemsg="' + CSS.escape(id) + '"]');
+      if (msg) msg.textContent = '';
+      b.disabled = true;
+      const { data, error } = await sb.rpc('dh_tiktok_admin_action',
+        { p_account_id: id, p_action: 'APPROVE', p_value: null });
+      if (error || !data || !data.ok) {
+        b.disabled = false;
+        // Inline rather than alert(): the failure belongs next to the row it is about, and an alert
+        // would hide which of several rows refused.
+        if (msg) {
+          msg.textContent = 'Not approved — '
+            + ((error && error.message) || (data && data.error) || 'that did not work.');
+        }
+        return;
+      }
+      await boot();
+    };
+  }
+}
 
 function renderTikTok(vas, err) {
   if (err) { $('ttadmin').innerHTML = '<div class="muted">could not load — ' + esc(err.message) + '</div>'; return; }
