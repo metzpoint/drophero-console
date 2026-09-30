@@ -103,16 +103,38 @@
   .counts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-bottom:14px}
   .counts.two{grid-template-columns:repeat(2,minmax(0,1fr))}
   .counts div{min-width:0}
-  .counts b{display:block;overflow-wrap:anywhere}
-  @media(max-width:360px){.counts{gap:4px}.counts b{font-size:22px}}
+  @media(max-width:360px){.counts{gap:4px}}
   button:disabled{opacity:.55;cursor:default}
   .fieldmsg{font-size:13px;margin:6px 0 0}
   .fieldmsg.bad{color:var(--bad)}
   .fieldmsg.good{color:var(--ok)}
   .counts div{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:12px;
               text-align:center}
-  .counts b{display:block;font-size:26px;font-variant-numeric:tabular-nums;line-height:1.2}
-  .counts span{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+  /* Drie kolommen op een smalle telefoon: 12px links en rechts per kaart is 72px van de 360 die er
+     zijn. Iets minder ruimte om het getal heen levert precies de tekens op die het bedrag nodig
+     heeft om heel te blijven. */
+  @media(max-width:400px){.counts div{padding:12px 6px}}
+  /* GELD BREEKT NIET MIDDENIN HET GETAL.
+     Hier stond `overflow-wrap:anywhere` op .counts b, met de toelichting dat de getallen zouden
+     krimpen voordat ze afbreken. Ze krompen niet: `anywhere` mag juist BINNEN een woord afbreken, en
+     $1.30 kwam op 360-390px als "$1.3" met een losse "0" eronder te staan. Een bedrag dat over twee
+     regels valt leest als een ander bedrag -- dat is geen schoonheidsfoutje op een scherm waar
+     iemands loon staat.
+     De krimp die erbij hoorde, werkte ook nooit: die stond in @media(max-width:360px) BOVEN deze
+     regel, met dezelfde specificiteit, dus deze 26px overschreef hem altijd. Op 360px werd gemeten
+     26px, niet de bedoelde 22px.
+     Daarom nu: nooit afbreken, en meeschalen met de breedte in plaats van met één breekpunt.
+     Nagemeten op 320/360/375/390/412/430px: elk bedrag tot en met zes tekens ("$99.99") blijft heel
+     en binnen zijn kaart. Meer dan zes kan dit kopje niet opleveren -- het toont het dagtotaal, en
+     dat loopt bij $0,02 per DM en een dagcap van 60 nooit tot in de honderden. Vanaf 465px komt de
+     clamp op dezelfde 26px uit als voorheen, dus op een desktop verandert er niets. */
+  .counts b{display:block;white-space:nowrap;font-size:clamp(19px,5.6vw,26px);
+            font-variant-numeric:tabular-nums;line-height:1.2}
+  /* "EARNED TODAY" is één woord langer dan zijn buren en viel daardoor als enige over twee regels,
+     wat de drie kaarten ongelijk hoog maakte. Het label schaalt nu mee zodat alle drie op één regel
+     passen; het blijft hoofdletters, dezelfde kleur en dezelfde volgorde. */
+  .counts span{color:var(--dim);font-size:clamp(9px,2.9vw,11px);white-space:nowrap;
+               text-transform:uppercase;letter-spacing:.04em}
   #login{max-width:400px;margin:11vh auto}
   .warn{background:#3a2318;border:1px solid #6b3a1f;color:#ffcf9e;padding:12px;border-radius:11px;
         font-size:13px;margin:11px 0}
@@ -185,6 +207,10 @@
            margin:10px 0;font-size:14px;line-height:1.5;white-space:pre-wrap}
   .suggest .lbl{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.05em;
                 display:block;margin-bottom:5px}
+  /* Twee toestanden naast "er staat een zin": er wordt er een geschreven, en er komt er geen. Een
+     gestippelde rand en de doffe kleur zeggen dat zonder een technisch woord op het scherm. */
+  .suggest.pending{border-style:dashed;color:var(--dim)}
+  .suggest.none{border-style:dashed;color:var(--dim)}
   .money{display:grid;grid-template-columns:1fr auto;gap:6px 10px;align-items:baseline;
          font-size:15px;margin:3px 0}
   .money .amt{font-variant-numeric:tabular-nums;font-weight:650}
@@ -498,6 +524,7 @@ const search = { q: '', results: null, timer: 0, focused: false, sent: [] };
 let chatStatus = '';
 
 function resetVaMemory() {
+  clearAssistantState();
   queue = [];
   retryQueue = [];
   forceWorkTaskId = null;
@@ -766,6 +793,7 @@ $('forgotpw').onclick = async () => {
 // luisteraar zou de VA gewoon ingelogd raken zonder ooit een nieuw wachtwoord te kiezen -- en de
 // volgende keer weer buitengesloten staan, want het oude wachtwoord kennen ze nog steeds niet.
 sb.auth.onAuthStateChange((event) => {
+  if (event === 'SIGNED_OUT') clearAssistantState();
   if (event !== 'PASSWORD_RECOVERY') return;
   $('login').hidden = true;
   $('claim').hidden = true;
@@ -2140,6 +2168,166 @@ function drawDemand() {
 // DE VERSTUURDE BERICHTEN. Alles waar deze VA een DM naartoe heeft gestuurd, nieuwste eerst, met
 // per creator de verstuurde tekst en de knop om een antwoord te melden.
 // ---------------------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------------------------
+// DE AI-VERKOOPSUGGESTIE. ADVISEREND, EN VERDER NIETS.
+//
+// Wat hier bij komt is één zin per gesprek en een knop die hem kopieert. Er wordt niets verstuurd,
+// geen status gewijzigd, geen verdienste geboekt, geen creator aangeraakt: de DMer leest de zin,
+// kopieert hem als hij hem goed vindt, en typt hem zelf in TikTok. De edge function die hem schrijft
+// kan dat ook niet -- hij roept vier databasefuncties aan en geen andere.
+//
+// A transport failure may use an explicitly positive static fallback. A safety refusal or changed
+// reply context must withhold the old text, including the static fallback.
+//
+// KOSTEN. Twee dingen begrenzen ze, en allebei staan ze in de database en niet hier: de functie
+// claimt een antwoord voordat hij het model betaalt (dus tien tabbladen kosten één aanroep), en een
+// mislukking koelt dertig minuten af. Wat hier staat is alleen de bovengrens op het vragen: één
+// verzoek per gesprek per paginabezoek, en na een screenshot vijftien seconden lang elke twee.
+// ---------------------------------------------------------------------------------------------
+// Suggestions are advisory. Their cache belongs to one user and one exact reply context.
+const AI = { seen: new Map(), inflight: new Set(), requests: new Map(), queued: new Map(), waiting: new Set(), watch: null, epoch: 0 };
+const AI_POLL_EVERY_MS = 2000;
+const AI_POLL_WINDOW_MS = 15000;
+const AI_REQUEST_TIMEOUT_MS = 25000;
+const AI_DEBUG_IDS = false;
+function aiDebug(state) { if (AI_DEBUG_IDS) console.debug('[ai]', state); }
+function aiInput(row) { return JSON.stringify([row?.classification, row?.extracted_text, row?.reply_seq, row?.reported_at]); }
+function aiRow(id) {
+  return [...(view.chats || []), ...(search.results || []), ...(search.sent || [])].find(row => row.reply_event_id === id);
+}
+function clearAssistantState() {
+  AI.epoch += 1;
+  for (const request of AI.requests.values()) request.controller.abort();
+  if (AI.watch) clearTimeout(AI.watch.timer);
+  AI.watch = null;
+  AI.requests.clear(); AI.queued.clear(); AI.seen.clear(); AI.inflight.clear(); AI.waiting.clear();
+  seq.begin('ai');
+}
+function invalidateAssistant(id) {
+  const request = AI.requests.get(id);
+  if (request) request.controller.abort();
+  AI.requests.delete(id); AI.queued.delete(id); AI.inflight.delete(id); AI.seen.delete(id);
+}
+async function assistantFor(replyEventId, row = aiRow(replyEventId), timeoutMs = AI_REQUEST_TIMEOUT_MS) {
+  if (!replyEventId) return null;
+  const input = aiInput(row), user = pendingUserId, epoch = AI.epoch;
+  const cached = AI.seen.get(replyEventId);
+  if (cached && cached.input === input && cached.expires > Date.now()) return cached;
+  const running = AI.requests.get(replyEventId);
+  if (running && running.input === input) return running.promise;
+  if (running) invalidateAssistant(replyEventId);
+  const controller = new AbortController();
+  const request = { controller, input, promise: null };
+  AI.requests.set(replyEventId, request); AI.inflight.add(replyEventId);
+  request.promise = (async () => {
+    let timer, active = false, out = { text: null, withheld: false };
+    const expired = new Promise((_, reject) => { timer = setTimeout(() => {
+      controller.abort(); reject(new Error('suggestion timeout'));
+    }, Math.max(1, timeoutMs)); });
+    try {
+      out = await Promise.race([expired, (async () => {
+        const { data: { session } } = await sb.auth.getSession();
+        if (controller.signal.aborted || epoch !== AI.epoch || user !== pendingUserId) return { text: null, withheld: true };
+        const token = session?.access_token;
+        if (!token) return { text: null, withheld: true };
+        let body = null;
+        try {
+          const response = await fetch('https://aexomkitwnxvpqlmtrik.supabase.co/functions/v1/reply-assistant', {
+            method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token },
+            body: JSON.stringify({ reply_event_id: replyEventId }), signal: controller.signal
+          });
+          if (response.ok) body = await response.json();
+          else if (response.status === 401 || response.status === 403) return { text: null, withheld: true };
+        } catch { if (controller.signal.aborted) throw new Error('suggestion timeout'); }
+        if (body?.source === 'NO_SUGGESTION') return { text: null, withheld: true,
+          retryable: body.attempt_status === 'GENERATING' };
+        if (typeof body?.reply_text === 'string' && body.reply_text.trim()) {
+          return { text: body.reply_text.trim(), source: body.source, stage: body.stage };
+        }
+        // Only transport failure permits a lookup. An explicit safety decision above is final.
+        let lookup = sb.rpc('dh_reply_suggestion_get', { p_reply_event_id: replyEventId });
+        if (typeof lookup?.abortSignal === 'function') lookup = lookup.abortSignal(controller.signal);
+        const { data, error } = await lookup;
+        if (!error && data?.stale) return { text: null, withheld: true };
+        if (!error && data?.stored && typeof data.reply_text === 'string') {
+          return { text: data.reply_text, source: 'STORED', stage: data.stage };
+        }
+        return { text: null, withheld: false, retryable: body?.attempt_status === 'GENERATING' };
+      })()]);
+    } catch { out = { text: null, withheld: false }; }
+    finally {
+      clearTimeout(timer);
+      active = AI.requests.get(replyEventId) === request;
+      if (active) {
+        AI.requests.delete(replyEventId); AI.inflight.delete(replyEventId);
+      }
+    }
+    if (!active || epoch !== AI.epoch || user !== pendingUserId) return null;
+    const current = aiRow(replyEventId);
+    if (current && aiInput(current) !== input) return null;
+    if (row?.classification === 'NOT_INTERESTED' && out.stage !== 'DECLINED') out = { text: null, withheld: true };
+    const value = { ...out, input, expires: Date.now() + (out.text || out.withheld ? 300000 : 30000) };
+    AI.seen.set(replyEventId, value);
+    return value;
+  })();
+  return request.promise;
+}
+function suggestedFor(c) {
+  const id = c.reply_event_id, input = aiInput(c);
+  if (AI.inflight.has(id) || AI.waiting.has(id) || AI.queued.get(id)?.input === input) return { text: null, from: null, pending: true };
+  const ai = AI.seen.get(id);
+  if (ai && ai.input === input) {
+    if (ai.text) return { text: ai.text, from: ai.source || 'ASSISTANT', pending: false };
+    if (ai.withheld) return { text: null, from: null, pending: false };
+  }
+  // The broad legacy fallback is safe only for these explicit positive classifications.
+  if (c.suggestion && ['INTERESTED','SEND_DETAILS','FOLLOW_UP_LATER'].includes(c.classification)) {
+    return { text: c.suggestion, from: 'STATIC', pending: false };
+  }
+  return { text: null, from: null, pending: false };
+}
+async function primeAssistant(chats) {
+  const rows = (chats || []).filter(c => {
+    if (!c.reply_event_id || AI.waiting.has(c.reply_event_id)) return false;
+    const cached = AI.seen.get(c.reply_event_id), running = AI.requests.get(c.reply_event_id);
+    if (running?.input === aiInput(c) || AI.queued.get(c.reply_event_id)?.input === aiInput(c)) return false;
+    return !cached || cached.input !== aiInput(c) || cached.expires <= Date.now();
+  });
+  if (!rows.length) return;
+  const batch = {};
+  for (const c of rows) AI.queued.set(c.reply_event_id, { batch, input: aiInput(c) });
+  if (tab === 'conv') drawConversations();
+  for (const c of rows) {
+    if (AI.queued.get(c.reply_event_id)?.batch !== batch) continue;
+    await assistantFor(c.reply_event_id, c);
+    // A superseded batch can release only its own queued row.
+    if (AI.queued.get(c.reply_event_id)?.batch === batch) AI.queued.delete(c.reply_event_id);
+    if (tab === 'conv') drawConversations();
+  }
+}
+function startSuggestionWatch(replyEventId) {
+  if (!replyEventId) return;
+  if (AI.watch) { clearTimeout(AI.watch.timer); AI.waiting.delete(AI.watch.id); }
+  invalidateAssistant(replyEventId);
+  AI.waiting.add(replyEventId);
+  const watch = { id: replyEventId, timer: 0, started: Date.now() };
+  AI.watch = watch;
+  const tick = async () => {
+    if (AI.watch !== watch) return;
+    const remaining = AI_POLL_WINDOW_MS - (Date.now() - watch.started);
+    const found = remaining > 0 ? await assistantFor(replyEventId, aiRow(replyEventId), remaining) : null;
+    if (AI.watch !== watch) return;
+    if (found?.text || found?.withheld && !found?.retryable || Date.now() - watch.started >= AI_POLL_WINDOW_MS) {
+      AI.waiting.delete(replyEventId); AI.watch = null;
+    } else {
+      AI.seen.delete(replyEventId); watch.timer = setTimeout(tick, AI_POLL_EVERY_MS);
+    }
+    if (tab === 'conv') drawConversations();
+  };
+  watch.timer = setTimeout(tick, AI_POLL_EVERY_MS);
+  if (tab === 'conv') drawConversations();
+}
+
 /**
  * A creator who actually answered, with what to say back.
  *
@@ -2164,9 +2352,23 @@ function chatHtml(c) {
         + String(c.classification === v) + '">' + label + '</button>').join('')
     + '</div>';
 
-  if (c.suggestion) {
-    h += '<div class="suggest"><span class="lbl">Suggested reply</span>' + esc(c.suggestion) + '</div>'
-      + '<button class="sm" data-copy-reply="' + esc(c.reply_event_id) + '">Copy this reply</button>';
+  // WAT DE DMER LEEST. Eén zin, of één gewone regel dat er nog geen is. Het label is in alle drie de
+  // gevallen hetzelfde: waar de zin vandaan komt, is niet hun probleem.
+  const sug = suggestedFor(c);
+  if (sug.text) {
+    h += '<div class="suggest"><span class="lbl">Suggested reply</span>' + esc(sug.text) + '</div>'
+      + '<button class="sm" data-copy-reply="' + esc(c.reply_event_id) + '">COPY REPLY</button>';
+  } else if (sug.pending) {
+    // De knop staat er en is uitgeschakeld in plaats van afwezig: er valt nog niets te kopiëren, en
+    // er valt straks niets te zoeken. Een uitgeschakelde knop kan geen halve zin op het klembord zetten.
+    h += '<div class="suggest pending"><span class="lbl">Suggested reply</span>'
+      + 'Creating a reply suggestion…</div>'
+      + '<button class="sm" disabled aria-disabled="true" data-copy-pending="'
+      + esc(c.reply_event_id) + '">COPY REPLY</button>'
+      + '<p class="muted" style="margin:6px 0 0">You can carry on and come back to this one later.</p>';
+  } else {
+    h += '<div class="suggest none"><span class="lbl">Suggested reply</span>'
+      + 'No suggested reply available for this one — answer it in your own words.</div>';
   }
 
   // SECTION M, ON SCREEN. Not shown merely because a reply exists -- only once the creator has said
@@ -2206,27 +2408,35 @@ function wireChats(rows) {
     for (const b of box.querySelectorAll('button')) {
       b.onclick = async () => {
         for (const choice of box.querySelectorAll('button')) choice.disabled = true;
-        const { data, error } = await sb.rpc('dh_reply_classify',
-          { p_reply_event_id: box.dataset.cls, p_classification: b.dataset.v });
-        if (error || !data?.ok) {
-          for (const choice of box.querySelectorAll('button')) choice.disabled = false;
+        try {
+          const { data, error } = await sb.rpc('dh_reply_classify',
+            { p_reply_event_id: box.dataset.cls, p_classification: b.dataset.v });
+          if (error || !data?.ok) throw new Error('classification unavailable');
+          invalidateAssistant(box.dataset.cls);
+          await loadMoney(); render();
+        } catch {
           notice('Could not save that — try again.');
-          return;
+        } finally {
+          for (const choice of box.querySelectorAll('button')) choice.disabled = false;
         }
-        await loadMoney(); render();
       };
     }
   }
   for (const b of list.querySelectorAll('[data-copy-reply]')) {
     b.onclick = async () => {
+      // KOPIËREN IS KOPIËREN EN VERDER NIETS. Er gaat geen RPC uit, er verandert geen status, er
+      // wordt niets weggeschreven en de creator wordt niet aangeraakt. De DMer plakt hem zelf in
+      // TikTok, op zijn eigen moment, en mag hem eerst aanpassen. Dezelfde zin die op het scherm
+      // staat gaat naar het klembord -- suggestedFor is de enige bron van beide.
       const row = rows.find((r) => r.reply_event_id === b.dataset.copyReply);
-      if (!row?.suggestion) return;
+      const text = row ? suggestedFor(row).text : null;
+      if (!text) return;
       b.disabled = true;
-      const r = await copyNow(row.suggestion);
+      const r = await copyNow(text);
       b.disabled = false;
       if (r.ok) notice('Reply copied — paste it in TikTok.');
       else {
-        prompt('Automatic copy was blocked. Copy this reply from the field below.', row.suggestion);
+        prompt('Automatic copy was blocked. Copy this reply from the field below.', text);
         notice('Use the reply shown in the copy field.');
       }
     };
@@ -2306,6 +2516,9 @@ function drawConversations() {
   };
   wireRows(rows);
   wireChats(chats);
+  // Afvuren en verder gaan: de lijst staat al met de goedgekeurde zinnen op het scherm, en tekent
+  // zichzelf opnieuw zodra de assistent per gesprek geantwoord heeft.
+  primeAssistant(chats);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -2881,6 +3094,11 @@ $('rp-send').onclick = async () => {
   if (pending && pending.task_id === replyCtx.task_id) setPending(null);
   $('replydlg').close();
   say(data.is_first ? 'Saved — first reply from this creator.' : 'Saved.');
+  // De screenshot is binnen en het antwoord is geclassificeerd, dus nu pas kan er een zin geschreven
+  // worden. Hier gaan kijken in plaats van de DMer laten verversen -- begrensd op vijftien seconden.
+  // Dit staat na close() en voor boot(): het vak toont de wachttoestand zodra de lijst opnieuw
+  // getekend wordt, en niet de zin die over de vórige stand van dit gesprek ging.
+  startSuggestionWatch(data.reply_event_id);
   await boot();
 };
 
