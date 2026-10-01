@@ -215,6 +215,9 @@ export const REASON_TEXT = {
     + 'Tell Rico — this has to be sorted out by hand so nobody is paid the wrong amount.',
   ALREADY_DECIDED: 'That photo has already been checked — nothing more to send.',
   NO_IMAGE: 'No photo was attached. Pick one and send again.',
+  NOT_YOUR_PROOF_IMAGE: 'That photo does not belong to this message. Upload a fresh screenshot here.',
+  IMAGE_NOT_UPLOADED: 'The photo has not finished uploading. Try the upload again.',
+  DM_NOT_READY: 'This message is not ready to send. Refresh your Work tab.',
   NO_SUCH_REPLY: 'We could not find that reply any more.',
   NOT_YOUR_REPLY: 'That reply belongs to someone else now.'
 };

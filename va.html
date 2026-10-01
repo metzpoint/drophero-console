@@ -1664,7 +1664,7 @@ function drawWork() {
     + '<div class="counts" style="margin:0">'
     + '<div><b>' + sentToday + '</b><span>Sent today</span></div>'
     + '<div><b>' + leftToday + '</b><span>Left today</span></div>'
-    + '<div><b>' + usd(earnedToday) + '</b><span>Earned today</span></div>'
+    + '<div><b>' + usd(earnedToday) + '</b><span>Recorded today</span></div>'
     + '</div>'
     + '<p class="muted" style="margin:10px 0 0">Sending from ' + acctName + '</p>'
     + (capacity && capacity.sendable_now === 0 && capacity.limiting_factor === 'ACCOUNT_CAPACITY'
@@ -2081,7 +2081,7 @@ function wireWorkButtons() {
               workEl.innerHTML = '<div class="card top" style="margin-bottom:14px">'
                 + '<button class="good full" style="background:#1e5e46;border-color:#2b7d5f;'
                 + 'color:#b6f0d5;padding:18px;font-size:18px;min-height:64px;'
-                + 'cursor:default;opacity:0.8">DM SENT</button></div>';
+                + 'cursor:default;opacity:0.8">' + (r.data?.proof_required ? 'DM LOGGED — PHOTO REQUIRED' : 'DM SENT') + '</button></div>';
             }
             const cooldown = r.data?.cooldown_seconds || 30;
             await new Promise((res2) => setTimeout(res2, Math.max(300, Math.min(cooldown, 2) * 1000)));
@@ -2179,7 +2179,7 @@ function drawDemand() {
   $('demand').innerHTML =
     '<div class="demand"><h3>Quick check</h3>'
     + '<p style="margin:0 0 10px">Send us a photo of your chat with ' + who
-    + ' so we can confirm the message went out. We ask for about one in twenty.</p>'
+    + ' so we can confirm the message went out. Every new DM needs a screenshot. Its payment stays pending until approval.</p>'
     + '<button class="good" id="demand-go" style="background:#7d5a1e;border-color:#a8781f;'
     + 'color:#fff3dc">Send the photo</button></div>';
   $('demand-go').onclick = () => openProof(p);
@@ -2583,7 +2583,7 @@ function drawEarnings() {
     + '<div class="money" style="margin-top:9px"><span>Confirmed</span><span class="amt">'
     + usd(m.approved_cents) + '</span></div>'
     + (m.pending_cents > 0
-        ? '<div class="money"><span>Waiting on a photo check</span><span class="amt">'
+        ? '<div class="money"><span>Pending photo approval</span><span class="amt">'
           + usd(m.pending_cents) + '</span></div>'
         : '')
     + '</div>'
@@ -2855,8 +2855,9 @@ function openProof(p) {
   $('pr-title').textContent = p.proof_kind === 'REPLY' ? 'Photo of the reply' : 'Quick check';
   $('pr-why').textContent = p.proof_kind === 'REPLY'
     ? 'A photo of the chat so we can confirm the reply and release your bonus.'
-    : 'We check about one message in twenty. Send a photo of the chat showing your message, and '
-      + 'you can carry on.';
+    : 'For every new DM, send a photo showing the creator’s handle and the full message as sent—not a draft or failed message. '
+      + 'You can continue after uploading. This DM’s payment stays pending until the photo is approved.'
+      + (p.dm_message ? '\n\nExpected message: ' + p.dm_message : '');
   resetProofSelection();
   $('pr-msg').textContent = '';
   $('proofdlg').showModal();

@@ -43,6 +43,8 @@
   input,select,textarea{font:inherit;background:#10161e;color:var(--ink);border:1px solid var(--line);
                border-radius:11px;padding:10px;min-height:44px;width:100%;max-width:100%}
   textarea{min-height:96px;line-height:1.4}
+  .proofcheck{display:flex;gap:8px;align-items:center;min-height:44px;padding:6px 0}
+  .proofcheck input{width:20px;min-height:20px;height:20px;padding:0;flex:0 0 20px}
   .muted{color:var(--dim);font-size:12px}
   .bar{height:7px;background:#10161e;border-radius:6px;overflow:hidden;margin-top:9px}
   .bar>i{display:block;height:100%;background:var(--accent)}
@@ -567,7 +569,7 @@ async function bootOnce() {
     sb.rpc('dh_owner_attention'), sb.rpc('dh_owner_interested_creators'),
     sb.rpc('dh_owner_va_admin'), sb.rpc('dh_owner_sourcing_settings'), sb.rpc('dh_owner_integrations'),
     sb.rpc('dh_tiktok_admin_overview'),
-    sb.rpc('dh_admin_va_performance'), sb.rpc('dh_admin_proof_queue', { p_limit: 60 }),
+    sb.rpc('dh_admin_va_performance'), sb.rpc('dh_admin_proof_queue', { p_limit: 60, p_status: proofFilter.status, p_kind: proofFilter.kind }),
     sb.rpc('dh_admin_payout_rows'), sb.rpc('dh_tiktok_template_metrics'),
     sb.rpc('dh_tiktok_block_rate_by_sender'),
     sb.rpc('dh_owner_supply_pipeline'), sb.rpc('dh_owner_va_activity')
@@ -1489,11 +1491,15 @@ function renderPerformance(rows, err) {
 // per image is a queue nobody works. Signed URLs are fetched per row because the bucket is private
 // and the images must not become public to be reviewable.
 // ---------------------------------------------------------------------------------------------
-let proofFilter = { status: 'PENDING_REVIEW', kind: null };
+let proofFilter = { status: null, kind: null };
 
 async function renderProofs(rows, err) {
   if (err) { $('proofq').innerHTML = '<div class="muted">could not load — ' + esc(err.message) + '</div>'; return; }
   rows = rows || [];
+  const { data: contexts, error: contextError } = await sb.rpc('dh_owner_send_proof_contexts', {
+    p_ids: rows.filter(r => r.proof_kind === 'SEND').map(r => r.proof_check_id)
+  });
+  const contextById = new Map((Array.isArray(contexts) ? contexts : []).map(r => [r.proof_check_id,r]));
 
   const chip = (label, on, key, val) =>
     '<button class="sm' + (on ? ' good' : '') + '" data-f="' + key + '" data-v="'
@@ -1501,6 +1507,7 @@ async function renderProofs(rows, err) {
 
   const filters = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">'
     + chip('Waiting', proofFilter.status === 'PENDING_REVIEW', 'status', 'PENDING_REVIEW')
+    + chip('Ready to approve', proofFilter.status === 'LIKELY_VALID', 'status', 'LIKELY_VALID')
     + chip('Needs a look', proofFilter.status === 'NEEDS_REVIEW', 'status', 'NEEDS_REVIEW')
     + chip('Not uploaded', proofFilter.status === 'PENDING_UPLOAD', 'status', 'PENDING_UPLOAD')
     + chip('Rejected', proofFilter.status === 'REJECTED', 'status', 'REJECTED')
@@ -1526,6 +1533,14 @@ async function renderProofs(rows, err) {
         + (r.image_path ? '<img data-img="' + esc(r.image_path) + '" hidden alt="proof screenshot"'
             + ' style="max-width:320px;width:100%;border-radius:10px;border:1px solid var(--line)">'
             : '<div class="muted">no screenshot yet</div>')
+        + (contextById.has(r.proof_check_id)
+          ? '<p><b>Expected outgoing message</b></p><p style="white-space:pre-wrap">' + esc(contextById.get(r.proof_check_id).message) + '</p>'
+            + '<p class="muted">Claimed ' + esc(new Date(contextById.get(r.proof_check_id).claimed_at).toLocaleString())
+            + (contextById.get(r.proof_check_id).image_duplicate_of ? ' · REUSED SCREENSHOT: upload different evidence before approval' : !contextById.get(r.proof_check_id).image_sha256 ? ' · Image integrity check pending' : '') + '</p>'
+            + '<label class="proofcheck"><input type="checkbox" data-check="recipient"> Correct creator handle</label>'
+            + '<label class="proofcheck"><input type="checkbox" data-check="message"> Complete message matches the expected text</label>'
+            + '<label class="proofcheck"><input type="checkbox" data-check="sent"> Message is visibly sent, not a draft or failed send</label>'
+          : '')
         + '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:9px">'
         + '<button class="sm good" data-d="APPROVE">Approve</button>'
         + '<button class="sm bad" data-d="REJECT">Reject</button>'
@@ -1557,6 +1572,14 @@ async function renderProofs(rows, err) {
   for (const card of $('proofq').querySelectorAll('[data-proof]')) {
     for (const b of card.querySelectorAll('button[data-d]')) {
       b.onclick = async () => {
+        const context = contextById.get(card.dataset.proof);
+        if (b.dataset.d === 'APPROVE' && contextError) { alert('Evidence context could not load. Refresh before approving.'); return; }
+        if (b.dataset.d === 'APPROVE' && context) {
+          if (!context.image_sha256 || context.image_duplicate_of) { alert('The image integrity check must pass before approval.'); return; }
+          if (!['recipient','message','sent'].every(key => card.querySelector('[data-check="' + key + '"]').checked)) {
+            alert('Check the recipient, complete message and sent status in the screenshot first.'); return;
+          }
+        }
         for (const o of card.querySelectorAll('button[data-d]')) o.disabled = true;
         let note = null;
         if (b.dataset.d === 'REJECT') {
@@ -1568,8 +1591,11 @@ async function renderProofs(rows, err) {
           }
           note = typed.trim();
         }
-        const { data, error } = await sb.rpc('dh_admin_proof_decide',
-          { p_proof_check_id: card.dataset.proof, p_decision: b.dataset.d, p_notes: note });
+        const { data, error } = await sb.rpc(context ? 'dh_admin_send_proof_decide' : 'dh_admin_proof_decide',
+          { p_proof_check_id: card.dataset.proof, p_decision: b.dataset.d, p_notes: note,
+            ...(context ? {p_image_sha256:context.image_sha256,p_verified_recipient:card.querySelector('[data-check="recipient"]').checked,
+              p_verified_message:card.querySelector('[data-check="message"]').checked,
+              p_verified_sent:card.querySelector('[data-check="sent"]').checked} : {}) });
         if (error || !data?.ok) { alert(error?.message || data?.reason || 'failed'); boot(); return; }
         boot();
       };
