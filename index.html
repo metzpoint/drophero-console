@@ -79,6 +79,22 @@
   .stack{display:flex;flex-direction:column;gap:9px}
   .two{display:grid;grid-template-columns:1fr 1fr;gap:9px}
   @media(min-width:720px){.grid{grid-template-columns:repeat(4,1fr)} body{max-width:1080px;margin:0 auto}}
+
+  .adminbrand{font-size:24px;margin-top:8px}.adminbrand span{color:var(--dim);font-weight:400;font-size:16px}
+  .adminnav{position:sticky;top:0;z-index:20;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;padding:9px 0;background:var(--bg);border-bottom:1px solid var(--line)}
+  .adminnav a{display:flex;justify-content:center;align-items:center;min-height:44px;padding:8px 4px;border:1px solid var(--line);border-radius:10px;color:var(--dim);font-size:13px;text-align:center;overflow-wrap:anywhere}
+  .adminnav a[aria-current="page"]{background:#18314f;border-color:var(--accent);color:var(--ink)}
+  .adminnav a:focus-visible,.quickcard:focus-visible,.showall:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+  .workspace-heading{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0}.showall{display:flex;align-items:center;min-height:44px;font-size:12px}
+  .sectionhead{padding:12px 0 6px}.sectionhead h2{font-size:21px;color:var(--ink);text-transform:none;letter-spacing:0;margin:0}.sectionhead p{font-size:13px;color:var(--dim);margin:6px 0 12px}
+  .quickgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-bottom:20px}
+  .quickcard{display:flex;flex-direction:column;gap:6px;padding:14px;background:var(--card);border:1px solid var(--line);border-radius:14px;min-width:0;color:var(--ink);overflow-wrap:anywhere}
+  .quickcard span{font-size:12px;color:var(--dim)}.quickcard b{font-size:24px}.quickcard small{color:var(--accent);font-size:12px}
+  [data-admin-section],[data-admin-section] h2,[data-admin-section] .card{scroll-margin-top:145px}
+  @media(min-width:720px){.adminnav{grid-template-columns:repeat(6,minmax(0,1fr))}.quickgrid{grid-template-columns:repeat(4,minmax(0,1fr))}[data-admin-section],[data-admin-section] h2,[data-admin-section] .card{scroll-margin-top:82px}}
+
+  .activity-cards{display:none}.activity-card{border:1px solid var(--line);border-radius:12px;padding:12px;min-width:0}.activity-card .row{padding-top:0}.activity-card .row b{overflow-wrap:anywhere;min-width:0}.activity-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px}.activity-metrics span{color:var(--dim);font-size:11px}.activity-metrics b{display:block;font-size:18px;color:var(--ink);margin-top:4px;overflow-wrap:anywhere}
+  @media(max-width:600px){.activity-cards{display:grid;gap:10px}.activity-table{display:none}}
 </style></head><body>
 
 <div id="login" hidden>
@@ -105,51 +121,42 @@
 </div>
 
 <main id="app" hidden>
-  <h1>DropHero</h1>
+  <h1 class="adminbrand">DropHero <span>Admin</span></h1>
   <p class="sub" id="asof">loading…</p>
   <div id="banners"></div>
 
+
+
+<nav class="adminnav" aria-label="Admin sections"><a href="#overview" data-admin-nav="overview">Overview</a><a href="#team" data-admin-nav="team">Team</a><a href="#conversations" data-admin-nav="conversations">Conversations</a><a href="#payments" data-admin-nav="payments">Payments</a><a href="#creators" data-admin-nav="creators">Creators</a><a href="#settings" data-admin-nav="settings">Settings & sourcing</a></nav>
+<div class="workspace-heading"><span class="muted" id="admin-view-label">Overview</span><a class="showall" href="#all" id="admin-show-all">Show all sections</a></div>
+<section id="section-overview" data-admin-section="overview" aria-labelledby="title-overview">
+<header class="sectionhead"><h2 id="title-overview">Overview</h2><p>Your daily decisions in one place.</p></header>
+<div class="quickgrid" id="admin-actions"><a href="#approvals" class="quickcard"><span>TikTok approvals</span><b id="action-approvals">—</b><small>Review applications</small></a><a href="#conversations" class="quickcard"><span>Creator follow-ups</span><b id="action-chats">—</b><small>Open conversations</small></a><a href="#proofs" class="quickcard"><span>Evidence in current view</span><b id="action-proofs">—</b><small>Check screenshots</small></a><a href="#payments" class="quickcard"><span>Ready to pay</span><b id="action-payouts">—</b><small>Review balances</small></a></div>
   <div class="chips" id="periods">
     <button data-p="TODAY">Today</button>
     <button data-p="7D">7 days</button>
     <button data-p="30D">30 days</button>
     <button data-p="ALL" aria-pressed="true">All time</button>
   </div>
+  <h2>Overview</h2>
+  <div class="grid" id="kpis"></div>
 
   <h2>Needs your attention</h2>
   <div class="card" id="attention"><div class="muted">loading…</div></div>
 
-  <h2>Interested creators <small class="muted">awaiting your follow-up</small></h2>
-  <div class="card" id="interested"><div class="muted">loading…</div></div>
-
-  <!-- GOEDKEUREN STAAT BOVENAAN, OMDAT HET HET ENIGE IS DAT IEMAND ANDERS TEGENHOUDT.
-       Alle andere blokken op deze pagina zijn iets om te lézen: een cijfer, een verloop, een
-       lijst. Dit blok is het enige waar een mens aan de andere kant op staat te wachten -- een
-       nieuwe DMer die zijn TikTok-account heeft ingericht en niet verder kan tot hier één keer
-       wordt getikt. Dat hoort niet halverwege een pagina met twintig kopjes te liggen.
-       Er komt geen tweede goedkeurpad bij: deze knop roept exact dezelfde beveiligde
-       dh_tiktok_admin_action(..., 'APPROVE', ...) aan als de knop verderop bij "TikTok accounts",
-       en leest uit dezelfde dh_tiktok_admin_overview(). Alleen de plek is nieuw. -->
+</section>
+<section id="section-team" data-admin-section="team" aria-labelledby="title-team" hidden>
+<header class="sectionhead"><h2 id="title-team">Team</h2><p>Approve accounts, follow activity and review response rates.</p></header>
   <h2 id="approvals">TikTok approvals <small class="muted">waiting for you</small></h2>
   <div class="card" id="ttapprovals"><div class="muted">loading…</div></div>
 
-  <h2>Overview</h2>
-  <div class="grid" id="kpis"></div>
+  <h2 id="activity">DMer activity <small class="muted">portal use and recorded work</small></h2>
+  <div class="card" id="vaactivity"><div class="muted">loading…</div></div>
+  <h2 id="performance">VA performance <small class="muted">volume and quality</small></h2>
+  <div class="card" id="vaperf"><div class="muted">loading…</div></div>
 
-  <h2>Budget</h2>
-  <div class="card" id="budget"></div>
-
-  <h2>Supply pipeline <small class="muted">discovery to READY, continuous</small></h2>
-  <div class="card" id="supply"><div class="muted">loading…</div></div>
-
-  <h2>Funnel</h2>
-  <div class="card" id="funnel"></div>
-
-  <h2>Full funnel <small class="muted">all time</small></h2>
-  <div class="card" id="fullfunnel"><div class="muted">loading…</div></div>
-
-  <h2>Backlog &amp; generation</h2>
-  <div class="card" id="production"><div class="muted">loading…</div></div>
+  <h2>VAs</h2>
+  <div class="card" id="vas"></div>
 
   <h2 id="tiktok">TikTok accounts <small class="muted">per VA</small></h2>
   <div class="card" id="ttadmin"><div class="muted">loading…</div></div>
@@ -157,20 +164,24 @@
   <h2>TikTok moderation <small class="muted">block rate by sender, 24h and 7d</small></h2>
   <div class="card" id="modblock"><div class="muted">loading…</div></div>
 
-  <h2>First-touch templates <small class="muted">what gets sent, and what gets refused</small></h2>
-  <div class="card" id="templates"><div class="muted">loading…</div></div>
-
-  <h2 id="activity">DMer activity <small class="muted">portal use and recorded work</small></h2>
-  <div class="card" id="vaactivity"><div class="muted">loading…</div></div>
-  <h2 id="performance">VA performance <small class="muted">volume and quality</small></h2>
-  <div class="card" id="vaperf"><div class="muted">loading…</div></div>
+</section>
+<section id="section-conversations" data-admin-section="conversations" aria-labelledby="title-conversations" hidden>
+<header class="sectionhead"><h2 id="title-conversations">Conversations & evidence</h2><p>Follow up with interested creators and review screenshots.</p></header>
+  <h2>Interested creators <small class="muted">awaiting your follow-up</small></h2>
+  <div class="card" id="interested"><div class="muted">loading…</div></div>
 
   <h2 id="proofs">Proof checks <small class="muted">send and reply screenshots</small></h2>
   <div class="card" id="proofq"><div class="muted">loading…</div></div>
 
+</section>
+<section id="section-payments" data-admin-section="payments" aria-labelledby="title-payments" hidden>
+<header class="sectionhead"><h2 id="title-payments">Payments</h2><p>Review balances and record completed payouts.</p></header>
   <h2 id="payouts-title">Payouts</h2>
   <div class="card" id="payouts"><div class="muted">loading…</div></div>
 
+</section>
+<section id="section-creators" data-admin-section="creators" aria-labelledby="title-creators" hidden>
+<header class="sectionhead"><h2 id="title-creators">Creators & DM stock</h2><p>Search creators, check available stock and follow the outreach funnel.</p></header>
   <h2 id="directory">Creator directory</h2>
   <div class="card">
     <label class="k" for="q">Search creators</label>
@@ -200,8 +211,26 @@
             <button class="sm" id="next">More</button></span></div>
   </div>
 
-  <h2>VAs</h2>
-  <div class="card" id="vas"></div>
+  <h2>Supply pipeline <small class="muted">discovery to READY, continuous</small></h2>
+  <div class="card" id="supply"><div class="muted">loading…</div></div>
+
+  <h2>Backlog &amp; generation</h2>
+  <div class="card" id="production"><div class="muted">loading…</div></div>
+
+  <h2>Funnel</h2>
+  <div class="card" id="funnel"></div>
+
+  <h2>Full funnel <small class="muted">all time</small></h2>
+  <div class="card" id="fullfunnel"><div class="muted">loading…</div></div>
+
+  <h2>First-touch templates <small class="muted">what gets sent, and what gets refused</small></h2>
+  <div class="card" id="templates"><div class="muted">loading…</div></div>
+
+</section>
+<section id="section-settings" data-admin-section="settings" aria-labelledby="title-settings" hidden>
+<header class="sectionhead"><h2 id="title-settings">Settings & sourcing</h2><p>Manage budgets, sourcing and integrations.</p></header>
+  <h2>Budget</h2>
+  <div class="card" id="budget"></div>
 
   <h2>Sourcing</h2>
   <div class="card" id="sourcing"></div>
@@ -212,6 +241,7 @@
   <h2>Integrations</h2>
   <div class="card" id="integrations"></div>
 
+</section>
   <p style="margin-top:26px"><button id="signout" style="width:100%">Sign out</button></p>
   <p class="muted" id="sessionmsg" role="status" aria-live="polite"></p>
   <p class="muted" id="whoami"></p>
@@ -480,9 +510,10 @@ function resetOwnerSnapshot() {
   offset = 0;
   period = 'ALL';
   window.__dm = '';
+  for(const id of ['action-approvals','action-chats','action-proofs','action-payouts'])$(id).textContent='—';
   for (const id of ['attention', 'interested', 'kpis', 'budget', 'supply', 'funnel',
                     'fullfunnel', 'production', 'ttadmin', 'modblock', 'templates', 'vaperf',
-                    'proofq', 'payouts', 'creators', 'vas', 'sourcing', 'config', 'integrations']) {
+                    'proofq', 'payouts', 'creators', 'vas', 'sourcing', 'config', 'integrations', 'vaactivity']) {
     const el = $(id);
     if (el) el.innerHTML = '';
   }
@@ -558,6 +589,7 @@ async function bootOnce() {
     }
     return;
   }
+  const firstOwnerView=!hasOwnerSnapshot;
   show('app');
   $('banners').innerHTML = '';
   $('whoami').textContent = 'Signed in as ' + (session.user.email || '');
@@ -574,6 +606,7 @@ async function bootOnce() {
     sb.rpc('dh_tiktok_block_rate_by_sender'),
     sb.rpc('dh_owner_supply_pipeline'), sb.rpc('dh_owner_va_activity')
   ]);
+  renderAdminActions(tiktok,interested,proofs,payouts);
   renderSupply(supply.data, supply.error);
   renderApprovals(tiktok.data, tiktok.error);
   renderTikTok(tiktok.data, tiktok.error);
@@ -596,6 +629,7 @@ async function bootOnce() {
   if (!facetsLoaded) await fillFilterOptions();
   await loadCreators();
   hasOwnerSnapshot = true;
+  if(firstOwnerView)routeAdminSection();
 }
 
 function show(which) {
@@ -1443,9 +1477,15 @@ function renderActivity(rows, err) {
   const stamp = value => value ? esc(new Date(value).toLocaleString()) : 'Not recorded';
   const recent = value => value && Date.now() - Date.parse(value) < 5 * 60000;
   const working = value => value && Date.now() - Date.parse(value) < 7 * 86400000;
-  $('vaactivity').innerHTML = '<p class="muted">Portal use records visible opens and interactions, not an idle tab. Recent use means within 5 minutes; it does not confirm a DM was sent. New portal tracking starts from this release. DM counts are claims recorded in the portal. A photographed DM still needs evidence review; it is not proof of delivery. Work history is retained. Times use your browser timezone; today’s DM count uses UTC. Refreshes every 30 seconds.</p>'
+  $('vaactivity').innerHTML = '<p class="muted">Track recent portal use, recorded DMs and verified replies. Portal activity alone does not confirm sending.</p>'
     + '<p class="muted">Response rates use all recorded DMs and count one verified response per conversation. The weighted team average includes active DMers only. A low response rate is a review signal; no automatic removal is enabled.</p>'
-    + '<div class="scroll"><table><thead><tr>'
+    + '<div class="activity-cards">' + (Array.isArray(rows) ? rows : []).map(r =>
+      '<article class="activity-card"><div class="row"><b>' + esc(r.va_name || '—') + '</b><span class="pill ' + (r.active ? 'on' : 'off') + '">' + (r.active ? 'Enabled' : 'Disabled') + '</span></div>'
+      + '<div class="activity-metrics"><span>DMs · today / 7 days<b>' + n(r.sent_today) + ' / ' + n(r.sent_7d) + '</b></span><span>Assigned stock<b>' + n(r.ready_stock) + '</b></span>'
+      + '<span>Verified response<b>' + responsePct(r.response_pct) + '</b></span><span>Active team average<b>' + responsePct(r.active_team_response_pct) + '</b></span></div>'
+      + '<p class="muted">Portal last used: ' + stamp(r.last_portal_at) + '</p>'
+      + '<p class="muted">' + (!r.active ? 'Disabled · not assessed' : r.below_team_response ? 'Below team average · review' : r.response_pct == null ? 'No response sample yet' : 'At or above team average') + '</p></article>').join('') + '</div>'
+    + '<div class="scroll activity-table"><table><thead><tr>'
     + ['DMer', 'Account status', 'Portal last used', 'Last claimed DM', 'Last reply upload', 'DMs today / 7 days', 'Assigned stock', 'Claimed / photographed DMs', 'Verified responses', 'Response %', 'Active team %', 'Response review', 'Proofs needing review', 'Work status'].map(x => '<th>' + x + '</th>').join('')
     + '</tr></thead><tbody>' + (Array.isArray(rows) ? rows : []).map(r => '<tr>'
       + '<td><b>' + esc(r.va_name || '—') + '</b></td>'
@@ -1921,6 +1961,36 @@ function renderIntegrations(d, err) {
 }
 
 // ---------------------------------------------------------------------------------------------
+
+// Navigation changes presentation only. Existing cards and action handlers retain their IDs.
+const adminLabels={overview:'Overview',team:'Team',conversations:'Conversations',payments:'Payments',creators:'Creators',settings:'Settings'};
+function routeAdminSection(){
+  const hash=location.hash.slice(1); const all=hash==='all';
+  let key=Object.hasOwn(adminLabels,hash)?hash:null;
+  if(!key && hash){const target=document.getElementById(hash);key=target?.closest('[data-admin-section]')?.dataset.adminSection;}
+  key=key||'overview';
+  for(const section of document.querySelectorAll('[data-admin-section]'))section.hidden=!all&&section.dataset.adminSection!==key;
+  for(const link of document.querySelectorAll('[data-admin-nav]')){
+    if(!all&&link.dataset.adminNav===key)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');
+  }
+  $('admin-view-label').textContent=all?'All sections':adminLabels[key];
+  $('admin-show-all').textContent=all?'Back to overview':'Show all sections';
+  $('admin-show-all').href=all?'#overview':'#all';
+  if(all||Object.hasOwn(adminLabels,hash)){requestAnimationFrame(()=>$('section-'+(all?'overview':key)).scrollIntoView({block:'start'}));}
+  else if(hash){
+    const target=document.getElementById(hash);if(target?.closest('[data-admin-section]'))requestAnimationFrame(()=>target.scrollIntoView({block:'start'}));
+  }
+}
+window.addEventListener('hashchange',routeAdminSection);
+routeAdminSection();
+function renderAdminActions(tiktok,interested,proofs,payouts){
+  const accounts=Array.isArray(tiktok.data)?tiktok.data:[];
+  $('action-approvals').textContent=tiktok.error?'Unavailable':n(accounts.reduce((count,v)=>count+(v.accounts||[]).filter(a=>a.status==='WAITING_APPROVAL').length,0));
+  $('action-chats').textContent=interested.error?'Unavailable':n(Array.isArray(interested.data)?interested.data.length:0);
+  $('action-proofs').textContent=proofs.error?'Unavailable':n(Array.isArray(proofs.data)?proofs.data.filter(p=>!['APPROVED','REJECTED'].includes(p.review_status)).length:0);
+  $('action-payouts').textContent=payouts.error?'Unavailable':money((Array.isArray(payouts.data)?payouts.data:[]).filter(r=>r.payable).reduce((sum,r)=>sum+Number(r.approved_cents||0),0));
+}
+
 // LIVE, without a refresh button. Realtime pushes the moment a VA touches the queue; the 30-second
 // poll is the belt to that braces, so a dropped socket costs freshness rather than correctness.
 // ---------------------------------------------------------------------------------------------
