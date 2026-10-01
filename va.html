@@ -2238,11 +2238,13 @@ async function assistantFor(replyEventId, row = aiRow(replyEventId), timeoutMs =
           });
           if (response.ok) body = await response.json();
           else if (response.status === 401 || response.status === 403) return { text: null, withheld: true };
+          else if (response.status === 404) return { text: null, withheld: true,
+            guidance: 'This screenshot is no longer the current reply. Refresh Chats for the latest conversation.' };
         } catch { if (controller.signal.aborted) throw new Error('suggestion timeout'); }
-        if (body?.source === 'NO_SUGGESTION') return { text: null, withheld: true,
-          retryable: body.attempt_status === 'GENERATING' };
+        if (body?.source === 'NO_SUGGESTION') return { text: null, withheld: true, guidance: body.guidance,
+          retryable: body.retryable === true || body.attempt_status === 'GENERATING' };
         if (typeof body?.reply_text === 'string' && body.reply_text.trim()) {
-          return { text: body.reply_text.trim(), source: body.source, stage: body.stage };
+          return { text: body.reply_text.trim(), source: body.source, stage: body.stage, nextAction: body.next_action };
         }
         // Only transport failure permits a lookup. An explicit safety decision above is final.
         let lookup = sb.rpc('dh_reply_suggestion_get', { p_reply_event_id: replyEventId });
@@ -2250,7 +2252,7 @@ async function assistantFor(replyEventId, row = aiRow(replyEventId), timeoutMs =
         const { data, error } = await lookup;
         if (!error && data?.stale) return { text: null, withheld: true };
         if (!error && data?.stored && typeof data.reply_text === 'string') {
-          return { text: data.reply_text, source: 'STORED', stage: data.stage };
+          return { text: data.reply_text, source: 'STORED', stage: data.stage, nextAction: data.next_action };
         }
         return { text: null, withheld: false, retryable: body?.attempt_status === 'GENERATING' };
       })()]);
@@ -2266,7 +2268,7 @@ async function assistantFor(replyEventId, row = aiRow(replyEventId), timeoutMs =
     const current = aiRow(replyEventId);
     if (current && aiInput(current) !== input) return null;
     if (row?.classification === 'NOT_INTERESTED' && out.stage !== 'DECLINED') out = { text: null, withheld: true };
-    const value = { ...out, input, expires: Date.now() + (out.text || out.withheld ? 300000 : 30000) };
+    const value = { ...out, input, expires: Date.now() + (out.retryable ? AI_POLL_EVERY_MS : out.text || out.withheld ? 300000 : 30000) };
     AI.seen.set(replyEventId, value);
     return value;
   })();
@@ -2277,11 +2279,11 @@ function suggestedFor(c) {
   if (AI.inflight.has(id) || AI.waiting.has(id) || AI.queued.get(id)?.input === input) return { text: null, from: null, pending: true };
   const ai = AI.seen.get(id);
   if (ai && ai.input === input) {
-    if (ai.text) return { text: ai.text, from: ai.source || 'ASSISTANT', pending: false };
-    if (ai.withheld) return { text: null, from: null, pending: false };
+    if (ai.text) return { text: ai.text, from: ai.source || 'ASSISTANT', pending: false, nextAction: ai.nextAction };
+    if (ai.withheld) return { text: null, from: null, pending: false, guidance: ai.guidance };
   }
   // The broad legacy fallback is safe only for these explicit positive classifications.
-  if (c.suggestion && ['INTERESTED','SEND_DETAILS','FOLLOW_UP_LATER'].includes(c.classification)) {
+  if (!c.proof_status && c.suggestion && ['INTERESTED','SEND_DETAILS','FOLLOW_UP_LATER'].includes(c.classification)) {
     return { text: c.suggestion, from: 'STATIC', pending: false };
   }
   return { text: null, from: null, pending: false };
@@ -2355,7 +2357,10 @@ function chatHtml(c) {
   // WAT DE DMER LEEST. Eén zin, of één gewone regel dat er nog geen is. Het label is in alle drie de
   // gevallen hetzelfde: waar de zin vandaan komt, is niet hun probleem.
   const sug = suggestedFor(c);
-  if (sug.text) {
+  if (sug.text && sug.nextAction === 'WAIT') {
+    h += '<div class="suggest"><span class="lbl">Next step · waiting for their reply</span>' + esc(sug.text) + '</div>'
+      + '<p class="muted" style="margin:6px 0 0">Upload a new screenshot when the creator replies. No message to send now.</p>';
+  } else if (sug.text) {
     h += '<div class="suggest"><span class="lbl">Suggested reply</span>' + esc(sug.text) + '</div>'
       + '<button class="sm" data-copy-reply="' + esc(c.reply_event_id) + '">COPY REPLY</button>';
   } else if (sug.pending) {
@@ -2368,13 +2373,13 @@ function chatHtml(c) {
       + '<p class="muted" style="margin:6px 0 0">You can carry on and come back to this one later.</p>';
   } else {
     h += '<div class="suggest none"><span class="lbl">Suggested reply</span>'
-      + 'No suggested reply available for this one — answer it in your own words.</div>';
+      + esc(sug.guidance || 'A reply is not ready yet. Refresh Chats to try again, or upload a clear screenshot of their latest reply.') + '</div>';
   }
 
   // SECTION M, ON SCREEN. Not shown merely because a reply exists -- only once the creator has said
   // they are interested or asked for details. A link that appears the moment anyone answers turns
   // every conversation into a pitch, and the question they actually asked goes unanswered.
-  if (c.affiliate_available) {
+  if (c.affiliate_available && !['WAIT','CLOSE'].includes(sug.nextAction)) {
     h += '<button class="good" style="margin-top:8px" data-invite="' + esc(c.task_id) + '">'
       + (c.affiliate_state === 'REGISTERED' ? 'They joined — copy link again'
                                             : 'Copy signup link') + '</button>';
