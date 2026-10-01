@@ -72,7 +72,7 @@
   .muted{color:var(--dim);font-size:12px}
   /* Four thumb-sized tabs, stuck to the top. Work consolidates first DMs and reply checks; Chats
      keeps answered conversations and their approved follow-up actions available afterwards. */
-  .tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;position:sticky;top:0;z-index:5;
+  .tabs{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;position:sticky;top:0;z-index:5;
         background:var(--bg);padding:8px 0 10px;margin-bottom:4px}
   .tab{font:inherit;background:#161d27;color:var(--dim);border:1px solid var(--line);
        border-radius:10px;padding:9px 2px;min-height:56px;cursor:pointer;width:100%;
@@ -285,6 +285,8 @@
   <div class="tabs" role="tablist">
     <button class="tab" id="tab-work" role="tab" aria-selected="true"
             aria-controls="work" data-tab="work"><b id="n-work">–</b>Work</button>
+    <button class="tab" id="tab-replies" role="tab" aria-selected="false"
+            aria-controls="conv" data-tab="replies"><b id="n-replies">–</b>Replies</button>
     <button class="tab" id="tab-tt"   role="tab" aria-selected="false"
             aria-controls="tt" data-tab="tt"><b id="n-tt">–</b>Accounts</button>
     <button class="tab" id="tab-conv" role="tab" aria-selected="false"
@@ -1163,6 +1165,7 @@ async function loadMoneyOnce(snapshot = null) {
   // Het telde eerst alleen de chats die al geantwoord hadden -- meestal nul, terwijl het tabblad
   // wel degelijk iets te bieden had.
   $('n-conv').textContent = String(search.sent.length || view.chats.length);
+  updateReplyBadge();
   return { ok: true };
 }
 
@@ -1608,10 +1611,12 @@ function render() {
   }
   $('work').hidden = tab !== 'work';
   $('tt').hidden   = tab !== 'tt';
-  $('conv').hidden = tab !== 'conv';
+  $('conv').hidden = !['conv','replies'].includes(tab);
+  $('conv').setAttribute('aria-labelledby',tab === 'replies' ? 'tab-replies' : 'tab-conv');
   $('earn').hidden = tab !== 'earn';
   drawDemand();
   if (tab === 'tt')   { drawAccounts(); return; }
+  if (tab === 'replies') { drawReplyInbox(); return; }
   if (tab === 'conv') { drawConversations(); return; }
   if (tab === 'earn') { drawEarnings(); return; }
   if (tab === 'work') { drawWork(); return; }
@@ -2332,13 +2337,13 @@ async function primeAssistant(chats) {
   if (!rows.length) return;
   const batch = {};
   for (const c of rows) AI.queued.set(c.reply_event_id, { batch, input: aiInput(c) });
-  if (tab === 'conv') drawConversations();
+  redrawReplyViews();
   for (const c of rows) {
     if (AI.queued.get(c.reply_event_id)?.batch !== batch) continue;
     await assistantFor(c.reply_event_id, c);
     // A superseded batch can release only its own queued row.
     if (AI.queued.get(c.reply_event_id)?.batch === batch) AI.queued.delete(c.reply_event_id);
-    if (tab === 'conv') drawConversations();
+    redrawReplyViews();
   }
 }
 function startSuggestionWatch(replyEventId) {
@@ -2358,10 +2363,10 @@ function startSuggestionWatch(replyEventId) {
     } else {
       AI.seen.delete(replyEventId); watch.timer = setTimeout(tick, AI_POLL_EVERY_MS);
     }
-    if (tab === 'conv') drawConversations();
+    redrawReplyViews();
   };
   watch.timer = setTimeout(tick, AI_POLL_EVERY_MS);
-  if (tab === 'conv') drawConversations();
+  redrawReplyViews();
 }
 
 /**
@@ -2503,6 +2508,45 @@ function wireChats(rows) {
       await loadMoney(); render();
     };
   }
+}
+
+// Replies is the action inbox; Chats keeps the complete sent-message history.
+function replyBucket(c) {
+  const suggestion = suggestedFor(c);
+  if (c.affiliate_state === 'REGISTERED' || c.classification === 'NOT_INTERESTED'
+      || ['WAIT','CLOSE'].includes(suggestion.nextAction)) return 'waiting';
+  return suggestion.text ? 'ready' : 'review';
+}
+function updateReplyBadge() {
+  const count = (view.chats || []).filter(c => replyBucket(c) !== 'waiting').length;
+  $('n-replies').textContent = String(count);
+  $('tab-replies').classList.toggle('urgent',count > 0);
+}
+function redrawReplyViews() {
+  updateReplyBadge();
+  if (tab === 'replies') drawReplyInbox();
+  if (tab === 'conv') drawConversations();
+}
+function drawReplyInbox() {
+  const chats = view.chats || [];
+  const groups = [['ready','Reply now'],['review','Checking / needs review'],['waiting','Waiting / closed']];
+  let html = '<h2>Replies</h2><p class="muted">New screenshots start reply suggestions automatically. '
+    + 'Copy the suggested reply and send it in TikTok. Upload their latest reply when it arrives.</p>'
+    + '<p id="chatmsg" class="fieldmsg" role="status" aria-live="polite">' + esc(chatStatus) + '</p>';
+  for (const [bucket,label] of groups) {
+    const rows = chats.filter(c => replyBucket(c) === bucket);
+    if (!rows.length) continue;
+    html += '<h3>' + label + ' · ' + rows.length + '</h3>' + rows.map(c => chatHtml(c)
+      + '<button class="sm" style="margin-bottom:16px" data-latest-reply="' + esc(c.task_id)
+      + '">Upload latest reply</button>').join('');
+  }
+  if (!chats.length) html += '<div class="card">No replies uploaded yet. Find the creator in Chats and upload their reply screenshot.</div>';
+  $('list').innerHTML = html;
+  wireChats(chats);
+  for (const button of $('list').querySelectorAll('[data-latest-reply]')) {
+    button.onclick = () => beginReplyCapture(chats.find(c => c.task_id === button.dataset.latestReply));
+  }
+  primeAssistant(chats);
 }
 
 function drawConversations() {
@@ -3138,6 +3182,7 @@ $('rp-send').onclick = async () => {
   // worden. Hier gaan kijken in plaats van de DMer laten verversen -- begrensd op één minuut.
   // Dit staat na close() en voor boot(): het vak toont de wachttoestand zodra de lijst opnieuw
   // getekend wordt, en niet de zin die over de vórige stand van dit gesprek ging.
+  tab = 'replies';
   startSuggestionWatch(data.reply_event_id);
   await boot();
 };
@@ -3241,7 +3286,7 @@ async function selectTab(name) {
   // tab a VA lands on after every trip to TikTok, which is exactly when that data has gone stale.
   if (tab === 'work') await boot();
   if (tab === 'tt')   await loadAccounts();
-  if (tab === 'conv') await boot();
+  if (tab === 'conv' || tab === 'replies') await boot();
   if (tab === 'earn') await loadMoney();
 
   if (!seq.isCurrent('tab', token)) return; // a faster later tap already redrew the screen
