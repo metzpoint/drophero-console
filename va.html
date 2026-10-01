@@ -952,7 +952,11 @@ async function bootOrThrow() {
     loadReplyReports();
   }
   $('claim').hidden = true;
-  const { data, error } = await sb.rpc('dh_va_queue');
+  // One authenticated read snapshot replaces nine HTTP requests on every regular refresh.
+  const snapshotResponse = await sb.rpc('dh_va_portal_snapshot');
+  const snapshot = snapshotResponse.data;
+  const { data, error } = snapshotResponse.error ? snapshotResponse
+    : (snapshot?.dh_va_queue || { data: null, error: { message: 'Portal snapshot is incomplete.' } });
   if (!seq.isCurrent('boot', token)) return;
   if (error) {
     // TWO VERY DIFFERENT FAILURES USED TO SHOW THE SAME SENTENCE. Any error here was reported as
@@ -1003,7 +1007,9 @@ async function bootOrThrow() {
   $('login').hidden = true; $('app').hidden = false;
   void recordPortalActivity('open');
 
-  view = data;
+  // Preserve already confirmed resources if one part of this refresh fails. User changes clear
+  // view in resetVaMemory before this point, so no data survives an account switch.
+  view = { ...view, ...data };
   queue = data.new_dms || [];
   retryQueue = data.retry_dms || [];
   // A forced retry target that is no longer in the live queue (sent, reassigned, or still
@@ -1046,7 +1052,7 @@ async function bootOrThrow() {
       + (tierReady ? ' · Tier 1 ready: ' + tierReady : '')
     : 'no new creators right now';
   $('done').textContent = data.completed_today ?? 0;
-  if ($('n-earn')) $('n-earn').textContent = (data.va ? '→' : '–');
+  if ($('n-earn') && !view.money) $('n-earn').textContent = (data.va ? '→' : '–');
 
   // ONE NUMBER FOR "HOW MANY CAN I STILL SEND TODAY", COMPUTED SERVER-SIDE.
   //
@@ -1055,7 +1061,8 @@ async function bootOrThrow() {
   // the smallest of the VA cap, the combined room left across every ACTIVE account, and the ready
   // queue, and names which one is binding. This is the single source $('remaining') and the Work
   // header both read from now; neither computes its own version.
-  const { data: cap, error: capErr } = await sb.rpc('dh_va_capacity');
+  const { data: cap, error: capErr } = snapshot?.dh_va_capacity
+    || { data: null, error: { message: 'Capacity is unavailable.' } };
   if (!seq.isCurrent('boot', token)) return; // a newer boot() already landed; drop this one
   if (capErr || !cap?.ok) {
     console.error(safeLogLine('capacity', normalizeRpc({ data: cap, error: capErr })));
@@ -1066,7 +1073,7 @@ async function bootOrThrow() {
     $('remaining').textContent = cap.sendable_now;
   }
 
-  const [accountsRes, moneyRes] = await Promise.all([loadAccounts(), loadMoney()]);
+  const [accountsRes, moneyRes] = await Promise.all([loadAccounts(snapshot), loadMoney(snapshot)]);
   if (!seq.isCurrent('boot', token)) return;
   render();
   return { accountsOk: accountsRes.ok, moneyOk: moneyRes.ok };
@@ -1099,9 +1106,9 @@ async function bootOrThrow() {
  */
 function coalesced(run) {
   let inFlight = null;
-  return async function coalescedCall() {
+  return async function coalescedCall(...args) {
     if (inFlight) return inFlight;
-    inFlight = (async () => { try { return await run(); } finally { inFlight = null; } })();
+    inFlight = (async () => { try { return await run(...args); } finally { inFlight = null; } })();
     return inFlight;
   };
 }
@@ -1109,9 +1116,12 @@ function coalesced(run) {
 const loadMoney = coalesced(loadMoneyOnce);
 const loadAccounts = coalesced(loadAccountsOnce);
 
-async function loadMoneyOnce() {
+async function loadMoneyOnce(snapshot = null) {
   const token = seq.begin('money');
-  const [moneyRes, proofRes, convosRes, sentRes, payoutRes] = await Promise.all([
+  const [moneyRes, proofRes, convosRes, sentRes, payoutRes] = snapshot
+    ? ['dh_va_earnings_summary', 'dh_va_pending_proof', 'dh_va_conversations', 'dh_va_search', 'dh_va_payout_state']
+      .map((name) => snapshot[name] || { data: null, error: { message: 'Portal snapshot is incomplete.' } })
+    : await Promise.all([
     sb.rpc('dh_va_earnings_summary'), sb.rpc('dh_va_pending_proof'), sb.rpc('dh_va_conversations'),
     // De verstuurde berichten. Een lege zoekterm betekent sinds migratie 0137 "laat ze allemaal
     // zien" in plaats van "geen resultaat", zodat het tabblad gevuld is voordat er iets getypt is.
@@ -1178,9 +1188,12 @@ let ticker = 0;
  * failed dh_tiktok_my_accounts left `tt` holding whatever it held before -- stale data presented as
  * current, with nothing on screen to say it was not just refreshed.
  */
-async function loadAccountsOnce() {
+async function loadAccountsOnce(snapshot = null) {
   const token = seq.begin('accounts');
-  const [mineRes, pickRes] = await Promise.all([
+  const [mineRes, pickRes] = snapshot
+    ? ['dh_tiktok_my_accounts', 'dh_tiktok_pick_account']
+      .map((name) => snapshot[name] || { data: null, error: { message: 'Portal snapshot is incomplete.' } })
+    : await Promise.all([
     sb.rpc('dh_tiktok_my_accounts'), sb.rpc('dh_tiktok_pick_account')
   ]);
   if (!seq.isCurrent('accounts', token)) return { ok: false, stale: true };
