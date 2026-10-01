@@ -210,9 +210,9 @@ export const REASON_TEXT = {
   // database-enum op een geldscherm belandt -- en zodat de VA weet of hij iets kan doen.
   BELOW_MINIMUM: 'You are not at the payout minimum yet. Keep going — nothing is lost.',
   NO_EMAIL_ON_FILE: 'We do not have an email address for you, and a payout account needs one. '
-    + 'Ask Rico to add it; your balance stays exactly as it is.',
+    + 'Contact the DropHero team to correct it; your balance stays exactly as it is.',
   EMAIL_BELONGS_TO_ANOTHER_VA: 'Another account already uses your email address for payouts. '
-    + 'Tell Rico — this has to be sorted out by hand so nobody is paid the wrong amount.',
+    + 'Contact the DropHero team for a review so nobody is paid the wrong amount.',
   ALREADY_DECIDED: 'That photo has already been checked — nothing more to send.',
   NO_IMAGE: 'No photo was attached. Pick one and send again.',
   NOT_YOUR_PROOF_IMAGE: 'That photo does not belong to this message. Upload a fresh screenshot here.',
@@ -526,17 +526,17 @@ function pendingOverlay(pending) {
 export const SENDER_BLOCK = {
   NO_ACCOUNTS: {
     title: 'No TikTok account yet',
-    detail: 'Add your TikTok account under Accounts and Rico will switch it on for you.',
+    detail: 'Add your TikTok account under Accounts using the official setup. The DropHero team reviews it before you can send.',
     action: 'accounts'
   },
   WAITING_APPROVAL: {
     title: 'Waiting for approval',
-    detail: 'Your account is with Rico to be switched on. Nothing to do — check back soon.',
+    detail: 'The DropHero team is reviewing your account. Check its status in Accounts; you do not need to add it again.',
     action: 'accounts'
   },
   NOT_APPROVED: {
     title: 'Waiting for approval',
-    detail: 'Your account is with Rico to be switched on. Nothing to do — check back soon.',
+    detail: 'The DropHero team is reviewing your account. Check its status in Accounts; you do not need to add it again.',
     action: 'accounts'
   },
   NO_APPROVED_ACCOUNT: {
@@ -551,12 +551,12 @@ export const SENDER_BLOCK = {
   },
   PAUSED: {
     title: 'Account paused',
-    detail: 'That account is stopped until Rico has looked at it. Your other accounts are unaffected.',
+    detail: 'That account is stopped until the DropHero team has reviewed it. Your other accounts are unaffected.',
     action: 'accounts'
   },
   REVIEW_REQUIRED: {
     title: 'Account on hold',
-    detail: 'That account is on hold while Rico checks why TikTok refused its messages.',
+    detail: 'That account is on hold while the DropHero team checks why TikTok refused its messages.',
     action: 'accounts'
   },
   COOLDOWN: {
@@ -816,7 +816,7 @@ export function payoutView(status) {
     case 'READY_FOR_PAYOUT':
       return { ...basis, action: 'setup', actionLabel: 'CHECK PAYOUT DETAILS', tone: 'good',
         title: 'Ready for payout',
-        detail: balance + ' is approved and your details are set up. Rico releases payouts through '
+        detail: balance + ' is approved and your details are set up. DropHero releases payouts through '
           + 'FirstPromoter.' };
 
     case 'PAID':
@@ -831,7 +831,7 @@ export function payoutView(status) {
       return { ...basis, action: 'retry', actionLabel: 'TRY AGAIN', tone: 'bad',
         title: 'Payout setup did not go through',
         detail: 'Your ' + balance + ' is safe and still counted — nothing was lost. Setting up the '
-          + 'payout account did not work. Try again, and tell Rico if it keeps failing.' };
+          + 'payout account did not work. Try again, and contact the DropHero team if it keeps failing.' };
 
     case 'BELOW_MINIMUM':
     default:

@@ -60,6 +60,9 @@
         color:var(--dim);white-space:nowrap}
   .foot{color:var(--dim);font-size:13px;text-align:center;margin:14px 0 0}
   .foot a{color:var(--accent)}
+  #signup-guide summary{cursor:pointer;min-height:44px;padding:10px 0}
+  #signup-guide p{font-size:13px;line-height:1.6}
+  #signup-guide summary:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
   .done .big{font-size:20px;font-weight:650;line-height:1.25;margin:0 0 6px}
   .done p{margin:0;color:var(--dim);font-size:14px;line-height:1.5}
   .tick{width:40px;height:40px;border-radius:999px;background:#173d2e;border:1px solid #1e5e46;
@@ -116,6 +119,10 @@
     <p class="err" id="err-form" role="alert" style="margin-top:9px"></p>
   </form>
 
+  <details class="card" id="signup-guide"><summary>How does getting started work?</summary>
+    <p class="muted">Create your account and confirm your email. Then follow the setup steps to add your TikTok profile with the official DropHero bio, picture and video. The DropHero team reviews the profile before you can send.</p>
+    <p class="muted">Your portal shows which step is next. Once approved, Work provides your DMs, Chats lets you upload replies, and Replies prepares suggested answers automatically. You send each message yourself in TikTok.</p>
+  </details>
   <p class="foot">Already have an account? <a id="signin-link" href="./va.html">Sign in</a></p>
   <!-- Wie is aangemeld, zijn adres heeft bevestigd en daarna de browser heeft gesloten, komt hier
        weer binnen. Geen aparte pagina en geen tweede link in de mail. -->
@@ -521,7 +528,7 @@ const REDEN = {
   NOT_SIGNED_IN: ['This confirmation link is no longer valid',
     'Confirmation links expire. Create your account again to get a fresh one.'],
   USE_INVITE_LINK: ['You were invited',
-    'This address already has an invitation. Open the invitation link your manager sent you.'],
+    'This address already has an invitation. Open the invitation link the DropHero team sent you.'],
   TERMS_NOT_ACCEPTED: ['Please agree to the Terms',
     'Open the link from your email again and agree to the Terms to continue.']
 };

@@ -231,7 +231,16 @@
   .portal-heading .sub{margin:5px 0 0;line-height:1.5}
   .bonus-tag{flex:0 0 auto;max-width:120px;padding:8px 10px;background:#12372f;border:1px solid #286350;
     border-radius:12px;color:#c3f7df;font-size:10px;text-align:center;line-height:1.4}
-  .bonus-tag strong{display:block;font-size:17px;color:#e6fff3;font-variant-numeric:tabular-nums}
+  .bonus-tag strong{display:block;font-size:15px;white-space:nowrap;color:#e6fff3;font-variant-numeric:tabular-nums}
+  .workspace-tools{display:flex;justify-content:flex-end;margin:-5px 0 10px}
+  .workspace-tools button{width:auto;min-height:44px}
+  .help-head{display:flex;align-items:center;gap:12px}
+  .help-head h2{flex:1;margin:0}
+  .help-head button{width:auto;min-height:44px;flex:none}
+  .help-steps{padding-left:22px;line-height:1.6}
+  .help-steps li{margin:9px 0}
+  #helpdlg details{border-top:1px solid var(--line);margin-top:12px;padding-top:8px}
+  #helpdlg details p{margin:5px 0 10px;line-height:1.65}
   .card,.row,.acct-card{border-radius:18px;box-shadow:0 8px 24px #0002}
   .card.top{background:linear-gradient(145deg,#1c2d48,#152136);border-color:#36547b}
   .tabs{gap:5px;background:#0d1423ed;border-radius:14px;backdrop-filter:blur(12px)}
@@ -284,7 +293,8 @@
   <p style="margin:16px 0 6px;text-align:center">
     <a id="create-account" href="./signup.html">Create account</a>
   </p>
-  <p class="muted">Have an invitation? Open the invitation link your manager sent you.</p>
+  <p class="muted">Have an invitation? Open the invitation link the DropHero team sent you.</p>
+  <button id="login-help" type="button" class="sm" aria-haspopup="dialog" aria-controls="helpdlg">Quick start &amp; help</button>
 </div>
 
 <div id="claim" hidden>
@@ -301,6 +311,7 @@
     </div>
     <p id="claimmsg" class="muted" style="margin-bottom:0" role="status" aria-live="polite"></p>
   </form>
+  <button id="claim-help" type="button" class="sm" aria-haspopup="dialog" aria-controls="helpdlg">Quick start &amp; help</button>
 </div>
 
 <main id="app" hidden>
@@ -310,6 +321,8 @@
   </div><div class="bonus-tag" id="signup-bonus" hidden aria-label="Bonus per verified affiliate signup">
     <strong id="signup-bonus-value"></strong>per verified<br>affiliate signup
   </div></div>
+
+  <div class="workspace-tools"><button id="open-help" type="button" class="sm" aria-haspopup="dialog" aria-controls="helpdlg">Quick start &amp; help</button></div>
 
   <div class="counts two">
     <div><b id="remaining">–</b><span>Left today</span></div>
@@ -445,6 +458,41 @@
   </div>
 </main>
 
+<dialog id="helpdlg" aria-labelledby="help-title"><div class="sheet">
+  <div class="help-head"><h2 id="help-title">Your DropHero guide</h2>
+    <button id="help-close" type="button" class="sm" aria-label="Close help" autofocus>Close</button></div>
+  <p class="muted">DropHero provides the creators, messages and next steps. You send the messages in TikTok and keep your conversations up to date here.</p>
+  <ol class="help-steps">
+    <li><b>Set up once.</b> Create your DropHero account, confirm your email and add your TikTok profile using our bio, picture and video. The DropHero team reviews it before you can send.</li>
+    <li><b>Send a DM.</b> In Work, tap COPY DM &amp; OPEN TIKTOK. Paste and send the message in TikTok. Return here and tap I SENT THE DM only after it really went through.</li>
+    <li><b>Follow up.</b> When a creator answers, find them in Chats and upload a screenshot of the latest messages. Replies prepares the next answer automatically. Copy it, send it in TikTok and upload their next reply.</li>
+  </ol>
+  <div class="acts" id="help-actions" hidden>
+    <button type="button" data-help-go="work" class="good">Go to Work</button>
+    <button type="button" data-help-go="conv">Find a creator in Chats</button>
+    <button type="button" data-help-go="replies">See my replies</button>
+    <button type="button" data-help-go="tt">Set up my accounts</button>
+    <button type="button" data-help-go="earn" class="full">See my earnings</button>
+  </div>
+  <details><summary>My account is waiting for approval or on hold</summary>
+    <p class="muted">Open Accounts to see its status. Waiting for approval means the DropHero team still needs to check the profile; you do not need to add it again. If TikTok shows a warning, restriction or login problem, use Report a problem on that account. A paused account needs the team's review before sending resumes.</p></details>
+  <details><summary>When do I upload a screenshot?</summary>
+    <p class="muted">Upload the creator's reply from Chats, or use Upload latest reply in Replies. Include their name and the latest messages. You do not need a screenshot for every first DM. If Work asks for a random Quick check, upload that sent message there and follow the status shown.</p></details>
+  <details><summary>My suggested reply is still being prepared</summary>
+    <p class="muted">Uploading starts the process automatically; you do not need to ask someone to activate it. Check Replies for Your turn to reply, Reading or checking the screenshot, and Waiting or finished. You can work on other creators while a check runs. If the portal asks for a clearer screenshot, upload one showing the latest conversation.</p></details>
+  <details><summary>The message did not copy or TikTok did not open</summary>
+    <p class="muted">Use the copy field shown in the portal if your phone blocks copying. If TikTok did not open, use Open TikTok profile on the same creator's card. Paste and tap Send yourself. If TikTok refuses the message, report the failed attempt instead of confirming it as sent.</p></details>
+  <details><summary>I see a countdown, daily limit or no work</summary>
+    <p class="muted">A countdown keeps your messages spaced out. Wait until it ends. Accounts shows each account's daily limit; Work shows how many messages you can still send. At the daily limit, return when the portal says you can send again. If there are no new creators, check Replies for conversations you can follow up.</p></details>
+  <details><summary>How do the bonus and payouts work?</summary>
+    <p class="muted" id="help-reward"></p>
+    <p class="muted">Use the creator's tracked signup link when it is available in their conversation. Earnings shows recorded amounts, verification and payout status. Uploading or copying alone is not a confirmed signup. Complete payout setup through the button in Earnings; payment details are entered securely with FirstPromoter.</p></details>
+  <details><summary>I cannot sign in or I have not finished setup</summary>
+    <p class="muted">Use your DropHero email address and password. Forgot it? Use Forgot your password? on the sign-in screen and open the latest recovery email. For an unfinished account, use Continue setup on the signup page. If invited, open the invitation link sent by the DropHero team.</p></details>
+  <details><summary>What needs help from the DropHero team?</summary>
+    <p class="muted">Profile approvals, paused accounts, incorrect creator links and payout account conflicts need the team's review. Report TikTok account problems through Accounts. For other unresolved issues, include the creator or account name and the exact message shown when contacting the DropHero team through your existing company contact.</p></details>
+</div></dialog>
+
 <!-- THE PAGE MUST NEVER BE BLANK. Deliberately not a module: if the local dependency fails to load,
      a file is missing, or an offline phone has no cached copy, no module code runs at all, so a
      failsafe written inside the module could not fire. Every screen starts hidden and one of them is
@@ -462,7 +510,7 @@
       var msg = document.getElementById('loginmsg');
       if (msg && !msg.textContent) {
         msg.textContent = 'The portal did not finish loading. Sign in below, or reload the page. '
-          + 'If this keeps happening, tell Rico.';
+          + 'If this keeps happening, contact the DropHero team.';
       }
     }, 4000);
   });
@@ -1028,13 +1076,13 @@ async function bootOrThrow() {
       $('loginmsg').textContent =
         (who ? 'You are signed in as ' + who + '. That account is not a VA' : 'This account is not a VA')
         + ', so it has no queue and no Accounts tab. The VA portal needs the VA login — a different '
-        + 'address from the owner one. Sign in with it below, or ask Rico for an invitation link.';
+        + 'address from the owner one. Sign in with it below, or ask the DropHero team for an invitation link.';
       $('applicant-continue').hidden = true;
       $('wrongacct').hidden = false;
     } else {
       $('loginmsg').textContent =
         'Signed in, but the queue could not be loaded — this is a fault on our side, not your '
-        + 'account. Please tell Rico. (' + (error.message || 'unknown error') + ')';
+        + 'account. Reload the page. If this keeps happening, contact the DropHero team.';
       $('applicant-continue').hidden = true;
       $('wrongacct').hidden = false;
     }
@@ -1339,11 +1387,11 @@ function acctCard(a) {
     + (a.display_state === 'PAUSED'
         ? '<div class="warn" style="margin-top:11px">Stopped after a problem was reported'
           + (a.paused_reason ? ' (' + esc(PROBLEM_WORDS[a.paused_reason] || a.paused_reason) + ')' : '')
-          + '. Rico has to switch it back on.</div>'
+          + '. The DropHero team reviews it before sending can resume.</div>'
         : '')
     + (a.display_state === 'WAITING_APPROVAL'
-        ? '<p class="muted" style="margin:11px 0 0">Rico still has to check this one before you can '
-          + 'send from it.</p>'
+        ? '<p class="muted" style="margin:11px 0 0">The DropHero team is checking this profile before you can '
+          + 'send from it. You do not need to add it again.</p>'
         : '')
     + '<button class="sm" data-problem="' + esc(a.account_id) + '" data-user="' + esc(a.username)
       + '" style="margin-top:12px">Report a problem</button>'
@@ -1387,7 +1435,7 @@ function drawAccounts() {
     + '<button class="good full" id="addbtn" style="margin-bottom:13px">+ Add TikTok account</button>'
     + (list.length ? list.map(acctCard).join('')
         : '<div class="card"><p class="muted" style="margin:0">No accounts yet. Add the first one '
-          + 'and Rico will switch it on for you.</p></div>');
+          + 'using the setup above. The DropHero team reviews it before sending can start.</p></div>');
 
   const copyProfileBio = $('tt').querySelector('#tt-copy-bio');
   if (copyProfileBio) {
@@ -1491,7 +1539,7 @@ function openProblem(accountId, username) {
         o.setAttribute('aria-pressed', String(o === b));
       }
       $('p-pausewarn').textContent = PAUSES_ACCOUNT.has(problemKind)
-        ? 'This stops the account from sending right away, until Rico looks at it.' : '';
+        ? 'This stops the account from sending right away, until the DropHero team reviews it.' : '';
       $('p-submit').disabled = false;
     };
   }
@@ -1511,7 +1559,7 @@ $('p-submit').onclick = async () => {
       { p_account_id: problemFor, p_kind: problemKind, p_note: $('p-note').value.trim() || null }),
     async (r) => {
       $('probdlg').close();
-      if (r.data?.paused) alert('Thanks — we have stopped that account straight away. Rico will look at it.');
+      if (r.data?.paused) alert('Thanks — we have stopped that account straight away. The DropHero team will review it.');
       await boot();
     });
   if (!res.ok) { msg.textContent = res.message; msg.className = 'fieldmsg bad'; }
@@ -1882,7 +1930,7 @@ function drawWork() {
       + '<div style="font-size:16px;color:#ffc9c9;margin-bottom:6px">One send could not be matched</div>'
       + '<p class="muted" style="margin:0">You had a DM open for <b>@' + esc(orphanedSend.handle)
       + '</b>, but that creator is no longer in your queue, so we cannot record it from here. '
-      + '<b>If you already sent it, tell Rico</b> — otherwise it stays unpaid.</p>'
+      + '<b>If you already sent it, contact the DropHero team with this creator\'s name</b> — otherwise it stays unpaid.</p>'
       + '<button class="sm full" id="work-orphan-ok" style="margin-top:12px">Got it</button>'
       + '</div>' + html;
   }
@@ -1993,7 +2041,7 @@ function wireWorkButtons() {
       if (!t.dm_message) {
         const msg = $('dm-msg');
         if (msg) {
-          msg.textContent = 'No approved DM is attached to this creator. Tell Rico before sending.';
+          msg.textContent = 'No approved DM is attached to this creator. Contact the DropHero team before sending.';
           msg.className = 'fieldmsg bad';
         }
         return;
@@ -2002,7 +2050,7 @@ function wireWorkButtons() {
       if (!profileUrl) {
         const msg = $('dm-msg');
         if (msg) {
-          msg.textContent = 'This creator has no valid TikTok profile link. Tell Rico before sending.';
+          msg.textContent = 'This creator has no valid TikTok profile link. Contact the DropHero team before sending.';
           msg.className = 'fieldmsg bad';
         }
         return;
@@ -2078,7 +2126,7 @@ function wireWorkButtons() {
         // The old handler skipped this step entirely, so TikTok opened with an empty clipboard.
         if (!c.dm_message) {
           if (msg) {
-            msg.textContent = 'No approved DM is attached to this creator. Tell Rico before sending.';
+            msg.textContent = 'No approved DM is attached to this creator. Contact the DropHero team before sending.';
             msg.className = 'fieldmsg bad';
           }
           return;
@@ -2203,7 +2251,7 @@ function wireWorkButtons() {
 function leaveForTikTok(url, handle = '') {
   const safeUrl = safeTikTokProfileUrl(url, handle);
   if (!safeUrl) {
-    alert('This TikTok profile link is invalid. Reload the queue or tell Rico.');
+    alert('This TikTok profile link is invalid. Reload the queue or contact the DropHero team with the creator\'s name.');
     return false;
   }
   try {
@@ -2481,7 +2529,7 @@ function chatHtml(c) {
   h += url
     ? '<div style="margin-top:9px"><a class="open" href="' + esc(url)
       + '" target="_blank" rel="noopener noreferrer">Open TikTok profile</a></div></div>'
-    : '<p class="muted">The TikTok profile link is invalid. Tell Rico.</p></div>';
+    : '<p class="muted">The TikTok profile link is invalid. Contact the DropHero team with the creator\'s name.</p></div>';
   return h;
 }
 
@@ -2578,6 +2626,7 @@ function updateBonusHeader() {
   box.hidden = !(Number.isFinite(cents) && cents > 0);
   $('signup-bonus-value').textContent = box.hidden ? '' : usd(cents) + ' bonus';
   box.title = replyRewardHint();
+  $('help-reward').textContent = replyRewardHint();
 }
 function replyBucket(c) {
   const suggestion = suggestedFor(c);
@@ -2848,7 +2897,7 @@ function rowHtml(t, opts) {
     + (profileUrl
         ? '<a class="open" href="' + esc(profileUrl)
           + '">Open profile</a>'
-        : '<p class="muted">The TikTok profile link is invalid. Tell Rico.</p>')
+        : '<p class="muted">The TikTok profile link is invalid. Contact the DropHero team with the creator\'s name.</p>')
     // THE ONE ACTION THAT PAYS A BONUS, GIVEN ITS OWN BUTTON ABOVE THE STATUS GRID.
     //
     // A reply with a photo is worth five times a sent DM, so it must not be one of eight equal
@@ -3364,6 +3413,26 @@ async function selectTab(name) {
 }
 
 const tabButtons = [...document.querySelectorAll('.tab')];
+
+// Help is read-only. Its shortcuts reuse the existing navigation and never record work.
+for (const id of ['open-help', 'login-help', 'claim-help']) {
+  $(id).onclick = () => {
+    $('help-actions').hidden = $('app').hidden;
+    $('help-reward').textContent = replyRewardHint();
+    $('helpdlg').showModal();
+  };
+}
+$('help-close').onclick = () => $('helpdlg').close();
+for (const button of document.querySelectorAll('[data-help-go]')) {
+  button.onclick = () => {
+    if ($('app').hidden) return;
+    const target = button.dataset.helpGo;
+    if (!tabButtons.some(b => b.dataset.tab === target)) return;
+    $('helpdlg').close();
+    void selectTab(target);
+    tabButtons.find(b => b.dataset.tab === target)?.focus();
+  };
+}
 for (const b of tabButtons) {
   b.onclick = () => selectTab(b.dataset.tab);
   b.onkeydown = (event) => {
