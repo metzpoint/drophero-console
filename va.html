@@ -105,6 +105,7 @@
   .counts div{min-width:0}
   @media(max-width:360px){.counts{gap:4px}}
   button:disabled{opacity:.55;cursor:default}
+  summary{cursor:pointer;min-height:44px;padding:10px 0;box-sizing:border-box}
   .fieldmsg{font-size:13px;margin:6px 0 0}
   .fieldmsg.bad{color:var(--bad)}
   .fieldmsg.good{color:var(--ok)}
@@ -219,6 +220,35 @@
   .total .amt{font-size:22px;color:var(--ok)}
   .earnhead{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.05em;
             margin:0 0 9px}
+  /* Presentation only: every value still comes from the existing portal snapshot. */
+  :root{--bg:#0d1423;--card:#172238;--line:#2b3b54;--ink:#f2f6ff;--dim:#aab9cf}
+  body{background:radial-gradient(ellipse at 12% 0,#18365c 0,transparent 45%),var(--bg);min-height:100vh}
+  #app{max-width:760px;margin:0 auto}
+  .portal-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:8px 0 16px;min-width:0}
+  .portal-heading>div:first-child{min-width:0;flex:1}
+  .workspace-label{font-size:10px;font-weight:700;letter-spacing:.14em;color:#8cbaff;text-transform:uppercase}
+  #hello{font-size:24px;letter-spacing:-.03em;overflow-wrap:anywhere;margin-top:5px}
+  .portal-heading .sub{margin:5px 0 0;line-height:1.5}
+  .bonus-tag{flex:0 0 auto;max-width:120px;padding:8px 10px;background:#12372f;border:1px solid #286350;
+    border-radius:12px;color:#c3f7df;font-size:10px;text-align:center;line-height:1.4}
+  .bonus-tag strong{display:block;font-size:17px;color:#e6fff3;font-variant-numeric:tabular-nums}
+  .card,.row,.acct-card{border-radius:18px;box-shadow:0 8px 24px #0002}
+  .card.top{background:linear-gradient(145deg,#1c2d48,#152136);border-color:#36547b}
+  .tabs{gap:5px;background:#0d1423ed;border-radius:14px;backdrop-filter:blur(12px)}
+  .tab{background:#142035;border-color:#2b3b54;border-radius:12px}
+  .tab[aria-selected="true"]{background:#264973;border-color:#639feb;box-shadow:inset 0 -3px 0 #8cbaff;color:#eef6ff}
+  .tab.urgent b{color:#ffd184}
+  button.good{background:linear-gradient(135deg,#1d6655,#174c43);border-color:#408d76;color:#f1fff9;font-weight:650}
+  button[data-copy-reply]{min-height:56px}
+  button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid #91bfff;outline-offset:3px}
+  .suggest{background:#101d32;border-color:#385b87;border-radius:14px;padding:15px;line-height:1.65}
+  .suggest .lbl{color:#a7cbff;font-weight:650}
+  .quote{background:#101a2a;border-left-color:#7aaeff}
+  .counts div{background:#152237;border-color:#304665;border-radius:14px}
+  .progress-note{color:#c3f7df;font-size:12px;line-height:1.5;margin:9px 0 0}
+  h2{font-size:22px;letter-spacing:-.02em}
+  #list>h3{font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:#bbcee8;margin:24px 0 10px}
+  @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
 </style></head><body>
 
 <div id="login" hidden>
@@ -274,8 +304,12 @@
 </div>
 
 <main id="app" hidden>
-  <h1 id="hello">DropHero</h1>
-  <p class="sub" id="sub">loading…</p>
+  <div class="portal-heading"><div><span class="workspace-label">DropHero · Partners</span>
+    <h1 id="hello">DropHero</h1>
+    <p class="sub" id="sub">loading…</p>
+  </div><div class="bonus-tag" id="signup-bonus" hidden aria-label="Bonus per verified affiliate signup">
+    <strong id="signup-bonus-value"></strong>per verified<br>affiliate signup
+  </div></div>
 
   <div class="counts two">
     <div><b id="remaining">–</b><span>Left today</span></div>
@@ -386,19 +420,21 @@
 </div></dialog>
 
 <dialog id="replydlg" aria-labelledby="reply-title"><div class="sheet">
-  <h2 id="reply-title" style="margin:0 0 4px;font-size:20px">They replied</h2>
+  <h2 id="reply-title" style="margin:0 0 4px;font-size:20px">Upload their reply</h2>
   <p class="muted" style="margin-top:0" id="rp-who"></p>
-  <label class="shot" id="rp-pick">Photo of the chat
+  <p class="muted">Choose one clear screenshot showing the creator's name and the latest messages. We read it and prepare your reply automatically.</p>
+  <label class="shot" id="rp-pick">Choose reply screenshot (required)
     <input type="file" accept="image/*" id="rp-file" aria-label="Choose a screenshot of their reply">
   </label>
   <img id="rp-thumb" class="thumb" hidden alt="">
-  <p class="muted" style="margin:13px 0 4px">What did they say? (helps us suggest a reply)</p>
-  <textarea id="rp-text" aria-label="What the creator wrote back" placeholder="Type or paste their message"></textarea>
-  <p class="muted" style="margin:13px 0 4px">How would you describe it?</p>
-  <div class="cls" id="rp-cls"></div>
+  <details id="rp-details" style="margin-top:13px"><summary>Choose a reply type yourself (optional)</summary>
+    <p class="muted">You can leave this to us. Only choose a type if you want to correct it.</p>
+    <div class="cls" id="rp-cls"></div>
+  </details>
+  <p class="muted" id="rp-reward"></p>
   <p id="rp-msg" class="muted"></p>
   <div class="acts" style="margin-top:10px">
-    <button id="rp-send" class="good full" disabled>Save</button>
+    <button id="rp-send" class="good full" disabled>Upload &amp; prepare my reply</button>
     <button id="rp-cancel" class="full">Cancel</button>
   </div>
 </div></dialog>
@@ -1051,7 +1087,7 @@ async function bootOrThrow() {
   const tierReady = Number(tier.ready || 0);
   $('sub').textContent = queue.length
     ? queue.length + ' creators waiting for a first DM'
-      + (tierReady ? ' · Tier 1 ready: ' + tierReady : '')
+      + (tierReady ? ' · Priority creators ready: ' + tierReady : '')
     : 'no new creators right now';
   $('done').textContent = data.completed_today ?? 0;
   if ($('n-earn') && !view.money) $('n-earn').textContent = (data.va ? '→' : '–');
@@ -1606,6 +1642,7 @@ function legacyCopy(text) {
 // ---------------------------------------------------------------------------------------------
 /** Route to the correct view based on the active tab. */
 function render() {
+  updateBonusHeader();
   for (const b of document.querySelectorAll('.tab')) {
     b.setAttribute('aria-selected', String(b.dataset.tab === tab));
   }
@@ -1678,13 +1715,23 @@ function drawWork() {
   const sentToday = capacity ? capacity.va_sent_today : (tt.va_sent_today ?? '—');
   const leftToday = capacity ? capacity.sendable_now : '—';
   const earnedToday = view.money?.today_total_cents ?? 0;
+  const signupsToday = Number(view.money?.today?.AFFILIATE_SIGNUP?.n) || 0;
   let html = '<div class="card top" style="margin-bottom:14px">'
     + '<div class="counts" style="margin:0">'
     + '<div><b>' + sentToday + '</b><span>Sent today</span></div>'
     + '<div><b>' + leftToday + '</b><span>Left today</span></div>'
     + '<div><b>' + usd(earnedToday) + '</b><span>Recorded today</span></div>'
     + '</div>'
+    + '<p class="progress-note">' + (signupsToday > 0
+      ? signupsToday + ' affiliate signup' + (signupsToday === 1 ? '' : 's') + ' recorded today. Your follow-ups are making a difference.'
+      : Number(sentToday) > 0 ? 'Your messages are recorded. Follow up on replies to turn interest into affiliate signups.'
+      : 'Start with one message. We will guide you through the next step.') + '</p>'
     + '<p class="muted" style="margin:10px 0 0">Sending from ' + acctName + '</p>'
+    + '<p class="muted" style="margin:8px 0 0">Got a reply? Find the creator in Chats and upload their screenshot.</p>'
+    + '<details style="margin-top:8px"><summary>New here? Your 3 steps</summary>'
+    + '<ol><li>In Work, copy the DM and open TikTok. Send it, return here and confirm that it was sent.</li>'
+    + '<li>When a creator answers, find them in Chats and upload the screenshot. Replies shows what to send next.</li>'
+    + '<li>Use the tracked signup link when they are ready. Earnings shows your recorded and confirmed rewards.</li></ol></details>'
     + (capacity && capacity.sendable_now === 0 && capacity.limiting_factor === 'ACCOUNT_CAPACITY'
         ? '<p class="muted" style="margin:4px 0 0">Your TikTok accounts have hit their limit for today.</p>'
         : capacity && capacity.limiting_factor === 'NO_APPROVED_ACCOUNT'
@@ -2384,24 +2431,28 @@ function chatHtml(c) {
     + (c.username ? ' · from @' + esc(c.username) : '') + '</div>';
 
   if (c.extracted_text) h += '<div class="quote">' + esc(c.extracted_text) + '</div>';
+  if (c.affiliate_state === 'REGISTERED') {
+    return h + '<div class="suggest"><span class="lbl">Finished</span>They have signed up as an affiliate. No new signup link is needed.</div></div>';
+  }
 
   // The six buckets, always visible and always changeable: a VA who mis-taps must be able to fix it
   // without hunting, and the affiliate link appears or disappears from this choice alone.
-  h += '<div class="cls" data-cls="' + esc(c.reply_event_id) + '">'
+  h += '<details style="margin:8px 0"><summary>Correct reply type (optional)</summary><div class="cls" data-cls="' + esc(c.reply_event_id) + '">'
     + CLASSES.map(([v, label]) =>
         '<button class="sm" data-v="' + v + '" aria-pressed="'
         + String(c.classification === v) + '">' + label + '</button>').join('')
-    + '</div>';
+    + '</div></details>';
 
   // WAT DE DMER LEEST. Eén zin, of één gewone regel dat er nog geen is. Het label is in alle drie de
   // gevallen hetzelfde: waar de zin vandaan komt, is niet hun probleem.
   const sug = suggestedFor(c);
-  if (sug.text && sug.nextAction === 'WAIT') {
-    h += '<div class="suggest"><span class="lbl">Next step · waiting for their reply</span>' + esc(sug.text) + '</div>'
-      + '<p class="muted" style="margin:6px 0 0">Upload a new screenshot when the creator replies. No message to send now.</p>';
+  if (sug.text && ['WAIT','CLOSE'].includes(sug.nextAction)) {
+    h += '<div class="suggest"><span class="lbl">' + (sug.nextAction === 'CLOSE' ? 'Conversation finished' : 'Waiting for the creator') + '</span>' + esc(sug.text) + '</div>'
+      + '<p class="muted" style="margin:6px 0 0">No message to send now. Upload a new screenshot if the creator answers.</p>';
   } else if (sug.text) {
     h += '<div class="suggest"><span class="lbl">Suggested reply</span>' + esc(sug.text) + '</div>'
-      + '<button class="sm" data-copy-reply="' + esc(c.reply_event_id) + '">COPY REPLY</button>';
+      + '<button class="good full" data-copy-reply="' + esc(c.reply_event_id) + '">COPY REPLY' + (url ? ' &amp; OPEN TIKTOK' : '') + '</button>'
+      + '<p class="muted" style="margin:6px 0 0">Paste this into their chat and tap Send in TikTok. Upload a new screenshot when they answer.</p>';
   } else if (sug.pending) {
     // De knop staat er en is uitgeschakeld in plaats van afwezig: er valt nog niets te kopiëren, en
     // er valt straks niets te zoeken. Een uitgeschakelde knop kan geen halve zin op het klembord zetten.
@@ -2412,7 +2463,7 @@ function chatHtml(c) {
       + '<p class="muted" style="margin:6px 0 0">You can carry on and come back to this one later.</p>';
   } else {
     h += '<div class="suggest none"><span class="lbl">Suggested reply</span>'
-      + esc(sug.guidance || 'A reply is not ready yet. Refresh Chats to try again, or upload a clear screenshot of their latest reply.') + '</div>';
+      + esc(sug.guidance || 'We could not prepare a reply yet. Try again later, or upload a clearer screenshot of their latest reply.') + '</div>';
   }
 
   // SECTION M, ON SCREEN. Not shown merely because a reply exists -- only once the creator has said
@@ -2429,14 +2480,14 @@ function chatHtml(c) {
 
   h += url
     ? '<div style="margin-top:9px"><a class="open" href="' + esc(url)
-      + '" target="_blank" rel="noopener noreferrer">Open the chat</a></div></div>'
+      + '" target="_blank" rel="noopener noreferrer">Open TikTok profile</a></div></div>'
     : '<p class="muted">The TikTok profile link is invalid. Tell Rico.</p></div>';
   return h;
 }
 
 const CLASSES = [
-  ['QUESTION', 'Asked a question'], ['INTERESTED', 'Keen'],
-  ['SEND_DETAILS', 'Wants the link'], ['NOT_INTERESTED', 'Not interested'],
+  ['QUESTION', 'Asked a question'], ['INTERESTED', 'Interested'],
+  ['SEND_DETAILS', 'Asked for details'], ['NOT_INTERESTED', 'Not interested'],
   ['FOLLOW_UP_LATER', 'Later'], ['OTHER', 'Something else']
 ];
 
@@ -2468,17 +2519,20 @@ function wireChats(rows) {
   }
   for (const b of list.querySelectorAll('[data-copy-reply]')) {
     b.onclick = async () => {
-      // KOPIËREN IS KOPIËREN EN VERDER NIETS. Er gaat geen RPC uit, er verandert geen status, er
-      // wordt niets weggeschreven en de creator wordt niet aangeraakt. De DMer plakt hem zelf in
-      // TikTok, op zijn eigen moment, en mag hem eerst aanpassen. Dezelfde zin die op het scherm
-      // staat gaat naar het klembord -- suggestedFor is de enige bron van beide.
+      // Copy the displayed answer, then open the profile. The DMer still sends it manually;
+      // neither action records a send, changes earnings, nor calls an RPC.
       const row = rows.find((r) => r.reply_event_id === b.dataset.copyReply);
       const text = row ? suggestedFor(row).text : null;
       if (!text) return;
       b.disabled = true;
-      const r = await copyNow(text);
+      const r = await copyNow(text, true);
       b.disabled = false;
-      if (r.ok) notice('Reply copied — paste it in TikTok.');
+      if (r.ok) {
+        const url = safeTikTokProfileUrl(row.profile_url, row.handle);
+        const opened = url && leaveForTikTok(url, row.handle);
+        notice(opened ? 'Reply copied — paste it in their TikTok chat and tap Send.'
+          : 'Reply copied. Open the TikTok profile below, paste it in their chat and tap Send.');
+      }
       else {
         prompt('Automatic copy was blocked. Copy this reply from the field below.', text);
         notice('Use the reply shown in the copy field.');
@@ -2511,6 +2565,20 @@ function wireChats(rows) {
 }
 
 // Replies is the action inbox; Chats keeps the complete sent-message history.
+function replyRewardHint() {
+  const cents = Number(view.money?.rates?.signup_cents);
+  return Number.isFinite(cents) && cents > 0
+    ? 'Earn ' + usd(cents) + ' once per verified affiliate signup through your tracked link. Uploading a screenshot alone does not earn a bonus.'
+    : 'See Earnings for the current signup bonus and confirmed rewards. Uploading a screenshot alone does not earn a bonus.';
+}
+function updateBonusHeader() {
+  const box = $('signup-bonus');
+  if (!box) return;
+  const cents = Number(view.money?.rates?.signup_cents);
+  box.hidden = !(Number.isFinite(cents) && cents > 0);
+  $('signup-bonus-value').textContent = box.hidden ? '' : usd(cents) + ' bonus';
+  box.title = replyRewardHint();
+}
 function replyBucket(c) {
   const suggestion = suggestedFor(c);
   if (c.affiliate_state === 'REGISTERED' || c.classification === 'NOT_INTERESTED'
@@ -2518,7 +2586,7 @@ function replyBucket(c) {
   return suggestion.text ? 'ready' : 'review';
 }
 function updateReplyBadge() {
-  const count = (view.chats || []).filter(c => replyBucket(c) !== 'waiting').length;
+  const count = (view.chats || []).filter(c => replyBucket(c) === 'ready').length;
   $('n-replies').textContent = String(count);
   $('tab-replies').classList.toggle('urgent',count > 0);
 }
@@ -2529,9 +2597,10 @@ function redrawReplyViews() {
 }
 function drawReplyInbox() {
   const chats = view.chats || [];
-  const groups = [['ready','Reply now'],['review','Checking / needs review'],['waiting','Waiting / closed']];
+  const groups = [['ready','Your turn to reply'],['review','Reading or checking the screenshot'],['waiting','Waiting or finished']];
   let html = '<h2>Replies</h2><p class="muted">New screenshots start reply suggestions automatically. '
     + 'Copy the suggested reply and send it in TikTok. Upload their latest reply when it arrives.</p>'
+    + '<p class="muted">' + esc(replyRewardHint()) + '</p>'
     + '<p id="chatmsg" class="fieldmsg" role="status" aria-live="polite">' + esc(chatStatus) + '</p>';
   for (const [bucket,label] of groups) {
     const rows = chats.filter(c => replyBucket(c) === bucket);
@@ -2649,6 +2718,7 @@ function drawEarnings() {
     + '<div class="money"><span>Paid to you so far</span><span class="amt">'
     + usd(m.paid_cents) + '</span></div></div>'
 
+    + '<p class="muted">' + esc(replyRewardHint()) + '</p>'
     + payoutCardHtml();
 
   wirePayoutCard();
@@ -2746,8 +2816,8 @@ async function runSearch(token = seq.begin('search')) {
 function tierPill(t) {
   if (!t || !t.tier_1) return '';
   const n = Number(t.followers);
-  const k = Number.isFinite(n) ? ' · ' + Math.round(n / 1000) + 'K' : '';
-  return '<span class="pill tier1">TIER 1' + esc(k) + '</span>';
+  const label = Number.isFinite(n) && n > 0 ? Math.round(n / 1000) + 'K followers' : 'Priority creator';
+  return '<span class="pill tier1">' + esc(label) + '</span>';
 }
 
 function rowHtml(t, opts) {
@@ -2761,7 +2831,7 @@ function rowHtml(t, opts) {
       + badgeFor(t) + '</div>'
       + '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end">'
         + tierPill(t)
-        + '<span class="pill ' + esc(t.priority) + '">' + esc(t.priority) + '</span></div></div>'
+        + '<span class="pill ' + esc(t.priority) + '">' + esc(({HIGH:'Contact first',MEDIUM:'Next in line',LOW:'Later in the queue'})[t.priority] || 'In your queue') + '</span></div></div>'
     + (hasSend
       ? '<p class="muted" style="margin:10px 0 0">Sent ' + esc(when(t.first_sent_at))
         + ' (' + esc(ago(t.first_sent_at)) + ')'
@@ -3035,10 +3105,9 @@ function clearReplyReports() {
 }
 
 async function beginReplyCapture(r) {
-  // AI intent classification is not currently available, so every reply must use the one sheet
-  // that captures both its screenshot and the VA's required classification. This is also the same
-  // idempotent flow used from history: retrying reuses one reply event and one proof check.
-  if (!r?.send_id) {
+  // Existing reply rows already passed the server's send gate. History rows need a send id;
+  // dh_reply_report rechecks ownership and the real send record for both entry points.
+  if (!r?.send_id && !r?.reply_event_id) {
     const msg = $('reply-msg');
     if (msg) {
       msg.textContent = 'This DM has no confirmed send record. Confirm the send first; no photo was uploaded.';
@@ -3059,14 +3128,8 @@ async function beginReplyCapture(r) {
 let replyCtx = null;    // { task_id, file, classification, report, uploaded }
 
 function updateReplyReady() {
-  const klaar = !!(replyCtx?.file && replyCtx?.classification);
+  const klaar = !!replyCtx?.file;
   $('rp-send').disabled = !klaar;
-  // A GREY BUTTON THAT EXPLAINS NOTHING IS A DEAD END. With the photo chosen but no kind picked,
-  // the VA has done the hard part and the button simply refuses to light up, with no text anywhere
-  // saying why. Say the one thing that is missing, at the moment it becomes the only thing missing.
-  if (!klaar && replyCtx?.file && !replyCtx?.classification) {
-    $('rp-msg').textContent = 'One more tap: choose what kind of reply this is.';
-  }
 }
 
 function openReply(taskId, who) {
@@ -3079,7 +3142,9 @@ function openReply(taskId, who) {
   };
   $('rp-who').textContent = who ? ('Chat with ' + who) : '';
   resetReplySelection();
-  $('rp-msg').textContent = ''; $('rp-text').value = '';
+  $('rp-msg').textContent = '';
+  $('rp-details').open = false;
+  $('rp-reward').textContent = replyRewardHint();
   $('rp-cls').innerHTML = CLASSES.map(([v, label]) =>
     '<button class="sm" data-v="' + v + '" aria-pressed="false">' + label + '</button>').join('');
   for (const b of $('rp-cls').querySelectorAll('button')) {
@@ -3118,8 +3183,8 @@ $('rp-file').onchange = () => {
 };
 
 $('rp-send').onclick = async () => {
-  if (!replyCtx?.file || !replyCtx?.classification) {
-    $('rp-msg').textContent = 'Choose what kind of reply this is before saving.';
+  if (!replyCtx?.file) {
+    $('rp-msg').textContent = 'Choose a screenshot before uploading.';
     updateReplyReady();
     return;
   }
@@ -3157,27 +3222,30 @@ $('rp-send').onclick = async () => {
     replyCtx.uploaded = true;
   }
 
-  const text = $('rp-text').value.trim();
-  let classified;
-  try {
-    classified = await sb.rpc('dh_reply_classify', {
-      p_reply_event_id: data.reply_event_id,
-      p_classification: replyCtx.classification,
-      p_text: text || null
-    });
-  } catch (error) { classified = { error }; }
-  const classResult = normalizeRpc(classified);
-  if (!classResult.ok) {
-    $('rp-msg').textContent = 'The photo is saved, but the reply details did not save. '
-      + classResult.message;
-    $('rp-send').disabled = false;
-    return;
+  // The upload trigger reads the screenshot and classifies it. Only an explicit optional
+  // correction takes the human path; the default leaves classification to the AI.
+  if (replyCtx.classification) {
+    let classified;
+    try {
+      classified = await sb.rpc('dh_reply_classify', {
+        p_reply_event_id: data.reply_event_id,
+        p_classification: replyCtx.classification,
+        p_text: null
+      });
+    } catch (error) { classified = { error }; }
+    const classResult = normalizeRpc(classified);
+    if (!classResult.ok) {
+      $('rp-msg').textContent = 'The photo is saved, but the reply details did not save. '
+        + classResult.message;
+      $('rp-send').disabled = false;
+      return;
+    }
   }
 
   forgetReplyReport(replyCtx.task_id);
   if (pending && pending.task_id === replyCtx.task_id) setPending(null);
   $('replydlg').close();
-  say(data.is_first ? 'Saved — first reply from this creator.' : 'Saved.');
+  say('Screenshot saved — your reply is being prepared. You can keep working.');
   // De screenshot is binnen en het antwoord is geclassificeerd, dus nu pas kan er een zin geschreven
   // worden. Hier gaan kijken in plaats van de DMer laten verversen -- begrensd op één minuut.
   // Dit staat na close() en voor boot(): het vak toont de wachttoestand zodra de lijst opnieuw
