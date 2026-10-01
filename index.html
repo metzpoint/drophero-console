@@ -158,6 +158,8 @@
   <h2>First-touch templates <small class="muted">what gets sent, and what gets refused</small></h2>
   <div class="card" id="templates"><div class="muted">loading…</div></div>
 
+  <h2 id="activity">DMer activity <small class="muted">portal use and recorded work</small></h2>
+  <div class="card" id="vaactivity"><div class="muted">loading…</div></div>
   <h2 id="performance">VA performance <small class="muted">volume and quality</small></h2>
   <div class="card" id="vaperf"><div class="muted">loading…</div></div>
 
@@ -560,7 +562,7 @@ async function bootOnce() {
   renderOverview(overview);
 
   const [funnel, full, attention, interested, vas, sourcing, integrations, tiktok,
-         perf, proofs, payouts, templates, modblock, supply] = await Promise.all([
+         perf, proofs, payouts, templates, modblock, supply, activity] = await Promise.all([
     sb.rpc('dh_owner_funnel', { p_period: period }), sb.rpc('dh_owner_full_funnel'),
     sb.rpc('dh_owner_attention'), sb.rpc('dh_owner_interested_creators'),
     sb.rpc('dh_owner_va_admin'), sb.rpc('dh_owner_sourcing_settings'), sb.rpc('dh_owner_integrations'),
@@ -568,12 +570,13 @@ async function bootOnce() {
     sb.rpc('dh_admin_va_performance'), sb.rpc('dh_admin_proof_queue', { p_limit: 60 }),
     sb.rpc('dh_admin_payout_rows'), sb.rpc('dh_tiktok_template_metrics'),
     sb.rpc('dh_tiktok_block_rate_by_sender'),
-    sb.rpc('dh_owner_supply_pipeline')
+    sb.rpc('dh_owner_supply_pipeline'), sb.rpc('dh_owner_va_activity')
   ]);
   renderSupply(supply.data, supply.error);
   renderApprovals(tiktok.data, tiktok.error);
   renderTikTok(tiktok.data, tiktok.error);
   renderPerformance(perf.data, perf.error);
+  renderActivity(activity.data, activity.error);
   renderProofs(proofs.data, proofs.error);
   renderPayouts(payouts.data, payouts.error);
   renderTemplates(templates.data, templates.error);
@@ -1429,6 +1432,25 @@ function renderTemplates(rows, err) {
         + '<td>' + rate(r.block_rate) + '</td>'
         + '<td>' + r.replies + '</td><td>' + rate(r.reply_rate) + '</td>'
         + '<td>' + r.positive_replies + '</td><td>' + r.negative_replies + '</td></tr>').join('')
+    + '</tbody></table></div>';
+}
+
+function renderActivity(rows, err) {
+  if (err) { $('vaactivity').innerHTML = '<div class="muted">Activity unavailable — ' + esc(err.message) + '</div>'; return; }
+  const stamp = value => value ? esc(new Date(value).toLocaleString()) : 'Not recorded';
+  const recent = value => value && Date.now() - Date.parse(value) < 5 * 60000;
+  const working = value => value && Date.now() - Date.parse(value) < 7 * 86400000;
+  $('vaactivity').innerHTML = '<p class="muted">Portal use records visible opens and interactions, not an idle tab. Recent use means within 5 minutes; it does not confirm a DM was sent. New portal tracking starts from this release. DM counts are claims recorded in the portal. A photographed DM still needs evidence review; it is not proof of delivery. Work history is retained. Times use your browser timezone; today’s DM count uses UTC. Refreshes every 30 seconds.</p>'
+    + '<div class="scroll"><table><thead><tr>'
+    + ['DMer', 'Account status', 'Portal last used', 'Last claimed DM', 'Last reply upload', 'DMs today / 7 days', 'Assigned stock', 'Claimed / photographed DMs', 'Proofs needing review', 'Work status'].map(x => '<th>' + x + '</th>').join('')
+    + '</tr></thead><tbody>' + (Array.isArray(rows) ? rows : []).map(r => '<tr>'
+      + '<td><b>' + esc(r.va_name || '—') + '</b></td>'
+      + '<td>' + (r.active ? 'Enabled' : 'Disabled') + ' · ' + esc(r.approved_accounts) + ' approved</td>'
+      + '<td>' + stamp(r.last_portal_at) + (recent(r.last_portal_at) ? ' · recent use' : '') + '</td>'
+      + '<td>' + stamp(r.last_dm_at) + '</td><td>' + stamp(r.last_reply_at) + '</td>'
+      + '<td>' + esc(r.sent_today) + ' / ' + esc(r.sent_7d) + '</td><td>' + esc(r.ready_stock) + '</td>'
+      + '<td>' + esc(r.claimed_sends) + ' / ' + esc(r.photographed_sends) + '</td><td>' + esc(r.proofs_need_review) + '</td>'
+      + '<td>' + (working(r.last_work_at) ? 'Work recorded within 7 days' : r.last_work_at ? 'No work recorded in 7 days' : 'No work recorded yet') + '</td></tr>').join('')
     + '</tbody></table></div>';
 }
 

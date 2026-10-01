@@ -489,6 +489,26 @@ let pending = null;   // { task_id, handle, profile_url, dm_message, state, copy
 // zie boot(). Draagt geen geld en geen taakstatus; het is alleen wat er tegen de VA gezegd wordt.
 let orphanedSend = null;
 let pendingUserId = null;
+// Presence records visible use, never an idle heartbeat or auth token refresh.
+let presenceUser = null, presenceLastRequest = -Infinity, presenceBusy = false;
+async function recordPortalActivity(event, forceOpen = false) {
+  if (document.hidden || $('app').hidden || !pendingUserId) return;
+  if (event === 'interaction' && Date.now() - presenceLastRequest < 60000) return;
+  if (event === 'open' && !forceOpen && presenceUser === pendingUserId) return;
+  if (presenceBusy) return;
+  presenceBusy = true;
+  presenceUser = pendingUserId;
+  presenceLastRequest = Date.now();
+  try { await sb.rpc('dh_va_activity_touch', { p_event: event }); }
+  catch (_) { /* Monitoring must never interrupt work. */ }
+  finally { presenceBusy = false; }
+}
+for (const eventName of ['pointerdown', 'keydown', 'wheel']) {
+  document.addEventListener(eventName, event => {
+    if (event.isTrusted) void recordPortalActivity('interaction');
+  }, { passive: true });
+}
+
 
 /** Persist and mirror in one place, so the variable and the storage can never disagree. */
 function setPending(entry) {
@@ -793,7 +813,7 @@ $('forgotpw').onclick = async () => {
 // luisteraar zou de VA gewoon ingelogd raken zonder ooit een nieuw wachtwoord te kiezen -- en de
 // volgende keer weer buitengesloten staan, want het oude wachtwoord kennen ze nog steeds niet.
 sb.auth.onAuthStateChange((event) => {
-  if (event === 'SIGNED_OUT') clearAssistantState();
+  if (event === 'SIGNED_OUT') { clearAssistantState(); presenceUser = null; presenceLastRequest = -Infinity; }
   if (event !== 'PASSWORD_RECOVERY') return;
   $('login').hidden = true;
   $('claim').hidden = true;
@@ -981,6 +1001,7 @@ async function bootOrThrow() {
   $('wrongacct').hidden = true;
   $('applicant-continue').hidden = true;
   $('login').hidden = true; $('app').hidden = false;
+  void recordPortalActivity('open');
 
   view = data;
   queue = data.new_dms || [];
@@ -3253,7 +3274,7 @@ async function resume() {
   pending = loadPending({ userId: pendingUserId });
   await boot();
 }
-document.addEventListener('visibilitychange', () => { if (!document.hidden) resume(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { resume(); void recordPortalActivity('open', true); } });
 window.addEventListener('pageshow', (e) => { if (e.persisted) resume(); });
 
 // boot() reads pending state only after Supabase has identified the user, so one account can never
