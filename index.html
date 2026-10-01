@@ -1439,19 +1439,24 @@ function renderTemplates(rows, err) {
 
 function renderActivity(rows, err) {
   if (err) { $('vaactivity').innerHTML = '<div class="muted">Activity unavailable — ' + esc(err.message) + '</div>'; return; }
+  const responsePct = value => value == null ? '—' : Number(value).toFixed(2) + '%';
   const stamp = value => value ? esc(new Date(value).toLocaleString()) : 'Not recorded';
   const recent = value => value && Date.now() - Date.parse(value) < 5 * 60000;
   const working = value => value && Date.now() - Date.parse(value) < 7 * 86400000;
   $('vaactivity').innerHTML = '<p class="muted">Portal use records visible opens and interactions, not an idle tab. Recent use means within 5 minutes; it does not confirm a DM was sent. New portal tracking starts from this release. DM counts are claims recorded in the portal. A photographed DM still needs evidence review; it is not proof of delivery. Work history is retained. Times use your browser timezone; today’s DM count uses UTC. Refreshes every 30 seconds.</p>'
+    + '<p class="muted">Response rates use all recorded DMs and count one verified response per conversation. The weighted team average includes active DMers only. A low response rate is a review signal; no automatic removal is enabled.</p>'
     + '<div class="scroll"><table><thead><tr>'
-    + ['DMer', 'Account status', 'Portal last used', 'Last claimed DM', 'Last reply upload', 'DMs today / 7 days', 'Assigned stock', 'Claimed / photographed DMs', 'Proofs needing review', 'Work status'].map(x => '<th>' + x + '</th>').join('')
+    + ['DMer', 'Account status', 'Portal last used', 'Last claimed DM', 'Last reply upload', 'DMs today / 7 days', 'Assigned stock', 'Claimed / photographed DMs', 'Verified responses', 'Response %', 'Active team %', 'Response review', 'Proofs needing review', 'Work status'].map(x => '<th>' + x + '</th>').join('')
     + '</tr></thead><tbody>' + (Array.isArray(rows) ? rows : []).map(r => '<tr>'
       + '<td><b>' + esc(r.va_name || '—') + '</b></td>'
       + '<td>' + (r.active ? 'Enabled' : 'Disabled') + ' · ' + esc(r.approved_accounts) + ' approved</td>'
       + '<td>' + stamp(r.last_portal_at) + (recent(r.last_portal_at) ? ' · recent use' : '') + '</td>'
       + '<td>' + stamp(r.last_dm_at) + '</td><td>' + stamp(r.last_reply_at) + '</td>'
       + '<td>' + esc(r.sent_today) + ' / ' + esc(r.sent_7d) + '</td><td>' + esc(r.ready_stock) + '</td>'
-      + '<td>' + esc(r.claimed_sends) + ' / ' + esc(r.photographed_sends) + '</td><td>' + esc(r.proofs_need_review) + '</td>'
+      + '<td>' + esc(r.claimed_sends) + ' / ' + esc(r.photographed_sends) + '</td>'
+      + '<td>' + n(r.verified_responses) + '</td><td>' + responsePct(r.response_pct) + '</td><td>' + responsePct(r.active_team_response_pct) + '</td>'
+      + '<td>' + (!r.active ? 'Disabled · not assessed' : r.below_team_response ? 'Below team average · review' : r.response_pct == null ? 'No response sample' : 'At or above team average') + '</td>'
+      + '<td>' + esc(r.proofs_need_review) + '</td>'
       + '<td>' + (working(r.last_work_at) ? 'Work recorded within 7 days' : r.last_work_at ? 'No work recorded in 7 days' : 'No work recorded yet') + '</td></tr>').join('')
     + '</tbody></table></div>';
 }

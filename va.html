@@ -2179,7 +2179,7 @@ function drawDemand() {
   $('demand').innerHTML =
     '<div class="demand"><h3>Quick check</h3>'
     + '<p style="margin:0 0 10px">Send us a photo of your chat with ' + who
-    + ' so we can confirm the message went out. Every new DM needs a screenshot. Its payment stays pending until approval.</p>'
+    + ' so we can confirm the message went out. We ask for random screenshot checks. This selected DM’s payment stays pending until approval.</p>'
     + '<button class="good" id="demand-go" style="background:#7d5a1e;border-color:#a8781f;'
     + 'color:#fff3dc">Send the photo</button></div>';
   $('demand-go').onclick = () => openProof(p);
@@ -2855,7 +2855,7 @@ function openProof(p) {
   $('pr-title').textContent = p.proof_kind === 'REPLY' ? 'Photo of the reply' : 'Quick check';
   $('pr-why').textContent = p.proof_kind === 'REPLY'
     ? 'A photo of the chat so we can confirm the reply and release your bonus.'
-    : 'For every new DM, send a photo showing the creator’s handle and the full message as sent—not a draft or failed message. '
+    : 'This DM was selected for a random check. Send a photo showing the creator’s handle and the full message as sent—not a draft or failed message. '
       + 'You can continue after uploading. This DM’s payment stays pending until the photo is approved.'
       + (p.dm_message ? '\n\nExpected message: ' + p.dm_message : '');
   resetProofSelection();
