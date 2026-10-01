@@ -2203,12 +2203,12 @@ function drawDemand() {
 // KOSTEN. Twee dingen begrenzen ze, en allebei staan ze in de database en niet hier: de functie
 // claimt een antwoord voordat hij het model betaalt (dus tien tabbladen kosten één aanroep), en een
 // mislukking koelt dertig minuten af. Wat hier staat is alleen de bovengrens op het vragen: één
-// verzoek per gesprek per paginabezoek, en na een screenshot vijftien seconden lang elke twee.
+// verzoek per gesprek per paginabezoek, en na een screenshot maximaal één minuut elke twee seconden.
 // ---------------------------------------------------------------------------------------------
 // Suggestions are advisory. Their cache belongs to one user and one exact reply context.
 const AI = { seen: new Map(), inflight: new Set(), requests: new Map(), queued: new Map(), waiting: new Set(), watch: null, epoch: 0 };
 const AI_POLL_EVERY_MS = 2000;
-const AI_POLL_WINDOW_MS = 15000;
+const AI_POLL_WINDOW_MS = 60000;
 const AI_REQUEST_TIMEOUT_MS = 25000;
 const AI_DEBUG_IDS = false;
 function aiDebug(state) { if (AI_DEBUG_IDS) console.debug('[ai]', state); }
@@ -2338,7 +2338,7 @@ function startSuggestionWatch(replyEventId) {
   const tick = async () => {
     if (AI.watch !== watch) return;
     const remaining = AI_POLL_WINDOW_MS - (Date.now() - watch.started);
-    const found = remaining > 0 ? await assistantFor(replyEventId, aiRow(replyEventId), remaining) : null;
+    const found = remaining > 0 ? await assistantFor(replyEventId, aiRow(replyEventId), Math.min(remaining, AI_REQUEST_TIMEOUT_MS)) : null;
     if (AI.watch !== watch) return;
     if (found?.text || found?.withheld && !found?.retryable || Date.now() - watch.started >= AI_POLL_WINDOW_MS) {
       AI.waiting.delete(replyEventId); AI.watch = null;
@@ -3122,7 +3122,7 @@ $('rp-send').onclick = async () => {
   $('replydlg').close();
   say(data.is_first ? 'Saved — first reply from this creator.' : 'Saved.');
   // De screenshot is binnen en het antwoord is geclassificeerd, dus nu pas kan er een zin geschreven
-  // worden. Hier gaan kijken in plaats van de DMer laten verversen -- begrensd op vijftien seconden.
+  // worden. Hier gaan kijken in plaats van de DMer laten verversen -- begrensd op één minuut.
   // Dit staat na close() en voor boot(): het vak toont de wachttoestand zodra de lijst opnieuw
   // getekend wordt, en niet de zin die over de vórige stand van dit gesprek ging.
   startSuggestionWatch(data.reply_event_id);
