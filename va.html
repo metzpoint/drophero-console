@@ -665,6 +665,7 @@ async function withButton(btn, action, ids, call, after) {
   let res;
   try {
     const { data, error } = await call();
+    savedProof = data;
     res = normalizeRpc({ data, error });
   } catch (e) {
     res = normalizeRpc({ error: e });
@@ -2999,10 +3000,11 @@ async function uploadShot(proofId, file, bucket) {
     };
   }
 
-  let res;
+  let res, savedProof;
   try {
     const { data, error } = await sb.rpc('dh_proof_upload',
       { p_proof_check_id: proofId, p_image_path: path });
+    savedProof = data;
     res = normalizeRpc({ data, error });
   } catch (e) {
     res = normalizeRpc({ error: e });
@@ -3023,7 +3025,8 @@ async function uploadShot(proofId, file, bucket) {
     }
     return { ok: false, message: res.message };
   }
-  return { ok: true };
+  return { ok: true, proof_check_id: savedProof?.proof_check_id || proofId,
+    reply_event_id: savedProof?.reply_event_id || null, new_reply: savedProof?.new_reply === true };
 }
 
 function openProof(p) {
@@ -3080,7 +3083,11 @@ $('pr-send').onclick = async () => {
   }
   const onSuccess = proofCtx.onSuccess;
   $('proofdlg').close();
-  say('Thanks — sent.');
+  if (r.reply_event_id) {
+    tab = 'replies';
+    startSuggestionWatch(r.reply_event_id);
+    say('Screenshot saved — your reply is being prepared.');
+  } else say('Thanks — sent.');
   if (onSuccess) await onSuccess(); else await boot();
 };
 
@@ -3267,6 +3274,11 @@ $('rp-send').onclick = async () => {
         + ' Try again — no duplicate reply will be created.';
       $('rp-send').disabled = false;
       return;
+    }
+    if (up.reply_event_id) {
+      data = rememberReplyReport(replyCtx.task_id,{...data,reply_event_id:up.reply_event_id,
+        proof_check_id:up.proof_check_id});
+      replyCtx.report = data;
     }
     replyCtx.uploaded = true;
   }
