@@ -95,6 +95,9 @@
 
   .activity-cards{display:none}.activity-card{border:1px solid var(--line);border-radius:12px;padding:12px;min-width:0}.activity-card .row{padding-top:0}.activity-card .row b{overflow-wrap:anywhere;min-width:0}.activity-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px}.activity-metrics span{color:var(--dim);font-size:11px}.activity-metrics b{display:block;font-size:18px;color:var(--ink);margin-top:4px;overflow-wrap:anywhere}
   @media(max-width:600px){.activity-cards{display:grid;gap:10px}.activity-table{display:none}}
+
+.sim-toolbar{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:12px 0}.sim-toolbar select{min-width:200px;max-width:100%}.sim-form{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px}.sim-form label,.sim-toolbar label{display:grid;gap:6px}.sim-wide{grid-column:1/-1;overflow-wrap:anywhere}.sim-form textarea{min-height:80px;resize:vertical}.sim-form input,.sim-form select,.sim-form textarea{width:100%;box-sizing:border-box}.sim-preview{max-width:200px;max-height:280px;object-fit:contain}.sim-step{padding:20px;background:var(--card,#111827);border:1px solid var(--line,#334155);border-radius:14px;margin:16px 0}.sim-step-head{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}.sim-step-grid{display:grid;grid-template-columns:minmax(120px,240px) 1fr;gap:20px;margin-top:12px}.sim-step img{max-width:100%;max-height:420px;object-fit:contain}.sim-step pre{white-space:pre-wrap;word-break:break-word;max-height:300px;overflow:auto;font-size:12px}.sim-answer{padding:16px;border-radius:10px;background:#14342c;white-space:pre-wrap;overflow-wrap:anywhere}.sim-status{font-weight:600}#sim-notice{min-height:24px}@media(max-width:600px){.sim-form,.sim-step-grid{grid-template-columns:1fr}.sim-toolbar>*{max-width:100%}.sim-toolbar select{min-width:0;width:100%}.sim-step{padding:14px}}
+
 </style></head><body>
 
 <div id="login" hidden>
@@ -127,7 +130,7 @@
 
 
 
-<nav class="adminnav" aria-label="Admin sections"><a href="#overview" data-admin-nav="overview">Overview</a><a href="#team" data-admin-nav="team">Team</a><a href="#conversations" data-admin-nav="conversations">Conversations</a><a href="#payments" data-admin-nav="payments">Payments</a><a href="#creators" data-admin-nav="creators">Creators</a><a href="#settings" data-admin-nav="settings">Settings & sourcing</a></nav>
+<nav class="adminnav" aria-label="Admin sections"><a href="#overview" data-admin-nav="overview">Overview</a><a href="#team" data-admin-nav="team">Team</a><a href="#conversations" data-admin-nav="conversations">Conversations</a><a href="#payments" data-admin-nav="payments">Payments</a><a href="#creators" data-admin-nav="creators">Creators</a><a href="#settings" data-admin-nav="settings">Settings & sourcing</a><a href="#simulation" data-admin-nav="simulation">Testportal</a></nav>
 <div class="workspace-heading"><span class="muted" id="admin-view-label">Overview</span><a class="showall" href="#all" id="admin-show-all">Show all sections</a></div>
 <section id="section-overview" data-admin-section="overview" aria-labelledby="title-overview">
 <header class="sectionhead"><h2 id="title-overview">Overview</h2><p>Your daily decisions in one place.</p></header>
@@ -227,6 +230,43 @@
   <div class="card" id="templates"><div class="muted">loading…</div></div>
 
 </section>
+
+<section id="section-simulation" data-admin-section="simulation" aria-labelledby="title-simulation" hidden>
+<header class="sectionhead"><h2 id="title-simulation">Testportal · DMer-simulatie</h2><p>Test met echte screenshots hoe de actuele screenshotcontrole en AI reageren. Verzending, aanmeldingen en verdiensten blijven binnen de simulatie.</p></header>
+<div class="card">
+ <div class="sim-toolbar"><select id="sim-runs" aria-label="Eerdere simulaties"><option value="">Kies een eerdere test</option></select><button id="sim-refresh" type="button" data-sim-action>Tests verversen</button></div>
+ <div class="sim-toolbar"><select id="sim-examples" aria-label="Bestaande VA-screenshot"><option value="">Of kies een bestaande VA-screenshot</option></select><button id="sim-import" type="button" data-sim-action>Deze screenshot testen</button></div>
+ <details><summary>Nieuwe simulatie met eigen screenshots</summary>
+ <form id="sim-create" class="sim-form">
+ <label>Naam van de test<input id="sim-title" maxlength="120" placeholder="Bijvoorbeeld: vraag over commissie"></label>
+ <label>TikTok-handle<input id="sim-handle" maxlength="80" placeholder="@creator"></label>
+ <label>Naam van de creator<input id="sim-name" maxlength="120"></label>
+ <label>Taal<select id="sim-language"><option value="en">Engels</option><option value="nl">Nederlands</option></select></label>
+ <label class="sim-wide">Profiel van de creator<textarea id="sim-bio" maxlength="1200" placeholder="Optioneel: bio of niche"></textarea></label>
+ <label class="sim-wide">Eerste DM<textarea id="sim-first" maxlength="2000" placeholder="De DM waarop de creator reageert. Nodig om een verzonden-DM-screenshot te testen."></textarea></label>
+ <button type="submit" data-sim-action>Simulatie starten</button>
+ </form></details>
+ <p id="sim-notice" role="status" aria-live="polite"></p>
+</div>
+<div id="sim-active" hidden>
+ <div class="card"><h3 id="sim-active-title"></h3><p><strong id="sim-person"></strong> · <span id="sim-facts"></span></p>
+ <p class="sim-status" id="sim-status" role="status" aria-live="polite">Klaar voor een screenshot</p>
+ <div class="sim-toolbar"><label>Wat test je?<select id="sim-kind"><option value="REPLY">Reactie van de creator</option><option value="SEND">Bewijs van een verstuurde DM</option></select></label>
+ <label>Screenshot<input id="sim-file" type="file" accept="image/png,image/jpeg,image/webp"></label><button id="sim-upload" type="button" data-sim-action>Uploaden en testen</button></div>
+ <img id="sim-preview" class="sim-preview" alt="Preview van je screenshot" hidden>
+ </div>
+ <div id="sim-steps"></div>
+ <div class="card sim-toolbar">
+ <button id="sim-copy" type="button" disabled>Antwoord kopiëren</button>
+ <button id="sim-sent" type="button" disabled>Verzending bevestigen (test)</button>
+ <button id="sim-invite" type="button" hidden>Aanmeldlink testen</button>
+ <button id="sim-clicked" type="button" hidden>Linkklik simuleren</button>
+ <button id="sim-registered" type="button" hidden>Aanmelding simuleren</button>
+ <p id="sim-test-link" class="sim-wide"></p>
+ </div>
+</div>
+</section>
+
 <section id="section-settings" data-admin-section="settings" aria-labelledby="title-settings" hidden>
 <header class="sectionhead"><h2 id="title-settings">Settings & sourcing</h2><p>Manage budgets, sourcing and integrations.</p></header>
   <h2>Budget</h2>
@@ -289,11 +329,13 @@ import { createClient } from './vendor/supabase.mjs';
 // alles wat er te openen valt, dus juist die mag niet de zwakste van de twee zijn. De build zet
 // va-portal-logic.mjs naast deze pagina; de deploy controleert dat het bestand er staat.
 import { passwordProblem } from './va-portal-logic.mjs';
+import { initOwnerSimulation } from './owner-simulation.mjs';
 const sb = createClient('https://aexomkitwnxvpqlmtrik.supabase.co', 'sb_publishable_Y88uWkdq3igd5dMkT1c8JA_qMB_ZB7d',
   // The session is kept and silently renewed, so opening the page on a phone tomorrow does not ask
   // for the password again.
   { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
 
+initOwnerSimulation({client:sb,baseUrl:'https://aexomkitwnxvpqlmtrik.supabase.co',apiKey:'sb_publishable_Y88uWkdq3igd5dMkT1c8JA_qMB_ZB7d'});
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1963,7 +2005,7 @@ function renderIntegrations(d, err) {
 // ---------------------------------------------------------------------------------------------
 
 // Navigation changes presentation only. Existing cards and action handlers retain their IDs.
-const adminLabels={overview:'Overview',team:'Team',conversations:'Conversations',payments:'Payments',creators:'Creators',settings:'Settings'};
+const adminLabels={overview:'Overview',team:'Team',conversations:'Conversations',payments:'Payments',creators:'Creators',settings:'Settings',simulation:'Testportal'};
 function routeAdminSection(){
   const hash=location.hash.slice(1); const all=hash==='all';
   let key=Object.hasOwn(adminLabels,hash)?hash:null;
@@ -2007,3 +2049,4 @@ setInterval(() => { if (!document.hidden && !$('app').hidden) boot(); }, 30000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) scheduleBoot(0); });
 boot();
 </script></body></html>
+
