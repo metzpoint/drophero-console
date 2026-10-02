@@ -665,7 +665,6 @@ async function withButton(btn, action, ids, call, after) {
   let res;
   try {
     const { data, error } = await call();
-    savedProof = data;
     res = normalizeRpc({ data, error });
   } catch (e) {
     res = normalizeRpc({ error: e });
