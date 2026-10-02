@@ -2521,7 +2521,7 @@ function chatHtml(c) {
   if (c.affiliate_available && !['WAIT','CLOSE'].includes(sug.nextAction)) {
     h += '<button class="good" style="margin-top:8px" data-invite="' + esc(c.task_id) + '">'
       + (c.affiliate_state === 'REGISTERED' ? 'They joined — copy link again'
-                                            : 'Copy signup link') + '</button>';
+                                            : 'Copy signup message') + '</button>';
   } else if (c.classification === 'QUESTION') {
     h += '<p class="muted" style="margin:8px 0 0">Answer their question first. The signup link '
       + 'appears once they say they want it.</p>';
@@ -2539,6 +2539,10 @@ const CLASSES = [
   ['SEND_DETAILS', 'Asked for details'], ['NOT_INTERESTED', 'Not interested'],
   ['FOLLOW_UP_LATER', 'Later'], ['OTHER', 'Something else']
 ];
+
+function signupMessage(url) {
+  return "Here’s your DropHero affiliate signup link. Copy the link below and open it in your browser:\n\n" + url;
+}
 
 function wireChats(rows) {
   const list = $('list');
@@ -2602,11 +2606,12 @@ function wireChats(rows) {
               : 'Not yet — wait until they say they want the link.');
         return;
       }
-      const cr = await copyNow(data.url);
-      if (cr.ok) notice('Signup link copied — paste it in TikTok.');
+      const message = signupMessage(data.url);
+      const cr = await copyNow(message);
+      if (cr.ok) notice('Signup message copied — paste it in their TikTok chat. It includes their personal link and browser instructions.');
       else {
-        prompt('Automatic copy was blocked. Copy this signup link from the field below.', data.url);
-        notice('Use the signup link shown in the copy field.');
+        prompt('Automatic copy was blocked. Copy this signup message from the field below.', message);
+        notice('Use the signup message shown in the copy field.');
       }
       await loadMoney(); render();
     };
