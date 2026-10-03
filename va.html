@@ -1244,7 +1244,7 @@ async function loadMoneyOnce(snapshot = null) {
   search.sent = Array.isArray(sentRes.data) ? sentRes.data : [];
   view.payout = payoutRes.data || null;
   $('n-earn').title = '';
-  $('n-earn').textContent = view.money ? usd(view.money.today_total_cents || 0) : '–';
+  $('n-earn').textContent = view.money ? usd(view.money.period_total_cents || 0) : '–';
   // Het getal op het tabblad telt de verstuurde berichten, want dat is wat er te doorzoeken valt.
   // Het telde eerst alleen de chats die al geantwoord hadden -- meestal nul, terwijl het tabblad
   // wel degelijk iets te bieden had.
