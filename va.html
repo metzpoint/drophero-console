@@ -2498,9 +2498,12 @@ function chatHtml(c) {
     h += '<div class="suggest"><span class="lbl">' + (sug.nextAction === 'CLOSE' ? 'Conversation finished' : 'Waiting for the creator') + '</span>' + esc(sug.text) + '</div>'
       + '<p class="muted" style="margin:6px 0 0">No message to send now. Upload a new screenshot if the creator answers.</p>';
   } else if (sug.text) {
+    const fullConversion = c.affiliate_available && sug.nextAction === 'SEND_AFFILIATE_LINK';
     h += '<div class="suggest"><span class="lbl">Suggested reply</span>' + esc(sug.text) + '</div>'
-      + '<button class="good full" data-copy-reply="' + esc(c.reply_event_id) + '">COPY REPLY' + (url ? ' &amp; OPEN TIKTOK' : '') + '</button>'
-      + '<p class="muted" style="margin:6px 0 0">Paste this into their chat and tap Send in TikTok. Upload a new screenshot when they answer.</p>';
+      + (fullConversion
+          ? '<p class="muted" style="margin:6px 0 0">Interest confirmed — use the button below to copy the complete response with the tracked signup link in one go.</p>'
+          : '<button class="good full" data-copy-reply="' + esc(c.reply_event_id) + '">COPY REPLY' + (url ? ' &amp; OPEN TIKTOK' : '') + '</button>'
+            + '<p class="muted" style="margin:6px 0 0">Paste this into their chat and tap Send in TikTok. Upload a new screenshot when they answer.</p>');
   } else if (sug.pending) {
     // De knop staat er en is uitgeschakeld in plaats van afwezig: er valt nog niets te kopiëren, en
     // er valt straks niets te zoeken. Een uitgeschakelde knop kan geen halve zin op het klembord zetten.
@@ -2520,7 +2523,7 @@ function chatHtml(c) {
   if (c.affiliate_available && !['WAIT','CLOSE'].includes(sug.nextAction)) {
     h += '<button class="good" style="margin-top:8px" data-invite="' + esc(c.task_id) + '">'
       + (c.affiliate_state === 'REGISTERED' ? 'They joined — copy link again'
-                                            : 'Copy signup message') + '</button>';
+                                            : 'COPY FULL RESPONSE + SIGNUP LINK') + '</button>';
   } else if (c.classification === 'QUESTION') {
     h += '<p class="muted" style="margin:8px 0 0">Answer their question first. The signup link '
       + 'appears once they say they want it.</p>';
@@ -2539,8 +2542,13 @@ const CLASSES = [
   ['FOLLOW_UP_LATER', 'Later'], ['OTHER', 'Something else']
 ];
 
-function signupMessage(url) {
-  return "To get started, create your DropHero account and sign up as an affiliate using your personal link below.\n\nDropHero account:\nhttps://drophero.app/sign-up\n\nAffiliate signup:\n" + url + "\n\nCopy each link and open it in your browser.";
+function signupMessage(url, suggestedReply = '') {
+  const lead = typeof suggestedReply === 'string' ? suggestedReply.trim() : '';
+  const fallback = "Great — here’s the simple next step. Create your DropHero account, then join the affiliate program through your personal tracked link below.";
+  return (lead || fallback)
+    + "\n\nCreate your DropHero account:\nhttps://drophero.app/sign-up"
+    + "\n\nYour personal affiliate signup:\n" + url
+    + "\n\nOnce you’re set up, you can start using your tracked link to refer customers.";
 }
 
 function wireChats(rows) {
@@ -2605,9 +2613,11 @@ function wireChats(rows) {
               : 'Not yet — wait until they say they want the link.');
         return;
       }
-      const message = signupMessage(data.url);
+      const row = rows.find((r) => r.task_id === b.dataset.invite);
+      const suggested = row ? suggestedFor(row).text : '';
+      const message = signupMessage(data.url, suggested);
       const cr = await copyNow(message);
-      if (cr.ok) notice('Signup message copied — paste it in their TikTok chat. It includes their personal link and browser instructions.');
+      if (cr.ok) notice('Full conversion response copied — paste it in their TikTok chat. It already includes the tracked signup link.');
       else {
         prompt('Automatic copy was blocked. Copy this signup message from the field below.', message);
         notice('Use the signup message shown in the copy field.');
