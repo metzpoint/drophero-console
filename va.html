@@ -2525,7 +2525,7 @@ function chatHtml(c) {
   if (c.affiliate_available && !['WAIT','CLOSE'].includes(sug.nextAction)) {
     h += '<button class="good" style="margin-top:8px" data-invite="' + esc(c.task_id) + '">'
       + (c.affiliate_state === 'REGISTERED' ? 'They joined — copy link again'
-                                            : 'COPY FULL RESPONSE + LINKS') + '</button>';
+                                            : 'COPY AFFILIATE SIGNUP LINK') + '</button>';
   } else if (c.classification === 'QUESTION') {
     h += '<p class="muted" style="margin:8px 0 0">Answer their question first. The signup link '
       + 'appears once they say they want it.</p>';
@@ -2545,10 +2545,9 @@ const CLASSES = [
 ];
 
 function signupMessage(url, _suggestedReply = '') {
-  return "Great — here’s how the partnership works. You earn 30% commission on customers you refer to DropHero. Your affiliate tracking and commissions are handled through FirstPromoter."
-    + "\n\n1. Create your DropHero account:\nhttps://drophero.app/sign-up"
-    + "\n\n2. Activate your affiliate account through FirstPromoter using your personal tracked link:\n" + url
-    + "\n\nOnce both are set up, you can start promoting DropHero right away.";
+  return "Great — you earn 30% recurring commission on customers you refer to DropHero."
+    + "\n\nCreate your affiliate account directly through your personal signup link:\n" + url
+    + "\n\nThat’s it — once you’ve signed up, your affiliate tracking and commissions are handled automatically through FirstPromoter.";
 }
 
 function wireChats(rows) {
@@ -2617,7 +2616,7 @@ function wireChats(rows) {
       const suggested = row ? suggestedFor(row).text : '';
       const message = signupMessage(data.url, suggested);
       const cr = await copyNow(message);
-      if (cr.ok) notice('Full conversion response copied — it includes the DropHero signup link and the personal FirstPromoter-tracked affiliate link.');
+      if (cr.ok) notice('Affiliate signup response copied — it includes the creator’s direct personal FirstPromoter signup link.');
       else {
         prompt('Automatic copy was blocked. Copy this signup message from the field below.', message);
         notice('Use the signup message shown in the copy field.');
