@@ -254,7 +254,6 @@
   #tab-replies{position:relative}
   #tab-replies .reply-attention-dot{position:absolute;top:8px;right:8px}
   .who .reply-attention-dot{margin-right:9px}
-  .reply-attention-label{font-size:11px;color:#ffadb5;font-weight:500;margin-left:9px}
   button.good{background:linear-gradient(135deg,#1d6655,#174c43);border-color:#408d76;color:#f1fff9;font-weight:650}
   button[data-copy-reply]{min-height:56px}
   button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid #91bfff;outline-offset:3px}
@@ -2484,8 +2483,8 @@ function chatHtml(c) {
   const url = safeTikTokProfileUrl(c.profile_url, c.handle);
   const attention = replyNeedsAttention(c);
   let h = '<div class="row chat"><div class="who">'
-    + (attention ? '<span class="reply-attention-dot" aria-hidden="true"></span>' : '')
-    + who + (attention ? '<span class="reply-attention-label">Needs attention</span>' : '') + '</div>' 
+    + (attention ? '<span class="reply-attention-dot" role="img" aria-label="Needs attention" title="Needs attention"></span>' : '')
+    + who + '</div>'
     + '<div class="meta">@' + esc(c.handle || '') + ' · replied ' + ago(c.reported_at)
     + (c.username ? ' · from @' + esc(c.username) : '') + '</div>';
 
