@@ -355,6 +355,16 @@
   <div id="conv" role="tabpanel" aria-labelledby="tab-conv" hidden><div id="list"></div></div>
   <div id="earn" role="tabpanel" aria-labelledby="tab-earn" hidden></div>
 
+<dialog id="reply-reminder" aria-labelledby="reply-reminder-title"><div class="sheet">
+  <h2 id="reply-reminder-title">Your replies need attention</h2>
+  <p id="reply-reminder-message"></p>
+  <p class="muted">Open Replies, review the latest screenshot, and send the suggested response in TikTok where needed. Copying alone does not send a message.</p>
+  <div class="actions">
+    <button id="reply-reminder-open" type="button" class="good">Open Replies</button>
+    <button id="reply-reminder-later" type="button">Remind me in 15 minutes</button>
+  </div>
+</div></dialog>
+
 <dialog id="addacct" aria-labelledby="addacct-title"><div class="sheet">
   <h2 id="addacct-title" style="margin:0 0 4px;font-size:20px">Add a TikTok account</h2>
   <p class="muted" style="margin-top:0">An account you have already made yourself. We never create
@@ -637,6 +647,7 @@ const search = { q: '', results: null, timer: 0, focused: false, sent: [] };
 let chatStatus = '';
 
 function resetVaMemory() {
+  if ($('reply-reminder')?.open) $('reply-reminder').close();
   clearAssistantState();
   queue = [];
   retryQueue = [];
@@ -3496,6 +3507,84 @@ for (const b of tabButtons) {
 
 // The 30s refresh must not yank the ground from under someone mid-typing: a VA writing a note or
 // pasting a reply would lose it when the list re-rendered. Polling pauses while a field has focus.
+// Every VA uses the same reminder flow, including newly approved applicants.
+// Track observed reply versions per signed-in user; viewing/copying never completes a reply.
+const REPLY_REMINDER_DELAY = 5 * 60 * 1000;
+const REPLY_REMINDER_REPEAT = 15 * 60 * 1000;
+const replyReminder = { user: null, entries: {}, lastShown: 0 };
+function replyReminderKey(c) {
+  return JSON.stringify([c.reply_event_id, c.reply_seq, c.reported_at]);
+}
+function saveReplyReminder() {
+  if (!replyReminder.user) return;
+  try {
+    localStorage.setItem('dh.reply-reminder.v1:' + encodeURIComponent(replyReminder.user),
+      JSON.stringify({ entries: replyReminder.entries, lastShown: replyReminder.lastShown }));
+  } catch { /* In-memory reminders still work when storage is unavailable. */ }
+}
+function checkReplyReminder() {
+  const dialog = $('reply-reminder');
+  if (replyReminder.user !== pendingUserId) {
+    if (dialog.open) dialog.close();
+    replyReminder.user = pendingUserId;
+    replyReminder.entries = {};
+    replyReminder.lastShown = 0;
+    if (pendingUserId) {
+      try {
+        const saved = JSON.parse(localStorage.getItem('dh.reply-reminder.v1:' + encodeURIComponent(pendingUserId)) || '{}');
+        if (saved.entries && typeof saved.entries === 'object' && !Array.isArray(saved.entries))
+          replyReminder.entries = saved.entries;
+        if (Number.isFinite(saved.lastShown)) replyReminder.lastShown = saved.lastShown;
+      } catch { /* A fresh reminder state is safe. */ }
+    }
+  }
+  if (!pendingUserId || $('app').hidden) {
+    if (dialog.open) dialog.close();
+    return;
+  }
+  const now = Date.now();
+  const chats = (view.chats || []).filter(replyNeedsAttention);
+  const current = {};
+  for (const c of chats) {
+    const key = replyReminderKey(c);
+    const seen = replyReminder.entries[key];
+    current[key] = Number.isFinite(seen) && seen > 0 && seen <= now ? seen : now;
+  }
+  replyReminder.entries = current;
+  saveReplyReminder();
+  if (!chats.length) {
+    if (dialog.open) dialog.close();
+    replyReminder.lastShown = 0;
+    saveReplyReminder();
+    return;
+  }
+  $('reply-reminder-message').textContent = chats.length + (chats.length === 1
+    ? ' reply still needs a response or review.' : ' replies still need a response or review.');
+  const overdue = Object.values(current).some(seen => now - seen >= REPLY_REMINDER_DELAY);
+  const coolingDown = replyReminder.lastShown > 0 && now - replyReminder.lastShown < REPLY_REMINDER_REPEAT;
+  if (!overdue || coolingDown || dialog.open || document.hidden || tab === 'replies'
+      || typing() || pending || view.pending_proof || document.querySelector('dialog[open]')) return;
+  dialog.showModal();
+  replyReminder.lastShown = now;
+  saveReplyReminder();
+}
+function postponeReplyReminder() {
+  // Dismissing postpones the reminder, leaving every reply and red dot intact.
+  replyReminder.lastShown = Date.now();
+  saveReplyReminder();
+  $('reply-reminder').close();
+}
+$('reply-reminder-later').onclick = postponeReplyReminder;
+$('reply-reminder').addEventListener('cancel', event => {
+  event.preventDefault();
+  postponeReplyReminder();
+});
+$('reply-reminder-open').onclick = () => {
+  postponeReplyReminder();
+  void selectTab('replies');
+};
+setInterval(checkReplyReminder, 15000);
+
 function typing() {
   const a = document.activeElement;
   return a && (a.tagName === 'TEXTAREA' || a.tagName === 'INPUT');
