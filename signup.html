@@ -102,10 +102,11 @@
     <!-- ÉÉN VINKJE, TWEE LINKS, GEEN ALINEA. Wie hier een juridische paragraaf neerzet, laat mensen
          afhaken op een scherm waar ze alleen een account wilden. De tekst staat op de twee pagina's
          zelf; die openen in een nieuw tabblad, zodat wat al is ingetypt niet verdwijnt. -->
+    <p class="muted"><strong>Performance requirement:</strong> 100 registered DMs that are at least 24 hours old with zero verified replies means automatic blocking of new outreach. Uploaded replies awaiting review are checked first. Read the <a href="./terms.html#performance" target="_blank" rel="noopener noreferrer">Work rules &amp; performance requirements</a>.</p>
     <div class="row agree">
       <input id="agree" type="checkbox">
       <label for="agree">I agree to the <a href="./terms.html" target="_blank"
-        rel="noopener noreferrer">Terms</a> and acknowledge the <a href="./privacy.html"
+        rel="noopener noreferrer">Work rules &amp; Terms</a> and acknowledge the <a href="./privacy.html"
         target="_blank" rel="noopener noreferrer">Privacy Policy</a>.</label>
     </div>
     <p class="err" id="err-agree" role="alert"></p>
@@ -164,7 +165,7 @@
       <div class="agree">
         <input id="cb-agree" type="checkbox">
         <label for="cb-agree">I agree to the <a href="./terms.html" target="_blank"
-          rel="noopener noreferrer">Terms</a> and acknowledge the <a href="./privacy.html"
+          rel="noopener noreferrer">Work rules &amp; Terms</a> and acknowledge the <a href="./privacy.html"
           target="_blank" rel="noopener noreferrer">Privacy Policy</a>.</label>
       </div>
       <p class="err" id="cb-agree-err" role="alert"></p>
@@ -345,9 +346,9 @@ const $ = (id) => document.getElementById(id);
 const VELDEN = ['email', 'pw', 'pw2'];
 
 // DE VERSIE DIE DEZE PAGINA TOONT. Alleen om te onthouden dát er is aangevinkt; wat er uiteindelijk
-// wordt vastgelegd, bepaalt de server -- dh_record_legal_acceptance() heeft nul argumenten en draagt
-// de versie zelf, zodat de browser er geen andere van kan maken.
-const LEGAL_VERSIE = '2026-09-23';
+// wordt vastgelegd, bepaalt de server: deze pagina stuurt de getoonde versie mee en de server
+// accepteert uitsluitend de huidige versie. Oude pagina’s kunnen geen ongelezen voorwaarden vastleggen.
+const LEGAL_VERSIE = '2026-10-05';
 const LEGAL_SLEUTEL = 'dh_legal_ok';
 let laatstEmail = '';
 
@@ -577,7 +578,7 @@ async function rondMaken({ gebruiker = null, vanuit = 'resume' } = {}) {
   onthoudAkkoord(gebruiker.id);
 
   try {
-    const { data, error } = await sb.rpc('dh_record_legal_acceptance');
+    const { data, error } = await sb.rpc('dh_record_legal_acceptance', { p_terms_version: LEGAL_VERSIE });
     if (error || !data || !data.ok) {
       console.error('legal_acceptance', (error && error.message) || (data && data.reason));
       mislukt('We could not finish setting up your account',
