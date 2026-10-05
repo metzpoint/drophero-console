@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://aexomkitwnxvpqlmtrik.supabase.co wss://aexomkitwnxvpqlmtrik.supabase.co; img-src data: blob: https://aexomkitwnxvpqlmtrik.supabase.co; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b0f14">
 <meta name="referrer" content="no-referrer">
@@ -526,7 +527,7 @@ import {
   payoutView
 } from './va-portal-logic.mjs?v=20260925-retry';
 
-const sb = createClient('__URL__', '__KEY__',
+const sb = createClient('https://aexomkitwnxvpqlmtrik.supabase.co', 'sb_publishable_Y88uWkdq3igd5dMkT1c8JA_qMB_ZB7d',
   { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
 
 const $ = (id) => document.getElementById(id);
@@ -736,7 +737,7 @@ async function claimEndpoint(payload) {
   // is useful to anyone who already has an account, rather than to nothing at all.
   let res;
   try {
-    res = await fetch('__URL__/functions/v1/claim-invite', {
+    res = await fetch('https://aexomkitwnxvpqlmtrik.supabase.co/functions/v1/claim-invite', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload)
     });
@@ -2366,7 +2367,7 @@ async function assistantFor(replyEventId, row = aiRow(replyEventId), timeoutMs =
         if (!token) return { text: null, withheld: true };
         let body = null;
         try {
-          const response = await fetch('__URL__/functions/v1/reply-assistant', {
+          const response = await fetch('https://aexomkitwnxvpqlmtrik.supabase.co/functions/v1/reply-assistant', {
             method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token },
             body: JSON.stringify({ reply_event_id: replyEventId }), signal: controller.signal
           });
