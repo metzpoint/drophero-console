@@ -233,7 +233,7 @@
   .bonus-tag{flex:0 0 auto;max-width:120px;padding:8px 10px;background:#12372f;border:1px solid #286350;
     border-radius:12px;color:#c3f7df;font-size:10px;text-align:center;line-height:1.4}
   .bonus-tag strong{display:block;font-size:15px;white-space:nowrap;color:#e6fff3;font-variant-numeric:tabular-nums}
-  .workspace-tools{display:flex;justify-content:flex-end;margin:-5px 0 10px}
+  .workspace-tools{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px;align-items:center;margin:-5px 0 10px}
   .workspace-tools button{width:auto;min-height:44px}
   .help-head{display:flex;align-items:center;gap:12px}
   .help-head h2{flex:1;margin:0}
@@ -313,6 +313,10 @@
     <input id="claimpw" type="password" autocomplete="new-password" required minlength="12">
     <label class="muted" for="claimpw2" style="display:block;margin-top:11px">Repeat it</label>
     <input id="claimpw2" type="password" autocomplete="new-password" required minlength="12">
+    <label for="claim-terms" style="display:flex;gap:10px;align-items:flex-start;margin-top:14px;font-size:13px">
+      <input id="claim-terms" type="checkbox" required style="width:24px;height:24px;min-height:24px;flex:none">
+      <span>I agree to the <a href="./terms.html#performance" target="_blank" rel="noopener noreferrer">Work rules &amp; performance requirements</a>, including the 100 DM / zero-reply rule, and acknowledge the <a href="./privacy.html" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.</span>
+    </label>
     <div class="acts" style="margin-top:13px">
       <button id="claimgo" class="good full" type="submit">Create my account</button>
     </div>
@@ -329,7 +333,7 @@
     <strong id="signup-bonus-value"></strong>per verified<br>affiliate signup
   </div></div>
 
-  <div class="workspace-tools"><a href="./terms.html#performance" target="_blank" rel="noopener noreferrer" style="margin-right:12px;align-self:center;font-size:12px">Work rules &amp; performance</a><button id="open-help" type="button" class="sm" aria-haspopup="dialog" aria-controls="helpdlg">Quick start &amp; help</button></div>
+  <div class="workspace-tools"><a href="./terms.html#performance" target="_blank" rel="noopener noreferrer" style="display:flex;align-items:center;min-height:44px;font-size:12px">Work rules &amp; performance</a><button id="open-help" type="button" class="sm" aria-haspopup="dialog" aria-controls="helpdlg">Quick start &amp; help</button></div>
 
   <div class="counts two">
     <div><b id="remaining">–</b><span>Left today</span></div>
@@ -786,6 +790,7 @@ async function claimInvite(event) {
   const weak = passwordProblem(pw, { email: $('claimemail').textContent });
   if (weak) { $('claimmsg').textContent = weak; return; }
   if (pw !== $('claimpw2').value) { $('claimmsg').textContent = 'The two passwords differ.'; return; }
+  if (!$('claim-terms').checked) { $('claimmsg').textContent = 'Please agree to the Work rules & Terms to continue.'; return; }
   $('claimgo').disabled = true;
   $('claimmsg').textContent = 'creating your account…';
 
@@ -806,6 +811,10 @@ async function claimInvite(event) {
     $('loginmsg').textContent = 'Your account is ready. Sign in with ' + body.email + '.';
     return;
   }
+  // Persist the exact rules displayed beside the invitation checkbox. The send gate also requires this.
+  try {
+    await sb.rpc('dh_record_legal_acceptance', { p_terms_version: '2026-10-05' });
+  } catch { /* Work offers the same consent step if the network interrupted this save. */ }
   $('claim').hidden = true;
   await boot();
 }
@@ -1740,6 +1749,27 @@ function render() {
 // advances the queue or touches money until the VA has said, after the fact, that it went out.
 // =====================================================================================================
 function drawWork() {
+  if (view.performance?.terms_required) {
+    $('n-work').textContent = '0';
+    $('work').innerHTML = '<div class="card top"><h2>Accept the working rules to start</h2>'
+      + '<p>After 100 registered DMs that are at least 24 hours old, zero verified replies means automatic blocking of new outreach. Uploaded replies awaiting review are checked first.</p>'
+      + '<p><a href="./terms.html#performance" target="_blank" rel="noopener noreferrer">Work rules &amp; performance requirements</a></p>'
+      + '<label style="display:flex;gap:10px;align-items:flex-start;margin:16px 0"><input id="work-terms-agree" type="checkbox" style="width:24px;height:24px;min-height:24px;flex:none">I agree to the Work rules &amp; Terms and acknowledge the <a href="./privacy.html" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.</label>'
+      + '<button id="work-terms-save" type="button" class="good full">Accept &amp; start</button>'
+      + '<p id="work-terms-message" role="status" aria-live="polite"></p></div>';
+    $('work-terms-save').onclick = async () => {
+      const msg = $('work-terms-message');
+      if (!$('work-terms-agree').checked) { msg.textContent = 'Read the rules and tick the box to continue.'; return; }
+      const btn = $('work-terms-save'); btn.disabled = true;
+      try {
+        const { data, error } = await sb.rpc('dh_record_legal_acceptance', { p_terms_version: '2026-10-05' });
+        if (error || !data?.ok) { msg.textContent = 'Could not save your agreement. Please try again.'; return; }
+        await boot();
+      } catch { msg.textContent = 'Could not reach the server. Please try again.'; }
+      finally { if (btn.isConnected) btn.disabled = false; }
+    };
+    return;
+  }
   if (view.performance?.blocked) {
     $('n-work').textContent = '0';
     $('work').innerHTML = '<div class="card top"><h2>Outreach access blocked</h2>'
