@@ -1,0 +1,64 @@
+name: Guard built VA portal
+
+on:
+  push:
+    branches: [gh-pages]
+    paths:
+      - 'va.html'
+
+permissions:
+  contents: write
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          fetch-depth: 0
+
+      - name: Validate production VA build
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          valid_portal() {
+            local file="$1"
+            ! grep -Eq '__URL__|__KEY__|__VA_HREF__' "$file" &&
+            grep -q 'https://aexomkitwnxvpqlmtrik.supabase.co' "$file" &&
+            grep -q 'sb_publishable_' "$file" &&
+            grep -q 'Content-Security-Policy' "$file" &&
+            grep -q 'signInWithPassword' "$file"
+          }
+
+          if valid_portal va.html; then
+            echo "Production VA portal is a built artifact."
+            exit 0
+          fi
+
+          echo "::error::Unbuilt or invalid va.html reached gh-pages. Restoring the latest valid built version."
+
+          restored=""
+          while read -r rev; do
+            if git show "$rev:va.html" > /tmp/va-candidate.html 2>/dev/null && valid_portal /tmp/va-candidate.html; then
+              cp /tmp/va-candidate.html va.html
+              restored="$rev"
+              break
+            fi
+          done < <(git rev-list HEAD^ -- va.html)
+
+          if [ -z "$restored" ]; then
+            echo "::error::No previous valid built va.html was found."
+            exit 1
+          fi
+
+          git config user.name "DropHero production guard"
+          git config user.email "actions@users.noreply.github.com"
+          git add va.html
+          git commit -m "Auto-restore valid built VA portal"
+          git push origin HEAD:gh-pages
+
+          echo "::error::Invalid production portal was automatically rolled back to a previously valid built artifact."
+          exit 1
