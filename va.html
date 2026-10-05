@@ -329,7 +329,7 @@
     <strong id="signup-bonus-value"></strong>per verified<br>affiliate signup
   </div></div>
 
-  <div class="workspace-tools"><button id="open-help" type="button" class="sm" aria-haspopup="dialog" aria-controls="helpdlg">Quick start &amp; help</button></div>
+  <div class="workspace-tools"><a href="./terms.html#performance" target="_blank" rel="noopener noreferrer" style="margin-right:12px;align-self:center;font-size:12px">Work rules &amp; performance</a><button id="open-help" type="button" class="sm" aria-haspopup="dialog" aria-controls="helpdlg">Quick start &amp; help</button></div>
 
   <div class="counts two">
     <div><b id="remaining">–</b><span>Left today</span></div>
@@ -1740,6 +1740,15 @@ function render() {
 // advances the queue or touches money until the VA has said, after the fact, that it went out.
 // =====================================================================================================
 function drawWork() {
+  if (view.performance?.blocked) {
+    $('n-work').textContent = '0';
+    $('work').innerHTML = '<div class="card top"><h2>Outreach access blocked</h2>'
+      + '<p>At least 100 of your registered DMs are 24 hours old, with no verified reply. New outreach is blocked under the working rules.</p>'
+      + '<p>Your recorded earnings and history are retained. You can still upload reply evidence in Chats and request a review through Quick start &amp; help.</p>'
+      + '<p><a href="./terms.html#performance" target="_blank" rel="noopener noreferrer">Read the work rules &amp; performance requirements</a></p></div>';
+    return;
+  }
+
   // ONE STATE MACHINE, NOT FIVE BOOLEANS.
   //
   // THE BUG THIS REPLACES. This used to be `hasNextDM = queue.length > 0 && sendFrom.ok` plus two
