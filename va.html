@@ -314,12 +314,45 @@ let tab = 'new';      // 'new' | 'rep' | 'conv'
 // means the search ran and matched nothing, which is a different thing to say on screen.
 const search = { q: '', results: null, timer: 0, focused: false };
 
+const authSleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+function isTransientAuthError(error) {
+  const status = Number(error?.status || 0);
+  const message = String(error?.message || error || '').toLowerCase();
+  return [500, 502, 503, 504].includes(status)
+    || /timeout|timed out|request_timeout|context deadline|network|fetch|temporarily unavailable|unexpected_failure/.test(message);
+}
+async function signInWithRetry(email, password) {
+  let last = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const result = await sb.auth.signInWithPassword({ email, password });
+      if (!result.error || !isTransientAuthError(result.error) || attempt === 1) return result;
+      last = result.error;
+    } catch (error) {
+      last = error;
+      if (!isTransientAuthError(error) || attempt === 1) return { data: null, error };
+    }
+    await authSleep(1200);
+  }
+  return { data: null, error: last };
+}
+
 $('signin').onclick = async () => {
+  $('signin').disabled = true;
   $('loginmsg').textContent = 'signing in…';
-  const { error } = await sb.auth.signInWithPassword(
-    { email: $('email').value.trim(), password: $('pw').value });
-  $('loginmsg').textContent = error ? error.message : '';
-  if (!error) boot();
+  try {
+    const { error } = await signInWithRetry($('email').value.trim(), $('pw').value);
+    $('loginmsg').textContent = error
+      ? (isTransientAuthError(error)
+          ? 'Sign-in is temporarily busy. Please try once more.'
+          : error.message)
+      : '';
+    if (!error) await boot();
+  } catch {
+    $('loginmsg').textContent = 'Could not reach the sign-in service. Please try again.';
+  } finally {
+    $('signin').disabled = false;
+  }
 };
 
 // ---------------------------------------------------------------------------------------------
