@@ -248,6 +248,13 @@
   .tab{background:#142035;border-color:#2b3b54;border-radius:12px}
   .tab[aria-selected="true"]{background:#264973;border-color:#639feb;box-shadow:inset 0 -3px 0 #8cbaff;color:#eef6ff}
   .tab.urgent b{color:#ffd184}
+  .reply-attention-dot{display:inline-block;width:10px;height:10px;border-radius:50%;
+    background:#ff3b4f;box-shadow:0 0 0 3px #ff3b4f26;flex:none;vertical-align:middle}
+  .reply-attention-dot[hidden]{display:none}
+  #tab-replies{position:relative}
+  #tab-replies .reply-attention-dot{position:absolute;top:8px;right:8px}
+  .who .reply-attention-dot{margin-right:9px}
+  .reply-attention-label{font-size:11px;color:#ffadb5;font-weight:500;margin-left:9px}
   button.good{background:linear-gradient(135deg,#1d6655,#174c43);border-color:#408d76;color:#f1fff9;font-weight:650}
   button[data-copy-reply]{min-height:56px}
   button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid #91bfff;outline-offset:3px}
@@ -334,7 +341,7 @@
     <button class="tab" id="tab-work" role="tab" aria-selected="true"
             aria-controls="work" data-tab="work"><b id="n-work">–</b>Work</button>
     <button class="tab" id="tab-replies" role="tab" aria-selected="false"
-            aria-controls="conv" data-tab="replies"><b id="n-replies">–</b>Replies</button>
+            aria-controls="conv" data-tab="replies"><b id="n-replies">–</b>Replies<span id="reply-attention-dot" class="reply-attention-dot" hidden aria-hidden="true"></span></button>
     <button class="tab" id="tab-tt"   role="tab" aria-selected="false"
             aria-controls="tt" data-tab="tt"><b id="n-tt">–</b>Accounts</button>
     <button class="tab" id="tab-conv" role="tab" aria-selected="false"
@@ -2475,7 +2482,10 @@ function startSuggestionWatch(replyEventId) {
 function chatHtml(c) {
   const who = esc(c.display_name || c.handle || 'creator');
   const url = safeTikTokProfileUrl(c.profile_url, c.handle);
-  let h = '<div class="row chat"><div class="who">' + who + '</div>'
+  const attention = replyNeedsAttention(c);
+  let h = '<div class="row chat"><div class="who">'
+    + (attention ? '<span class="reply-attention-dot" aria-hidden="true"></span>' : '')
+    + who + (attention ? '<span class="reply-attention-label">Needs attention</span>' : '') + '</div>' 
     + '<div class="meta">@' + esc(c.handle || '') + ' · replied ' + ago(c.reported_at)
     + (c.username ? ' · from @' + esc(c.username) : '') + '</div>';
 
@@ -2654,10 +2664,17 @@ function replyBucket(c) {
       || ['WAIT','CLOSE'].includes(suggestion.nextAction)) return 'waiting';
   return suggestion.text ? 'ready' : 'review';
 }
+// Keep attention tied to the current reply status. Opening or copying a chat is not a send.
+function replyNeedsAttention(c) {
+  return replyBucket(c) !== 'waiting';
+}
 function updateReplyBadge() {
-  const count = (view.chats || []).filter(c => replyBucket(c) === 'ready').length;
+  const count = (view.chats || []).filter(replyNeedsAttention).length;
   $('n-replies').textContent = String(count);
+  $('reply-attention-dot').hidden = count === 0;
   $('tab-replies').classList.toggle('urgent',count > 0);
+  $('tab-replies').setAttribute('aria-label', 'Replies, ' + count + ' need attention');
+  $('tab-replies').title = count ? count + ' replies need a response or review' : 'No replies need attention';
 }
 function redrawReplyViews() {
   updateReplyBadge();
@@ -2669,6 +2686,7 @@ function drawReplyInbox() {
   const groups = [['ready','Your turn to reply'],['review','Reading or checking the screenshot'],['waiting','Waiting or finished']];
   let html = '<h2>Replies</h2><p class="muted">New screenshots start reply suggestions automatically. '
     + 'Copy the suggested reply and send it in TikTok. Upload their latest reply when it arrives.</p>'
+    + '<p class="muted">A red dot means this reply needs a response or review.</p>'
     + '<p class="muted">' + esc(replyRewardHint()) + '</p>'
     + '<p id="chatmsg" class="fieldmsg" role="status" aria-live="polite">' + esc(chatStatus) + '</p>';
   for (const [bucket,label] of groups) {
