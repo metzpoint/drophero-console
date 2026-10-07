@@ -1583,10 +1583,12 @@ let proofFilter = { status: null, kind: null };
 async function renderProofs(rows, err) {
   if (err) { $('proofq').innerHTML = '<div class="muted">could not load — ' + esc(err.message) + '</div>'; return; }
   rows = rows || [];
-  const { data: contexts, error: contextError } = await sb.rpc('dh_owner_send_proof_contexts', {
-    p_ids: rows.filter(r => r.proof_kind === 'SEND').map(r => r.proof_check_id)
-  });
+  const [{ data: contexts, error: contextError }, { data: archives }] = await Promise.all([
+    sb.rpc('dh_owner_send_proof_contexts', {p_ids: rows.filter(r => r.proof_kind === 'SEND').map(r => r.proof_check_id)}),
+    sb.rpc('dh_owner_proof_media_archives', {p_ids: rows.map(r => r.proof_check_id)})
+  ]);
   const contextById = new Map((Array.isArray(contexts) ? contexts : []).map(r => [r.proof_check_id,r]));
+  const archiveById = new Map((Array.isArray(archives) ? archives : []).map(r => [r.proof_check_id,r]));
 
   const chip = (label, on, key, val) =>
     '<button class="sm' + (on ? ' good' : '') + '" data-f="' + key + '" data-v="'
@@ -1617,7 +1619,11 @@ async function renderProofs(rows, err) {
                          : ' · not sent yet')
         + ' · ' + esc(r.review_status)
         + (r.ai_verdict ? ' · machine says ' + esc(r.ai_verdict) : '') + '</div>'
-        + (r.image_path ? '<img data-img="' + esc(r.image_path) + '" hidden alt="proof screenshot"'
+        + (archiveById.get(r.proof_check_id)?.state === 'DELETED'
+            ? '<div class="muted">Screenshot removed after its text and verification data were saved.</div>'
+              + '<details><summary>Saved screenshot text</summary><p style="white-space:pre-wrap">'
+              + esc(archiveById.get(r.proof_check_id).text_archive.text) + '</p></details>'
+            : r.image_path ? '<img data-img="' + esc(r.image_path) + '" hidden alt="proof screenshot"'
             + ' style="max-width:320px;width:100%;border-radius:10px;border:1px solid var(--line)">'
             : '<div class="muted">no screenshot yet</div>')
         + (contextById.has(r.proof_check_id)
