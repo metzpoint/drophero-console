@@ -20,16 +20,22 @@ export function initTelegramOwner({client}) {
     busy=true;
     try {
       const state=await call();
-      status.textContent=state.webhook_active
-        ? 'Connected: @'+(state.bot_username||'DropHeroTeamBot')+' · Webhook active'
-        : 'Bot token detected. Press Connect bot webhook to activate.';
+      const privacyWarning = state.bot_can_read_all === false
+        ? ' ⚠ Privacy mode is still ON in BotFather. Use /setprivacy → @DropHeroTeamBot → Disable, then remove and re-add the bot (or promote it to group admin).'
+        : '';
+      const setupWarning = !state.allowed_updates?.includes('my_chat_member')
+        ? ' Press Connect bot webhook again to enable group-join detection.'
+        : '';
+      status.textContent = (state.webhook_active
+        ? 'Connected: @'+(state.bot_username||'DropHeroTeamBot')+' · Webhook active.'
+        : 'Bot token detected. Press Connect bot webhook to activate.') + privacyWarning + setupWarning;
       const chats=state.groups||[];
       groups.innerHTML='<h3>Telegram groups</h3>'+(chats.length?chats.map(g=>
         '<div style="padding:10px 0;border-top:1px solid var(--line)"><strong>'+esc(g.title||'Telegram group')+'</strong> '
         +'<span class="muted">'+(g.enabled?'Approved':'Not approved')+'</span> '
         +'<button class="ghost" type="button" data-tg-chat="'+esc(g.chat_id)+'" data-tg-action="'+(g.enabled?'disable':'enable')+'">'
         +(g.enabled?'Disconnect & delete messages':'Approve group')+'</button></div>').join('')
-        :'<p class="muted">No groups yet. Add the bot, send a new message, and refresh.</p>');
+        :'<p class="muted">No Telegram group is connected. <a href="https://t.me/DropHeroTeamBot?startgroup=drophero" target="_blank" rel="noopener noreferrer">Add the bot to your group</a> or remove and re-add it, then Refresh groups and approve the correct group.</p>');
       const approved=new Set(chats.filter(g=>g.enabled).map(g=>String(g.chat_id)));
       const recent=(state.messages||[]).filter(m=>approved.has(String(m.chat_id)));
       messages.innerHTML='<h3>Recent group messages</h3>'+(recent.length?recent.map(m=>
