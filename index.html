@@ -293,7 +293,14 @@
   <h2>Config required</h2>
   <div class="card" id="config"></div>
 
-  <h2>Integrations</h2>
+  <h2>Telegram</h2><div class="card" id="telegram-bridge">
+<p class="muted">Connect @DropHeroTeamBot. Messages are captured only after owner group approval.</p>
+<p id="tg-bridge-status" role="status" aria-live="polite">Checking configuration…</p>
+<button id="tg-bridge-activate" type="button">Connect bot webhook</button>
+<button id="tg-bridge-refresh" class="ghost" type="button">Refresh groups</button>
+<p class="muted">After connecting, send a message to your Telegram group, refresh, and approve the correct group. Inform members about monitoring.</p>
+<div id="tg-bridge-groups"></div><div id="tg-bridge-messages"></div></div>
+<h2>Integrations</h2>
   <div class="card" id="integrations"></div>
 
 </section>
@@ -345,12 +352,14 @@ import { createClient } from './vendor/supabase.mjs';
 // va-portal-logic.mjs naast deze pagina; de deploy controleert dat het bestand er staat.
 import { passwordProblem } from './va-portal-logic.mjs';
 import { initOwnerSimulation } from './owner-simulation.mjs';
+import { initTelegramOwner } from './telegram-owner.mjs';
 const sb = createClient('https://aexomkitwnxvpqlmtrik.supabase.co', 'sb_publishable_Y88uWkdq3igd5dMkT1c8JA_qMB_ZB7d',
   // The session is kept and silently renewed, so opening the page on a phone tomorrow does not ask
   // for the password again.
   { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
 
 initOwnerSimulation({client:sb,baseUrl:'https://aexomkitwnxvpqlmtrik.supabase.co',apiKey:'sb_publishable_Y88uWkdq3igd5dMkT1c8JA_qMB_ZB7d'});
+const telegramBridge = initTelegramOwner({client:sb});
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -680,6 +689,7 @@ async function bootOnce() {
   renderInterested(interested.data || [], interested.error);
   renderVas(vas.data || {}, vas.error);
   void refreshOwnerMessageAudits();
+  void telegramBridge.refresh();
   renderSourcing(sourcing.data || {}, sourcing.error);
   renderBudget((sourcing.data || {}).budget || {}, sourcing.error);
   renderConfig(((attention.data || {}).config_required) || [], attention.error);
