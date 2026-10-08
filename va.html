@@ -2832,18 +2832,26 @@ function drawConversations() {
           ? 'This searches everyone you have messaged, by name or handle.'
           : 'Every creator you send a DM to appears here, so you can report an answer later.')
       + '</p></div>';
-  $('list').innerHTML = box + answered + body;
-
-  const q = $('q');
-  // Focus is restored by hand because the input is re-created on every keystroke; without this the
-  // keyboard closes after one character.
-  if (search.focused) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
-  q.oninput = () => {
-    search.q = q.value; search.focused = true;
-    clearTimeout(search.timer);
-    const token = seq.begin('search');
-    search.timer = setTimeout(() => runSearch(token), 250);
-  };
+  // Keep the same input element mounted while typing. Replacing it with innerHTML
+  // dismisses the iPhone keyboard; programmatic focus() cannot reliably reopen it.
+  const list = $('list');
+  let q = $('q');
+  if (!q || !list.contains(q) || !$('chat-results')) {
+    list.innerHTML = box + '<div id="chat-results"></div>';
+    q = $('q');
+    q.onfocus = () => { search.focused = true; };
+    q.onblur = () => { search.focused = false; };
+    q.oninput = () => {
+      search.q = q.value;
+      clearTimeout(search.timer);
+      const token = seq.begin('search');
+      search.timer = setTimeout(() => runSearch(token), 250);
+    };
+  }
+  // Only redraw the content below the field. Cursor position, IME composition,
+  // text selection and the mobile keyboard all remain attached to the same node.
+  $('chatmsg').textContent = chatStatus;
+  $('chat-results').innerHTML = answered + body;
   wireRows(rows);
   wireChats(chats);
   // Afvuren en verder gaan: de lijst staat al met de goedgekeurde zinnen op het scherm, en tekent
