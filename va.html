@@ -2850,6 +2850,9 @@ function drawConversations() {
   }
   // Only redraw the content below the field. Cursor position, IME composition,
   // text selection and the mobile keyboard all remain attached to the same node.
+  // Switching away from Chats resets search.q. Sync the existing field once when
+  // unfocused; never touch a focused input because that would disrupt typing.
+  if (document.activeElement !== q && q.value !== search.q) q.value = search.q;
   $('chatmsg').textContent = chatStatus;
   $('chat-results').innerHTML = answered + body;
   wireRows(rows);
