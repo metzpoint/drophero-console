@@ -51,6 +51,15 @@
   .banner{background:#3a2318;border:1px solid #6b3a1f;color:#ffcf9e;padding:12px;border-radius:12px;
           margin:10px 0;font-size:13px}
   .banner.bad{background:#3a1a1a;border-color:#6b2b2b;color:#ffd3d3}
+  .audit-warning{background:#2f1119;border:1px solid #bd4251;border-radius:13px;
+    padding:13px;color:#ffe1e4;box-shadow:0 0 0 1px #f45b6d20}
+  .audit-warning strong{color:#ff929e}
+  .audit-warning button{width:auto;min-width:130px;background:#7a2436;border-color:#d14b59;color:#fff}
+  .audit-warning .audit-title{font-size:16px;font-weight:700;margin-bottom:5px}
+  .audit-warning .audit-row{display:flex;gap:12px;align-items:center;justify-content:space-between;
+    flex-wrap:wrap;border-top:1px solid #6f2735;padding:12px 0}
+  #audit-cases details{margin-top:9px}#audit-cases summary{cursor:pointer;min-height:36px}
+
   .chips{display:flex;gap:7px;overflow-x:auto;padding-bottom:3px;-webkit-overflow-scrolling:touch}
   .chips button{white-space:nowrap;min-height:38px;padding:8px 13px;font-size:13px}
   #login{max-width:420px;margin:9vh auto}
@@ -127,6 +136,7 @@
   <h1 class="adminbrand">DropHero <span>Admin</span></h1>
   <p class="sub" id="asof">loading…</p>
   <div id="banners"></div>
+  <section id="audit-banner" hidden aria-live="polite"></section>
 
 
 
@@ -155,6 +165,11 @@
 
   <h2 id="activity">DMer activity <small class="muted">portal use and recorded work</small></h2>
   <div class="card" id="vaactivity"><div class="muted">loading…</div></div>
+  <h2 id="audit-title">Message verification alerts</h2>
+  <div class="card" id="audit-signals">Loading verification alerts…</div>
+  <h2>Open verification cases</h2>
+  <div class="card" id="audit-cases">No open cases.</div>
+
   <h2 id="performance">VA performance <small class="muted">volume and quality</small></h2>
   <div class="card" id="vaperf"><div class="muted">loading…</div></div>
 
@@ -664,6 +679,7 @@ async function bootOnce() {
   renderAttention(attention.data || {}, attention.error);
   renderInterested(interested.data || [], interested.error);
   renderVas(vas.data || {}, vas.error);
+  void refreshOwnerMessageAudits();
   renderSourcing(sourcing.data || {}, sourcing.error);
   renderBudget((sourcing.data || {}).budget || {}, sourcing.error);
   renderConfig(((attention.data || {}).config_required) || [], attention.error);
@@ -2038,6 +2054,87 @@ function renderAdminActions(tiktok,interested,proofs,payouts){
   $('action-proofs').textContent=proofs.error?'Unavailable':n(Array.isArray(proofs.data)?proofs.data.filter(p=>!['APPROVED','REJECTED'].includes(p.review_status)).length:0);
   $('action-payouts').textContent=payouts.error?'Unavailable':money((Array.isArray(payouts.data)?payouts.data:[]).filter(r=>r.payable).reduce((sum,r)=>sum+Number(r.approved_cents||0),0));
 }
+
+
+// Separate manual review. No case is created by the zero-reply warning alone.
+let ownerAuditLastLoad=0,ownerAuditBusy=false;
+async function refreshOwnerMessageAudits(force=false){
+  if(ownerAuditBusy || (!force&&Date.now()-ownerAuditLastLoad<60000)) return;
+  ownerAuditBusy=true;ownerAuditLastLoad=Date.now();
+  try{
+    const [alerts,cases]=await Promise.all([
+      sb.rpc('dh_owner_message_audit_alerts'),sb.rpc('dh_owner_message_audits')
+    ]);
+    if(alerts.error||cases.error) throw alerts.error||cases.error;
+    const rows=Array.isArray(alerts.data)?alerts.data:[];
+    const openCases=Array.isArray(cases.data)?cases.data:[];
+    $('audit-banner').hidden=rows.length===0;
+    $('audit-banner').innerHTML=rows.length?
+      '<div class="audit-warning"><div class="audit-title">⚠️ '+rows.length+
+      ' account'+(rows.length===1?'':'s')+' flagged for review</div>'+
+      '<p>More than 100 recorded first contacts aged 24+ hours and no verified creator replies. This is a review signal, not a fraud finding.</p>'+
+      '<a href="#audit-title">View accounts and start a manual check →</a></div>':'';
+    $('audit-signals').innerHTML=rows.length?rows.map(row=>
+      '<div class="audit-warning" style="margin-bottom:10px"><div class="audit-row">'+
+      '<div><strong>⚠️ '+esc(row.name)+'</strong>'+
+      '<div class="muted">'+n(row.mature_sends)+' mature messages · '+n(row.verified_replies)+
+      ' verified replies · '+n(row.pending_proofs)+' pending proofs</div></div>'+
+      '<button type="button" data-audit-start="'+esc(row.va_id)+'"'+(row.audit_open?' disabled':'')+'>'+
+      (row.audit_open?'Check active':'Start check')+'</button></div></div>'
+    ).join(''):'No participants currently meet the review threshold.';
+    $('audit-cases').innerHTML=openCases.length?openCases.map(a=>
+      '<div class="card" style="margin:9px 0"><div class="row"><strong>'+esc(a.name)+'</strong>'+
+      '<span class="pill">'+esc(a.state)+'</span></div><p class="muted">Deadline: '+esc(when(a.due_at))+'</p>'+
+      (Array.isArray(a.items)?a.items.map((i,index)=>
+        '<div class="row" style="display:block"><strong>'+(index+1)+'. '+esc(i.handle)+'</strong>'+
+        '<span class="pill" style="margin-left:8px">'+esc(i.status)+'</span>'+
+        '<details><summary>Owner-only original message and reply</summary>'+
+        '<p class="k">Original first DM</p><p style="white-space:pre-wrap">'+esc(i.expected_first_message)+'</p>'+
+        (i.expected_followup?'<p class="k">Saved AI reply (if applicable)</p><p style="white-space:pre-wrap">'+esc(i.expected_followup)+'</p>':'')+
+        '</details>'+
+        (i.evidence_path?'<button class="sm" type="button" data-audit-photo="'+esc(i.evidence_path)+'">View screenshot</button>':'<span class="muted">No screenshot uploaded</span>')+
+        (a.state==='OPEN'&&['PENDING','SUBMITTED'].includes(i.status)?
+         '<div class="two" style="margin-top:8px">'+
+         '<button type="button" class="sm" data-audit-review="'+esc(i.id)+'" data-pass="1"'+
+         (i.status!=='SUBMITTED'?' disabled':'')+'>Accept</button>'+
+         '<button type="button" class="sm danger" data-audit-review="'+esc(i.id)+'" data-pass="0">Reject</button></div>':'')+
+        '</div>').join(''):'')+'</div>'
+    ).join(''):'No verification cases have been activated.';
+  }catch(error){
+    console.error('verification check refresh failed',error?.message||'error');
+    $('audit-signals').textContent='Verification status temporarily unavailable.';
+  }finally{ownerAuditBusy=false;}
+}
+$('audit-signals').addEventListener('click',async(event)=>{
+  const b=event.target.closest('[data-audit-start]');
+  if(!b)return;
+  const va=b.dataset.auditStart;
+  if(!confirm('Activate a random 3-message screenshot review for this participant?'))return;
+  b.disabled=true;
+  const {data,error}=await sb.rpc('dh_owner_message_audit_start',{p_va:va});
+  if(error||!data?.ok){alert('Could not start verification: '+(error?.message||data?.reason));b.disabled=false;return;}
+  ownerAuditLastLoad=0;await refreshOwnerMessageAudits(true);
+});
+$('audit-cases').addEventListener('click',async(event)=>{
+  const photo=event.target.closest('[data-audit-photo]');
+  if(photo){
+    const {data,error}=await sb.storage.from('message-audit').createSignedUrl(photo.dataset.auditPhoto,180);
+    if(error||!data?.signedUrl){alert('Screenshot unavailable.');return;}
+    window.open(data.signedUrl,'_blank','noopener,noreferrer');
+    return;
+  }
+  const button=event.target.closest('[data-audit-review]');
+  if(!button)return;
+  const pass=button.dataset.pass==='1';
+  const reason=pass?'Screenshot reviewed and matched.' : prompt('Reason for rejecting this proof (required):');
+  if(!pass&&(!reason||reason.trim().length<8))return;
+  if(!confirm(pass?'Accept this screenshot?':'Mark this screenshot as not verified? Three confirmed failures suspend new assignments.'))return;
+  button.disabled=true;
+  const {data,error}=await sb.rpc('dh_owner_message_audit_review',
+    {p_item:button.dataset.auditReview,p_pass:pass,p_reason:reason});
+  if(error||!data?.ok){alert('Review failed: '+(error?.message||data?.reason));button.disabled=false;return;}
+  ownerAuditLastLoad=0;await refreshOwnerMessageAudits(true);
+});
 
 // LIVE, without a refresh button. Realtime pushes the moment a VA touches the queue; the 30-second
 // poll is the belt to that braces, so a dropped socket costs freshness rather than correctness.
