@@ -421,6 +421,24 @@ async function proofImageUrl(path) {
   signedProofUrls.set(path, { url: data.signedUrl, expiresAt: Date.now() + 240000 });
   return data.signedUrl;
 }
+async function revealProofImage(button, img) {
+  const path = img?.dataset.img || img?.dataset.path;
+  if (!path) return;
+  button.disabled = true;
+  button.textContent = 'Loading screenshot…';
+  try {
+    const url = await proofImageUrl(path);
+    if (!button.isConnected || !img.isConnected) return;
+    if (!url) { button.textContent = 'Retry screenshot'; return; }
+    img.src = url;
+    img.hidden = false;
+    button.hidden = true;
+  } catch {
+    if (button.isConnected) button.textContent = 'Retry screenshot';
+  } finally {
+    if (button.isConnected) button.disabled = false;
+  }
+}
 
 // ---------------------------------------------------------------------------------------------
 // AUTH. Two buttons, one form. Creating an account is the entire setup step.
@@ -988,7 +1006,8 @@ function renderInterested(rows, err) {
     let thumb = '';
 
     if (r.storage_path) {
-      thumb = '<img style="width:80px;height:80px;border-radius:8px;object-fit:cover;margin-right:10px" '
+      thumb = '<button type="button" class="sm" data-load-reply-proof style="margin-right:10px">View screenshot</button>'
+        + '<img style="width:80px;height:80px;border-radius:8px;object-fit:cover;margin-right:10px" '
         + 'hidden alt="reply" data-path="' + esc(r.storage_path)
         + '" data-task="' + esc(r.task_id) + '">';
     }
@@ -1057,16 +1076,10 @@ function renderInterested(rows, err) {
     };
   }
 
-  // Wire up screenshot images with signed URLs
-  for (const img of $('interested').querySelectorAll('img[data-path]')) {
-    const path = img.dataset.path;
-    if (path) {
-      proofImageUrl(path).then((url) => {
-        if (url) { img.src = url; img.hidden = false; }
-        else img.replaceWith(Object.assign(document.createElement('span'),
-          { className: 'muted', textContent: 'screenshot could not be loaded' }));
-      });
-    }
+  // Request private proof images only when reviewed. Auto-fetching every thumbnail
+  // on the 30s dashboard refresh caused unnecessary repeated Storage egress.
+  for (const btn of $('interested').querySelectorAll('button[data-load-reply-proof]')) {
+    btn.onclick = () => void revealProofImage(btn, btn.nextElementSibling);
   }
 
   // Wire up MARK HANDLED buttons
@@ -1649,7 +1662,8 @@ async function renderProofs(rows, err) {
             ? '<div class="muted">Screenshot removed after its text and verification data were saved.</div>'
               + '<details><summary>Saved screenshot text</summary><p style="white-space:pre-wrap">'
               + esc(archiveById.get(r.proof_check_id).text_archive.text) + '</p></details>'
-            : r.image_path ? '<img data-img="' + esc(r.image_path) + '" hidden alt="proof screenshot"'
+            : r.image_path ? '<button type="button" class="sm" data-load-proof>View screenshot</button>'
+                + '<img data-img="' + esc(r.image_path) + '" hidden alt="proof screenshot"'
             + ' style="max-width:320px;width:100%;border-radius:10px;border:1px solid var(--line)">'
             : '<div class="muted">no screenshot yet</div>')
         + (contextById.has(r.proof_check_id)
@@ -1678,14 +1692,9 @@ async function renderProofs(rows, err) {
     };
   }
 
-  // A private bucket means every image needs its own short-lived URL. Done after the markup so the
-  // rows appear immediately and fill in, rather than the whole queue waiting on the slowest signature.
-  for (const img of $('proofq').querySelectorAll('img[data-img]')) {
-    proofImageUrl(img.dataset.img).then((url) => {
-      if (url) { img.src = url; img.hidden = false; }
-      else img.replaceWith(Object.assign(document.createElement('div'),
-        { className: 'muted', textContent: 'screenshot could not be loaded' }));
-    });
+  // Evidence stays private and is downloaded on demand, not every 30-second poll.
+  for (const btn of $('proofq').querySelectorAll('button[data-load-proof]')) {
+    btn.onclick = () => void revealProofImage(btn, btn.nextElementSibling);
   }
 
   for (const card of $('proofq').querySelectorAll('[data-proof]')) {
