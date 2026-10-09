@@ -1622,12 +1622,16 @@ let proofFilter = { status: null, kind: null };
 async function renderProofs(rows, err) {
   if (err) { $('proofq').innerHTML = '<div class="muted">could not load — ' + esc(err.message) + '</div>'; return; }
   rows = rows || [];
-  const [{ data: contexts, error: contextError }, { data: archives }] = await Promise.all([
+  const ids = rows.map(r => r.proof_check_id);
+  const [{ data: contexts, error: contextError }, { data: archives },
+         { data: transcripts, error: transcriptsError }] = await Promise.all([
     sb.rpc('dh_owner_send_proof_contexts', {p_ids: rows.filter(r => r.proof_kind === 'SEND').map(r => r.proof_check_id)}),
-    sb.rpc('dh_owner_proof_media_archives', {p_ids: rows.map(r => r.proof_check_id)})
+    sb.rpc('dh_owner_proof_media_archives', {p_ids: ids}),
+    sb.rpc('dh_owner_proof_text_transcripts', {p_ids: ids})
   ]);
   const contextById = new Map((Array.isArray(contexts) ? contexts : []).map(r => [r.proof_check_id,r]));
   const archiveById = new Map((Array.isArray(archives) ? archives : []).map(r => [r.proof_check_id,r]));
+  const transcriptById = new Map((!transcriptsError && Array.isArray(transcripts) ? transcripts : []).map(r => [r.proof_check_id,r]));
 
   const chip = (label, on, key, val) =>
     '<button class="sm' + (on ? ' good' : '') + '" data-f="' + key + '" data-v="'
@@ -1666,6 +1670,13 @@ async function renderProofs(rows, err) {
                 + '<img data-img="' + esc(r.image_path) + '" hidden alt="proof screenshot"'
             + ' style="max-width:320px;width:100%;border-radius:10px;border:1px solid var(--line)">'
             : '<div class="muted">no screenshot yet</div>')
+        + (transcriptById.get(r.proof_check_id)?.text_archive?.text
+          ? '<details style="margin:8px 0"><summary>Saved chat text (OCR'
+            + (transcriptById.get(r.proof_check_id).status==='PARTIAL' ? ' · partial, verify against screenshot' : ' · complete visible screenshot')
+            + ')</summary><p style="white-space:pre-wrap;overflow-wrap:anywhere">'
+            + esc(transcriptById.get(r.proof_check_id).text_archive.text)
+            + '</p></details>'
+          : '')
         + (contextById.has(r.proof_check_id)
           ? '<p><b>Expected outgoing message</b></p><p style="white-space:pre-wrap">' + esc(contextById.get(r.proof_check_id).message) + '</p>'
             + '<p class="muted">Claimed ' + esc(new Date(contextById.get(r.proof_check_id).claimed_at).toLocaleString())
