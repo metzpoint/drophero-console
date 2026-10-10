@@ -2522,6 +2522,9 @@ function suggestedFor(c) {
   return { text: null, from: null, pending: false };
 }
 async function primeAssistant(chats) {
+  // Multiple replies may arrive while a VA is working. Fetch up to three in parallel:
+  // previously a single slow screenshot held every other conversation behind it.
+  // The database still owns the one-paid-call-per-event claim and retry cooldown.
   const rows = (chats || []).filter(c => {
     if (!c.reply_event_id || AI.waiting.has(c.reply_event_id)) return false;
     const cached = AI.seen.get(c.reply_event_id), running = AI.requests.get(c.reply_event_id);
@@ -2532,13 +2535,21 @@ async function primeAssistant(chats) {
   const batch = {};
   for (const c of rows) AI.queued.set(c.reply_event_id, { batch, input: aiInput(c) });
   redrawReplyViews();
-  for (const c of rows) {
-    if (AI.queued.get(c.reply_event_id)?.batch !== batch) continue;
-    await assistantFor(c.reply_event_id, c);
-    // A superseded batch can release only its own queued row.
-    if (AI.queued.get(c.reply_event_id)?.batch === batch) AI.queued.delete(c.reply_event_id);
-    redrawReplyViews();
-  }
+  let next = 0;
+  const worker = async () => {
+    while (next < rows.length) {
+      const c = rows[next++];
+      if (AI.queued.get(c.reply_event_id)?.batch !== batch) continue;
+      try {
+        await assistantFor(c.reply_event_id, c);
+      } finally {
+        // An older request must never clear a newer context's queued state.
+        if (AI.queued.get(c.reply_event_id)?.batch === batch) AI.queued.delete(c.reply_event_id);
+        redrawReplyViews();
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(3, rows.length) }, () => worker()));
 }
 function startSuggestionWatch(replyEventId) {
   if (!replyEventId) return;
