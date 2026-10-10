@@ -2596,15 +2596,24 @@ function chatHtml(c) {
   // WAT DE DMER LEEST. Eén zin, of één gewone regel dat er nog geen is. Het label is in alle drie de
   // gevallen hetzelfde: waar de zin vandaan komt, is niet hun probleem.
   const sug = suggestedFor(c);
+  const shareInfo = !['NOT_INTERESTED', 'FOLLOW_UP_LATER'].includes(c.classification)
+    && !['WAIT', 'CLOSE'].includes(sug.nextAction);
+  if (shareInfo) {
+    h += '<div class="suggest" style="margin:10px 0;border-color:#408d76">'
+      + '<span class="lbl">STEP 1 · SEND CREATOR INFORMATION FIRST</span>'
+      + '<p class="muted" style="margin:5px 0 0">The first link to share whenever a creator wants to know more.</p>'
+      + '<a class="open" href="' + CREATOR_INFO_URL
+      + '" target="_blank" rel="noopener noreferrer">drophero.app/creators</a></div>';
+  }
   if (sug.text && ['WAIT','CLOSE'].includes(sug.nextAction)) {
     h += '<div class="suggest"><span class="lbl">' + (sug.nextAction === 'CLOSE' ? 'Conversation finished' : 'Waiting for the creator') + '</span>' + esc(sug.text) + '</div>'
       + '<p class="muted" style="margin:6px 0 0">No message to send now. Upload a new screenshot if the creator answers.</p>';
   } else if (sug.text) {
-    const fullConversion = c.affiliate_available && !['WAIT','CLOSE'].includes(sug.nextAction);
-    h += '<div class="suggest"><span class="lbl">Suggested reply</span>' + esc(sug.text) + '</div>'
+    const fullConversion = c.affiliate_available && c.classification === 'INTERESTED' && !['WAIT','CLOSE'].includes(sug.nextAction);
+    h += '<div class="suggest"><span class="lbl">Suggested reply</span>' + esc(shareInfo && !fullConversion ? creatorInfoMessage(sug.text, c.classification) : sug.text) + '</div>'
       + (fullConversion
-          ? '<p class="muted" style="margin:6px 0 0">Interest confirmed — use the button below to copy the complete response with the tracked signup link in one go.</p>'
-          : '<button class="good full" data-copy-reply="' + esc(c.reply_event_id) + '">COPY REPLY' + (url ? ' &amp; OPEN TIKTOK' : '') + '</button>'
+          ? '<p class="muted" style="margin:6px 0 0">Interest confirmed — the button below includes the information page first and the personal signup link second.</p>'
+          : '<button class="good full" data-copy-reply="' + esc(c.reply_event_id) + '">COPY REPLY + INFO PAGE' + (url ? ' &amp; OPEN TIKTOK' : '') + '</button>'
             + '<p class="muted" style="margin:6px 0 0">Paste this into their chat and tap Send in TikTok. Upload a new screenshot when they answer.</p>');
   } else if (sug.pending) {
     // De knop staat er en is uitgeschakeld in plaats van afwezig: er valt nog niets te kopiëren, en
@@ -2613,7 +2622,9 @@ function chatHtml(c) {
       + 'Creating a reply suggestion…</div>'
       + '<button class="sm" disabled aria-disabled="true" data-copy-pending="'
       + esc(c.reply_event_id) + '">COPY REPLY</button>'
-      + '<p class="muted" style="margin:6px 0 0">You can carry on and come back to this one later.</p>';
+      + '<p class="muted" style="margin:6px 0 0">You can carry on and come back to this one later.</p>'
+      + (shareInfo ? '<button class="good" data-copy-creators="' + esc(c.reply_event_id)
+        + '">COPY CREATOR PAGE NOW</button>' : '');
   } else {
     h += '<div class="suggest none"><span class="lbl">' + (c.affiliate_available ? 'Ready for the next step' : 'Suggested reply') + '</span>'
       + esc(c.affiliate_available
@@ -2621,16 +2632,20 @@ function chatHtml(c) {
           : (sug.guidance || 'We could not prepare a reply yet. Try again later, or upload a clearer screenshot of their latest reply.')) + '</div>';
   }
 
+  if (shareInfo && !sug.text && !sug.pending) {
+    h += '<button class="good" data-copy-creators="' + esc(c.reply_event_id)
+      + '">COPY CREATOR PAGE NOW</button>';
+  }
+
   // SECTION M, ON SCREEN. Not shown merely because a reply exists -- only once the creator has said
   // they are interested or asked for details. A link that appears the moment anyone answers turns
   // every conversation into a pitch, and the question they actually asked goes unanswered.
-  if (c.affiliate_available && !['WAIT','CLOSE'].includes(sug.nextAction)) {
+  if (c.affiliate_available && c.classification === 'INTERESTED' && !['WAIT','CLOSE'].includes(sug.nextAction)) {
     h += '<button class="good" style="margin-top:8px" data-invite="' + esc(c.task_id) + '">'
       + (c.affiliate_state === 'REGISTERED' ? 'They joined — copy link again'
-                                            : 'COPY REPLY + SIGNUP LINK') + '</button>';
-  } else if (c.classification === 'QUESTION') {
-    h += '<p class="muted" style="margin:8px 0 0">Answer their question first. The signup link '
-      + 'appears once they say they want it.</p>';
+                                            : 'STEP 2 · COPY INFO + SIGNUP LINK') + '</button>';
+  } else if (c.classification === 'QUESTION' || c.classification === 'SEND_DETAILS') {
+    h += '<p class="muted" style="margin:8px 0 0">Share the creator information page first. The tracked FirstPromoter signup link comes after they confirm they want to join.</p>';
   }
 
   h += url
@@ -2638,6 +2653,20 @@ function chatHtml(c) {
       + '" target="_blank" rel="noopener noreferrer">Open TikTok profile</a></div></div>'
     : '<p class="muted">The TikTok profile link is invalid. Contact the DropHero team with the creator\'s name.</p></div>';
   return h;
+}
+
+const CREATOR_INFO_URL = 'https://drophero.app/creators';
+
+// Creator information comes first; attribution tokens are issued only by the backend.
+function creatorInfoMessage(suggestedReply = '', classification = '') {
+  const overview = "Here is our official DropHero creator partnership page:\n" + CREATOR_INFO_URL;
+  if (classification === 'SEND_DETAILS') {
+    return "Thanks for your interest! " + overview
+      + "\n\nHave a look, and if you'd like to join, I'll share your personal signup link.";
+  }
+  const lead = String(suggestedReply || '').trim();
+  if (lead.includes(CREATOR_INFO_URL)) return lead;
+  return (lead ? lead + "\n\n" : "Thanks for your reply! ") + overview;
 }
 
 const CLASSES = [
@@ -2654,7 +2683,8 @@ function signupMessage(url, suggestedReply = '') {
   if (!lead || /\b(?:send|show)\b.{0,45}\b(?:demo|video|signup link)\b/i.test(lead)) {
     lead = "Perfect — DropHero helps ecommerce sellers turn products into ready-to-test Meta ads and product pages in minutes, and you earn 30% recurring on every customer you refer. The video is already on our profile — you can join here and get your personal affiliate link right away:";
   }
-  return lead + "\n\n" + url;
+  return lead + "\n\nFirst, see how our creator partnership works:\n" + CREATOR_INFO_URL
+    + "\n\nWhen you are ready, join using your personal FirstPromoter signup link:\n" + url;
 }
 
 function wireChats(rows) {
@@ -2683,12 +2713,28 @@ function wireChats(rows) {
       };
     }
   }
+  for (const b of list.querySelectorAll('[data-copy-creators]')) {
+    b.onclick = async () => {
+      const row = rows.find((r) => r.reply_event_id === b.dataset.copyCreators);
+      if (!row || ['NOT_INTERESTED', 'FOLLOW_UP_LATER'].includes(row.classification)) return;
+      const text = creatorInfoMessage('', row.classification);
+      b.disabled = true;
+      const result = await copyNow(text);
+      b.disabled = false;
+      if (result.ok) notice('Creator information page copied — paste it in TikTok.');
+      else {
+        prompt('Clipboard unavailable. Copy the message here.', text);
+        notice('Use the creator message shown in the copy field.');
+      }
+    };
+  }
   for (const b of list.querySelectorAll('[data-copy-reply]')) {
     b.onclick = async () => {
       // Copy the displayed answer, then open the profile. The DMer still sends it manually;
       // neither action records a send, changes earnings, nor calls an RPC.
       const row = rows.find((r) => r.reply_event_id === b.dataset.copyReply);
-      const text = row ? suggestedFor(row).text : null;
+      const text = row ? (['NOT_INTERESTED','FOLLOW_UP_LATER'].includes(row.classification)
+        ? suggestedFor(row).text : creatorInfoMessage(suggestedFor(row).text, row.classification)) : null;
       if (!text) return;
       b.disabled = true;
       const r = await copyNow(text, true);
@@ -2723,7 +2769,7 @@ function wireChats(rows) {
       const suggested = row ? suggestedFor(row).text : '';
       const message = signupMessage(data.url, suggested);
       const cr = await copyNow(message);
-      if (cr.ok) notice('Affiliate signup response copied — it includes the creator’s direct personal FirstPromoter signup link.');
+      if (cr.ok) notice('Creator information page and personal tracked FirstPromoter signup link copied.');
       else {
         prompt('Automatic copy was blocked. Copy this signup message from the field below.', message);
         notice('Use the signup message shown in the copy field.');
