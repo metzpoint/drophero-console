@@ -2501,7 +2501,7 @@ async function assistantFor(replyEventId, row = aiRow(replyEventId), timeoutMs =
     const current = aiRow(replyEventId);
     if (current && aiInput(current) !== input) return null;
     if (row?.classification === 'NOT_INTERESTED' && out.stage !== 'DECLINED') out = { text: null, withheld: true };
-    const value = { ...out, input, expires: Date.now() + (out.retryable ? AI_POLL_EVERY_MS : out.text || out.withheld ? 300000 : 30000) };
+    const value = { ...out, input, expires: Date.now() + (out.retryable ? AI_POLL_EVERY_MS : out.text ? 300000 : 30000) };
     AI.seen.set(replyEventId, value);
     return value;
   })();
@@ -2643,6 +2643,14 @@ function chatHtml(c) {
           : (sug.guidance || 'We could not prepare a reply yet. Try again later, or upload a clearer screenshot of their latest reply.')) + '</div>';
   }
 
+  // A failed or delayed AI reply must always offer an explicit recovery action.
+  // This only retries the advisory suggestion; it never sends a TikTok message.
+  if (!sug.text && !sug.pending && c.classification !== 'NOT_INTERESTED'
+      && c.affiliate_state !== 'REGISTERED') {
+    h += '<button class="sm" data-retry-ai="' + esc(c.reply_event_id)
+      + '">RETRY AI REPLY</button>';
+  }
+
   if (shareInfo && !sug.text && !sug.pending) {
     h += '<button class="good" data-copy-creators="' + esc(c.reply_event_id)
       + '">COPY CREATOR PAGE NOW</button>';
@@ -2723,6 +2731,17 @@ function wireChats(rows) {
         }
       };
     }
+  }
+  for (const b of list.querySelectorAll('[data-retry-ai]')) {
+    b.onclick = async () => {
+      const id = b.dataset.retryAi;
+      if (!id) return;
+      b.disabled = true;
+      b.textContent = 'Checking for a reply…';
+      invalidateAssistant(id);
+      try { await assistantFor(id); }
+      finally { redrawReplyViews(); }
+    };
   }
   for (const b of list.querySelectorAll('[data-copy-creators]')) {
     b.onclick = async () => {
