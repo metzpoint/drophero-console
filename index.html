@@ -1023,18 +1023,21 @@ function renderInterested(rows, err) {
       + esc(r.said) + '</div>' : '';
     const kind = r.classification
       ? '<span class="pill on" style="margin-left:6px">' + esc(r.classification) + '</span>' : '';
-    const proposal = r.suggestion
-      ? '<div style="margin-top:10px">'
-        + '<div class="muted" style="font-size:12px;margin-bottom:4px">Suggested reply'
-        + (r.suggestion_topic ? ' · ' + esc(r.suggestion_topic) : '')
-        + ' — add your affiliate link before sending</div>'
-        + '<textarea readonly class="dh-suggestion" style="width:100%;min-height:72px;font-size:13px" '
-        + 'onclick="this.select()">' + esc(r.suggestion) + '</textarea>'
-        + '<button class="sm" data-copy-suggestion="' + esc(r.task_id) + '" '
-        + 'style="margin-top:6px">Copy suggestion</button>'
-        + '</div>'
-      : '<div class="muted" style="font-size:12px;margin-top:10px">No suggested reply for this one — '
-        + 'read the screenshot and write it by hand.</div>';
+    // Step one: creator information. Tracked FirstPromoter signup links must be issued separately.
+    const creatorOverview = "Here is our official DropHero creator partnership page:\nhttps://drophero.app/creators";
+    const response = r.suggestion
+      ? r.suggestion.trim() + "\n\n" + creatorOverview
+      : "Thanks for getting back to me! " + creatorOverview;
+    const proposal = '<div style="margin-top:10px">'
+      + '<div class="muted" style="font-size:12px;margin-bottom:4px">'
+      + 'STEP 1 · SEND CREATORS PAGE FIRST'
+      + (r.suggestion_topic ? ' · ' + esc(r.suggestion_topic) : '')
+      + ' — use a personal tracked signup link later, after they agree to join</div>'
+      + '<textarea readonly class="dh-suggestion" style="width:100%;min-height:105px;font-size:13px" '
+      + 'onclick="this.select()">' + esc(response) + '</textarea>'
+      + '<button class="sm" data-copy-suggestion="' + esc(r.task_id) + '" '
+      + 'style="margin-top:6px">Copy creator information reply</button>'
+      + '</div>';
 
     return '<div class="row" style="align-items:flex-start;min-height:100px">'
       + '<div style="display:flex;gap:10px;flex:1;min-width:0">'
@@ -1072,7 +1075,7 @@ function renderInterested(rows, err) {
         try { box.select(); ok = document.execCommand('copy') === true; } catch { ok = false; }
       }
       btn.textContent = ok ? 'Copied' : 'Select the text above';
-      setTimeout(() => { btn.textContent = 'Copy suggestion'; }, 2500);
+      setTimeout(() => { btn.textContent = 'Copy creator information reply'; }, 2500);
     };
   }
 
