@@ -38,6 +38,14 @@
   #ssdlg #ss-feedback{min-height:19px;font-size:13px;margin:8px 0}
 
 
+
+  /* Owner-pushed assigned replies: an immediate in-portal task notification for the right DMer. */
+  #creator-followup-push{margin:12px 0;padding:14px;border:2px solid #e3a859;border-radius:13px;background:#30261b;color:#fff2dd}
+  #creator-followup-push strong{display:block;font-size:16px;margin:0 0 5px}
+  #creator-followup-push .cf-push-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px}
+  #creator-followup-push .cf-push-actions button{min-height:45px;flex:1;font-weight:700}
+  #creator-followup-push p{margin:0;color:#f0d3ac;font-size:13px}
+
   /* Verified, owner-approved creator partnership follow-ups; advisory and manual only. */
   #creator-followups{padding:14px;margin:12px 0;border:1px solid #b17c3c;border-radius:14px;background:#242018}
   #creator-followups h2{font-size:18px;margin:0 0 5px;color:#ffda9c}
@@ -392,6 +400,9 @@
   </div>
 
 
+
+
+  <section id="creator-followup-push" hidden aria-label="Assigned creator replies" role="status" aria-live="polite"></section>
 
   <section id="creator-followups" hidden aria-label="Creator follow-ups ready to review" aria-live="polite" role="region"></section>
 
@@ -4145,12 +4156,38 @@ $('ss-upload').onclick=async()=>{
 const creatorFollowups={user:null,lastLoad:0,loading:false,items:[],total:0,expanded:false,
  copied:new Map(),mode:new Map(),ai:new Map(),aiPending:new Set(),blocked:new Map(),message:'',seq:0,busy:new Set()};
 function followupKey(r){return r.task_id+':'+r.reply_event_id;}
+
+// Immediate, scoped in-app task notification. The database already assigns each reply to the VA
+// who originally sent the DM; there is no reallocation, cross-account access or automatic sending.
+function drawCreatorFollowupPush(){
+ const banner=$('creator-followup-push');
+ if(!banner||creatorFollowups.user!==pendingUserId||$('app').hidden)return;
+ const n=creatorFollowups.total;
+ if(!Number.isFinite(n)||n<=0){
+   banner.hidden=true;banner.innerHTML='';return;
+ }
+ banner.hidden=false;
+ banner.innerHTML='<strong>🔔 '+esc(n)+' creator '+(n===1?'reply':'replies')+' assigned to you</strong>'
+   +'<p>Priority: answer interested creators who are waiting for details. '
+   +'Choose AI Reply or Copy &amp; Paste, send manually on TikTok, then confirm.</p>'
+   +'<div class="cf-push-actions"><button class="good" id="cf-push-open" type="button">'
+   +'VIEW &amp; SEND '+esc(n)+' REPLIES</button>'
+   +'<button class="sm" id="cf-push-refresh" type="button">Refresh</button></div>';
+ $('cf-push-open').onclick=()=>{
+   creatorFollowups.expanded=true;
+   renderCreatorFollowups();
+   $('creator-followups').scrollIntoView({behavior:'smooth',block:'start'});
+ };
+ $('cf-push-refresh').onclick=()=>void refreshCreatorFollowups(true);
+}
+
 function renderCreatorFollowups(){
  const box=$('creator-followups');
  if(!box||$('app').hidden||creatorFollowups.user!==pendingUserId)return;
  const items=creatorFollowups.items,total=creatorFollowups.total;
- if(total===0){box.hidden=true;box.innerHTML='';return;}
+ if(total===0){box.hidden=true;box.innerHTML='';drawCreatorFollowupPush();return;}
  box.hidden=false;
+ drawCreatorFollowupPush();
  const shown=creatorFollowups.expanded?items:items.slice(0,3);
  box.innerHTML='<div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap">'
    +'<h2 style="flex:1">Creator replies ready to review</h2>'
@@ -4309,6 +4346,7 @@ async function refreshCreatorFollowups(force=false){
    creatorFollowups.blocked.clear();
    creatorFollowups.message='';creatorFollowups.expanded=false;
    $('creator-followups').hidden=true;$('creator-followups').innerHTML='';
+   $('creator-followup-push').hidden=true;$('creator-followup-push').innerHTML='';
  }
  if(creatorFollowups.loading||(!force&&Date.now()-creatorFollowups.lastLoad<60000))return;
  creatorFollowups.loading=true;creatorFollowups.lastLoad=Date.now();
