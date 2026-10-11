@@ -26,6 +26,17 @@
   .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;
         margin-bottom:11px;min-width:0;overflow-wrap:anywhere}
 
+
+  #screenshot-tools{margin:12px 0;border:1px solid #335b77;border-radius:13px;padding:12px;background:#142333}
+  #screenshot-tools .upload-info{font-size:12px;color:var(--dim);margin:7px 0 0}
+  #ssdlg .ss-choice{padding:9px;border-radius:10px;border:1px solid #36506d;margin-bottom:7px}
+  #ssdlg .ss-choice[aria-pressed=true]{background:#183e54;border-color:#77bfff}
+  #ssdlg #ss-results{max-height:35vh;overflow:auto;margin:9px 0}
+  #ssdlg #ss-results button{text-align:left;margin:4px 0}
+  #ssdlg #ss-results button[aria-pressed=true]{border-color:#56b4f7;background:#20405a}
+  #ssdlg .ss-hidden{display:none!important}
+  #ssdlg #ss-feedback{min-height:19px;font-size:13px;margin:8px 0}
+
   /* Friendly, optional evidence sample. Separate from fraud audits, work allocation and earnings. */
   #quality-screenshots{margin:12px 0 15px;border:1px solid #305d79;background:#112331;
     border-radius:14px;padding:15px}
@@ -363,6 +374,12 @@
     <div><b id="done">–</b><span>Done today</span></div>
   </div>
 
+
+  <section id="screenshot-tools" aria-label="Upload screenshots">
+    <button id="ss-open" type="button" class="good full">📸 Upload screenshot</button>
+    <p class="upload-info">Upload a creator reply for an AI response, or proof of a DM you sent. Available to every approved DMer. No extra screenshot is required for every DM.</p>
+  </section>
+
   <section id="quality-screenshots" hidden aria-label="Requested screenshots" role="region" aria-live="polite"></section>
 
   <section id="message-audit" hidden aria-label="Account verification" role="region" aria-live="polite"></section>
@@ -385,6 +402,29 @@
   <div id="tt" role="tabpanel" aria-labelledby="tab-tt" hidden></div>
   <div id="conv" role="tabpanel" aria-labelledby="tab-conv" hidden><div id="list"></div></div>
   <div id="earn" role="tabpanel" aria-labelledby="tab-earn" hidden></div>
+
+
+<dialog id="ssdlg" aria-labelledby="ss-title"><div class="sheet">
+  <h2 id="ss-title" style="margin:0 0 6px;font-size:20px">Upload screenshot</h2>
+  <p class="muted">Choose what the screenshot shows. Select the creator you messaged from your own TikTok account.</p>
+  <div class="acts">
+    <button type="button" id="ss-reply" class="ss-choice" aria-pressed="true">Creator replied</button>
+    <button type="button" id="ss-sent" class="ss-choice" aria-pressed="false">I sent a DM</button>
+  </div>
+  <label class="muted" for="ss-search">Find creator</label>
+  <input type="search" id="ss-search" maxlength="80" autocomplete="off" placeholder="Search @username or choose recent">
+  <div id="ss-results" role="group" aria-label="Your previously messaged creators"></div>
+  <div id="ss-file-area" hidden>
+    <p class="muted">Upload one clear screenshot showing the creator's username and the DM you actually sent. This is an optional record, not an automatic payment approval.</p>
+    <label class="shot">Choose screenshot (max 10 MB)
+      <input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/*" id="ss-file">
+    </label>
+    <img id="ss-preview" class="thumb" hidden alt="Selected screenshot preview">
+    <button class="good full" type="button" id="ss-upload" disabled>Save sent DM screenshot</button>
+  </div>
+  <p id="ss-feedback" role="status" aria-live="polite"></p>
+  <button class="full" type="button" id="ss-close">Close</button>
+</div></dialog>
 
 <dialog id="reply-reminder" aria-labelledby="reply-reminder-title"><div class="sheet">
   <h2 id="reply-reminder-title">Your replies need attention</h2>
@@ -3886,9 +3926,10 @@ async function refreshQualityScreenshots(force=false){
     if(!items.length){el.hidden=true;el.innerHTML='';return;}
     el.hidden=false;
     const submitted=items.filter(x=>x.status==='SUBMITTED'||x.status==='APPROVED').length;
-    el.innerHTML='<h2>Two quick screenshots</h2>'
-      +'<p class="muted">Please share the requested TikTok chat screenshots here. Open each creator link, find the message in the TikTok account you used, and include the creator name and your sent DM. You can hide unrelated private conversations.</p>'
-      +'<p><strong>'+submitted+' of '+items.length+' screenshots received</strong> · Your normal work and earnings are not affected.</p>'
+    const requested=items.filter(x=>x.origin==='OWNER_REQUESTED').length;
+    el.innerHTML='<h2>Screenshot history &amp; requests</h2>'
+      +'<p class="muted">Your uploaded sent-message evidence and any team-requested checks appear here. Keep unrelated private messages out of the screenshot. Received replies should be uploaded using the Upload screenshot button above.</p>'
+      +'<p><strong>'+submitted+' of '+items.length+' screenshots received</strong>'+(requested?' · '+requested+' requested by DropHero':'')+' · Your normal work and earnings are not affected.</p>'
       +items.map((item,n)=>{
         const url=safeAuditProfile(item.profile_url,item.handle);
         const who=esc(item.handle||'Creator');
@@ -3898,13 +3939,13 @@ async function refreshQualityScreenshots(force=false){
         if(item.status==='SUBMITTED')state='<p class="qs-status">✓ Screenshot received · awaiting review</p>';
         else if(item.status==='APPROVED')state='<p class="qs-status">✓ Checked and accepted</p>';
         else if(item.status==='REUPLOAD_REQUIRED')state='<p class="muted">Please upload a clearer screenshot.</p>';
-        return '<div class="qs-row"><strong>Screenshot '+(n+1)+' of '+items.length+'</strong>'
+        return '<div class="qs-row"><strong>'+(item.origin==='OWNER_REQUESTED'?'Requested screenshot':'Optional screenshot')+' '+(n+1)+' of '+items.length+'</strong>'
           +'<p>'+link+'</p><p class="muted">Previous DM: '+esc(item.sent_at?new Date(item.sent_at).toLocaleDateString():'See chat')+'</p>'
           +(isPending?'<label>Choose screenshot (JPG, PNG, WEBP or HEIC, max 10 MB)'
             +'<input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/*" data-quality-request="'+esc(item.id)+'" aria-label="Upload screenshot '+(n+1)+'"></label>':state)
           +'</div>';
       }).join('')
-      +'<p class="muted" style="margin:12px 0 4px">Upload only the requested chat. Screenshots are stored privately for the DropHero team.</p>'
+      +'<p class="muted" style="margin:12px 0 4px">Uploaded screenshots are private and available to the DropHero review team. Uploads are not an automatic reward or confirmation of delivery.</p>'
       +'<p id="qs-feedback" role="status" aria-live="polite"></p>';
   }catch(e){
     console.error('screenshot request load failed',e?.message||'error');
@@ -3945,6 +3986,137 @@ $('quality-screenshots').addEventListener('change',async(event)=>{
   }
 });
 setInterval(()=>{if(!document.hidden&&!$('app').hidden)void refreshQualityScreenshots();},5*60*1000);
+
+
+// ONE SCREENSHOT ENTRY POINT FOR ALL APPROVED VAs.
+// Replies reuse the established reply+AI proof pipeline. Sent DM photos are optional review
+// records and never write to sends, earnings, fraud decisions or the official random-proof gate.
+let ssState={user:null,kind:'REPLY',rows:[],selected:null,seq:0,searchTimer:0,busy:false,preview:null};
+function ssMessage(message){$('ss-feedback').textContent=message;}
+function ssResetFile(){
+ if(ssState.preview){URL.revokeObjectURL(ssState.preview);ssState.preview=null;}
+ $('ss-file').value='';$('ss-preview').hidden=true;$('ss-preview').removeAttribute('src');
+ $('ss-upload').disabled=true;
+}
+function ssRenderRows(){
+ const host=$('ss-results'),rows=ssState.rows;
+ if(!rows.length){host.innerHTML='<p class="muted">No matching sent DMs recorded yet. If you just sent a DM, confirm it in Work first.</p>';return;}
+ host.innerHTML=rows.map(row=>
+ '<button type="button" data-ss-task="'+esc(row.task_id)+'" aria-pressed="'+String(ssState.selected?.task_id===row.task_id)+'">'
+ +'<strong>@'+esc(row.handle||'creator')+'</strong>'
+ +'<span class="muted"> · '+esc(row.sent_at?new Date(row.sent_at).toLocaleDateString():'sent')
+ +(ssState.kind==='SENT'&&row.requested_status!=='NONE'?' · '+esc(row.requested_status.toLowerCase()):'')
+ +'</span></button>').join('');
+ for(const btn of host.querySelectorAll('button[data-ss-task]')){
+   btn.onclick=()=>{
+     if(ssState.busy)return;
+     const row=ssState.rows.find(r=>r.task_id===btn.dataset.ssTask);
+     if(!row)return;
+     ssState.selected=row;
+     if(ssState.kind==='REPLY'){
+       $('ssdlg').close();
+       openReply(row.task_id,'@'+(row.handle||'creator'));
+     }else{
+       ssResetFile();
+       $('ss-file-area').hidden=false;
+       ssMessage(row.requested_status==='SUBMITTED'||row.requested_status==='APPROVED'
+        ?'This DM already has a screenshot on record. You do not need to upload it again.'
+        :'Select the screenshot for @'+(row.handle||'creator')+'.');
+       $('ss-file').disabled=['SUBMITTED','APPROVED'].includes(row.requested_status);
+       ssRenderRows();
+     }
+   };
+ }
+}
+async function ssLoad(){
+ const user=pendingUserId,seq=++ssState.seq;
+ const search=$('ss-search').value.trim();
+ ssMessage('Finding your messages…');
+ $('ss-results').innerHTML='<p class="muted">Loading…</p>';
+ try{
+   const {data,error}=await sb.rpc('dh_va_screenshot_recent',{p_query:search,p_limit:80});
+   if(seq!==ssState.seq||ssState.user!==user||!$('ssdlg').open)return;
+   if(error||!data?.ok)throw error||new Error(data?.reason||'Search unavailable');
+   ssState.rows=Array.isArray(data.rows)?data.rows:[];
+   if(ssState.selected)ssState.selected=ssState.rows.find(r=>r.task_id===ssState.selected.task_id)||null;
+   ssRenderRows();
+   ssMessage(ssState.rows.length===80?'Showing 80 latest matches. Search by username to find older messages.':'Select a creator.');
+ }catch(e){
+   if(seq!==ssState.seq||ssState.user!==user)return;
+   $('ss-results').innerHTML='';
+   ssMessage('Could not load your chats. Please try again.');
+ }
+}
+function ssSetKind(kind){
+ ssState.kind=kind;ssState.selected=null;ssResetFile();
+ $('ss-file-area').hidden=true;
+ $('ss-reply').setAttribute('aria-pressed',String(kind==='REPLY'));
+ $('ss-sent').setAttribute('aria-pressed',String(kind==='SENT'));
+ ssRenderRows();
+ ssMessage(kind==='REPLY'?'Choose a creator to upload their reply and prepare an AI response.'
+ :'Choose a creator, then upload your sent DM screenshot.');
+}
+$('ss-open').onclick=()=>{
+ ssState.user=pendingUserId;ssState.selected=null;ssState.rows=[];
+ ssState.busy=false;ssResetFile();$('ss-search').value='';
+ $('ssdlg').showModal();
+ ssSetKind('REPLY');void ssLoad();
+};
+$('ss-reply').onclick=()=>{if(!ssState.busy)ssSetKind('REPLY');};
+$('ss-sent').onclick=()=>{if(!ssState.busy)ssSetKind('SENT');};
+$('ss-close').onclick=()=>$('ssdlg').close();
+$('ssdlg').addEventListener('close',()=>{
+ ++ssState.seq;clearTimeout(ssState.searchTimer);ssState.user=null;ssState.selected=null;
+ ssState.rows=[];ssState.busy=false;ssResetFile();
+});
+$('ss-search').oninput=()=>{
+ clearTimeout(ssState.searchTimer);
+ ssState.selected=null;$('ss-file-area').hidden=true;ssResetFile();
+ ssState.searchTimer=setTimeout(()=>void ssLoad(),250);
+};
+$('ss-file').onchange=()=>{
+ const f=$('ss-file').files?.[0];if(!f){ssResetFile();return;}
+ const types=['image/jpeg','image/png','image/webp','image/heic','image/heif'];
+ if(!types.includes(f.type)||!f.size||f.size>10*1024*1024){
+   ssResetFile();ssMessage('Choose a JPG, PNG, WEBP or HEIC image up to 10 MB.');return;
+ }
+ if(ssState.preview)URL.revokeObjectURL(ssState.preview);
+ ssState.preview=URL.createObjectURL(f);
+ $('ss-preview').src=ssState.preview;$('ss-preview').hidden=false;
+ $('ss-upload').disabled=false;ssMessage('Ready to upload.');
+};
+$('ss-upload').onclick=async()=>{
+ const row=ssState.selected, file=$('ss-file').files?.[0], user=ssState.user;
+ if(!row||!file||ssState.busy||user!==pendingUserId)return;
+ ssState.busy=true;$('ss-upload').disabled=true;ssMessage('Saving screenshot…');
+ try{
+   const created=await sb.rpc('dh_va_screenshot_self_request',{p_task_id:row.task_id});
+   if(created.error||!created.data?.ok)throw created.error||new Error(created.data?.reason||'Could not start upload');
+   const {request_id:requestId,status}=created.data;
+   if(!['PENDING','REUPLOAD_REQUIRED'].includes(status)){
+     ssMessage('A screenshot for this DM is already saved.');return;
+   }
+   const ext=({'image/jpeg':'jpg','image/png':'png','image/webp':'webp','image/heic':'heic','image/heif':'heif'})[file.type];
+   const path=requestId+'/'+Date.now().toString(36)+'.'+ext;
+   const uploaded=await sb.storage.from('va-quality-screenshots').upload(path,file,{
+     contentType:file.type,upsert:false
+   });
+   if(uploaded.error)throw uploaded.error;
+   const saved=await sb.rpc('dh_va_quality_screenshot_submit',{p_request_id:requestId,p_path:path});
+   if(saved.error||!saved.data?.ok)throw saved.error||new Error(saved.data?.reason||'Upload not confirmed');
+   if(user!==pendingUserId)return;
+   row.requested_status='SUBMITTED';$('ss-file').disabled=true;
+   ssResetFile();ssRenderRows();
+   ssMessage('Screenshot received. It is now available for DropHero review. You can keep working.');
+   void refreshQualityScreenshots(true);
+ }catch(e){
+   if(user===pendingUserId){
+     ssMessage(e?.message==='DAILY_UPLOAD_LIMIT'?'You have reached the optional screenshot limit for today. Try again tomorrow.'
+      :'Upload did not finish. Please try again. Your DM count and earnings were not changed.');
+     $('ss-upload').disabled=false;
+   }
+ }finally{ssState.busy=false;}
+};
 
 // boot() reads pending state only after Supabase has identified the user, so one account can never
 // restore another account's creator or message from the shared origin.
