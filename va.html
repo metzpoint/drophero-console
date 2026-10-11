@@ -4181,6 +4181,22 @@ function drawCreatorFollowupPush(){
  $('cf-push-refresh').onclick=()=>void refreshCreatorFollowups(true);
 }
 
+// Both buttons copy the current answer and use only the portal-issued signup URL.
+async function prepareCreatorFollowupCopy(selected, taskId, issueInvite) {
+ const text=String(selected?.text||'').trim();
+ const action=selected?.nextAction;
+ if(!text||!['SEND_REPLY','SEND_AFFILIATE_LINK'].includes(action))
+   throw new Error('REPLY_NOT_READY_TO_SEND');
+ if(action==='SEND_AFFILIATE_LINK'){
+   const {data,error}=await issueInvite(taskId);
+   if(error||!data?.ok||typeof data.url!=='string'||!data.url.startsWith('https://'))
+     throw new Error('SIGNUP_LINK_UNAVAILABLE');
+   return signupMessage(data.url,text);
+ }
+ return text.includes(CREATOR_INFO_URL)?text:
+   text+'\n\nCreator partnership details:\n'+CREATOR_INFO_URL;
+}
+
 function renderCreatorFollowups(){
  const box=$('creator-followups');
  if(!box||$('app').hidden||creatorFollowups.user!==pendingUserId)return;
@@ -4260,10 +4276,10 @@ function renderCreatorFollowups(){
        const existing=aiRow(replyEvent);
        const result=await assistantFor(replyEvent,existing);
        if(user!==pendingUserId||!rowFor(key)||creatorFollowups.user!==user)return;
-       if(['WAIT','CLOSE'].includes(result?.nextAction)){
+       if(['WAIT','CLOSE','ESCALATE_TO_OWNER'].includes(result?.nextAction)){
          creatorFollowups.blocked.set(key,'Wait for the next reply or let the DropHero team handle this creator.');
        }else if(result?.text&&!result?.withheld){
-         creatorFollowups.ai.set(key,{text:result.text});
+         creatorFollowups.ai.set(key,{text:result.text,nextAction:result.nextAction});
        }else{
          creatorFollowups.message='AI reply not ready. You can choose Copy & Paste instead.';
        }
@@ -4279,14 +4295,29 @@ function renderCreatorFollowups(){
    b.onclick=async()=>{
      const key=b.dataset.cfCopy,r=rowFor(key);if(!r||creatorFollowups.busy.has(key))return;
      const mode=creatorFollowups.mode.get(key)||'COPY_PASTE';
-     const text=mode==='AI_REPLY' ? creatorFollowups.ai.get(key)?.text : r.draft;
-     if(!text||creatorFollowups.blocked.has(key)||creatorFollowups.aiPending.has(key))return;
+     const selected=mode==='AI_REPLY' ? creatorFollowups.ai.get(key) :
+       {text:r.draft,nextAction:r.next_action};
+     if(!selected?.text||creatorFollowups.blocked.has(key)||creatorFollowups.aiPending.has(key))return;
      const user=creatorFollowups.user;
      b.disabled=true;
+     let text;
+     try{
+       text=await prepareCreatorFollowupCopy(selected,r.task_id,
+         taskId=>sb.rpc('dh_affiliate_invite_issue',{p_task_id:taskId}));
+     }catch(e){
+       if(user===pendingUserId&&creatorFollowups.user===user)
+         status(key,e?.message==='SIGNUP_LINK_UNAVAILABLE'
+           ?'Your personal signup link is not ready. Refresh and try again; nothing was marked sent.'
+           :'This conversation needs review. Refresh before sending.');
+       if(b.isConnected)b.disabled=false;
+       return;
+     }
+     if(user!==pendingUserId||creatorFollowups.user!==user||
+       (creatorFollowups.mode.get(key)||'COPY_PASTE')!==mode||!rowFor(key))return;
      const copied=await copyNow(text,true);
      if(user!==pendingUserId||creatorFollowups.user!==user)return;
      if(copied.ok){
-       creatorFollowups.copied.set(key,text);
+       creatorFollowups.copied.set(key,selected.text);
        const next=box.querySelector('[data-cf-sent="'+key+'"]');if(next)next.disabled=false;
        const profile=safeTikTokProfileUrl(r.profile_url,r.handle);
        const opened=profile&&leaveForTikTok(profile,r.handle);
