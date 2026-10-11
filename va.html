@@ -25,6 +25,16 @@
   .sub{color:var(--dim);font-size:12px;margin:0 0 14px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;
         margin-bottom:11px;min-width:0;overflow-wrap:anywhere}
+
+  /* Friendly, optional evidence sample. Separate from fraud audits, work allocation and earnings. */
+  #quality-screenshots{margin:12px 0 15px;border:1px solid #305d79;background:#112331;
+    border-radius:14px;padding:15px}
+  #quality-screenshots h2{margin:0 0 7px;font-size:18px;color:#e2f4ff}
+  #quality-screenshots .qs-row{border:1px solid #315268;border-radius:11px;padding:12px;margin-top:10px;background:#151e29}
+  #quality-screenshots a{color:#91ccff;font-weight:650}
+  #quality-screenshots input[type=file]{min-height:48px;margin-top:9px}
+  #quality-screenshots .qs-status{font-size:13px;color:#b7edda;margin-top:7px}
+
   /* Separate, owner-initiated verification panel. Keep the existing five tabs untouched. */
   #message-audit{margin:12px 0 15px;border:1px solid #b93d4b;background:#2b1219;
     border-radius:14px;padding:15px;box-shadow:0 0 0 1px #ff4e6220}
@@ -352,6 +362,8 @@
     <div><b id="remaining">–</b><span>Left today</span></div>
     <div><b id="done">–</b><span>Done today</span></div>
   </div>
+
+  <section id="quality-screenshots" hidden aria-label="Requested screenshots" role="region" aria-live="polite"></section>
 
   <section id="message-audit" hidden aria-label="Account verification" role="region" aria-live="polite"></section>
 
@@ -1231,6 +1243,7 @@ async function bootOrThrow() {
   if (!seq.isCurrent('boot', token)) return;
   render();
   void refreshMessageAudit();
+  void refreshQualityScreenshots();
   return { accountsOk: accountsRes.ok, moneyOk: moneyRes.ok };
 }
 
@@ -3853,6 +3866,85 @@ $('message-audit').addEventListener('change',async(event)=>{
 });
 // Detect new checks without adding more calls to the main 30-second queue request.
 setInterval(()=>{if(!document.hidden&&!$('app').hidden) void refreshMessageAudit();},60000);
+
+
+// FRIENDLY TWO-SCREENSHOT REQUESTS. No assignment block, fraud audit, automatic payout or creator send.
+let qsUser=null, qsLastLoad=0, qsLoading=false;
+async function refreshQualityScreenshots(force=false){
+  const el=$('quality-screenshots');
+  if(!el || $('app').hidden) return;
+  if(qsUser!==pendingUserId){qsUser=pendingUserId;qsLastLoad=0;el.hidden=true;el.innerHTML='';}
+  if(qsLoading || (!force && Date.now()-qsLastLoad<5*60*1000)) return;
+  qsLoading=true;
+  const startedFor=pendingUserId;
+  qsLastLoad=Date.now();
+  try{
+    const {data,error}=await sb.rpc('dh_va_quality_screenshot_requests');
+    if(error) throw error;
+    if(startedFor!==pendingUserId)return;
+    const items=Array.isArray(data)?data:[];
+    if(!items.length){el.hidden=true;el.innerHTML='';return;}
+    el.hidden=false;
+    const submitted=items.filter(x=>x.status==='SUBMITTED'||x.status==='APPROVED').length;
+    el.innerHTML='<h2>Two quick screenshots</h2>'
+      +'<p class="muted">Please share the requested TikTok chat screenshots here. Open each creator link, find the message in the TikTok account you used, and include the creator name and your sent DM. You can hide unrelated private conversations.</p>'
+      +'<p><strong>'+submitted+' of '+items.length+' screenshots received</strong> · Your normal work and earnings are not affected.</p>'
+      +items.map((item,n)=>{
+        const url=safeAuditProfile(item.profile_url,item.handle);
+        const who=esc(item.handle||'Creator');
+        const link=url?'<a href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">@'+who+' ↗</a>':'@'+who;
+        const isPending=item.status==='PENDING'||item.status==='REUPLOAD_REQUIRED';
+        let state='';
+        if(item.status==='SUBMITTED')state='<p class="qs-status">✓ Screenshot received · awaiting review</p>';
+        else if(item.status==='APPROVED')state='<p class="qs-status">✓ Checked and accepted</p>';
+        else if(item.status==='REUPLOAD_REQUIRED')state='<p class="muted">Please upload a clearer screenshot.</p>';
+        return '<div class="qs-row"><strong>Screenshot '+(n+1)+' of '+items.length+'</strong>'
+          +'<p>'+link+'</p><p class="muted">Previous DM: '+esc(item.sent_at?new Date(item.sent_at).toLocaleDateString():'See chat')+'</p>'
+          +(isPending?'<label>Choose screenshot (JPG, PNG, WEBP or HEIC, max 10 MB)'
+            +'<input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/*" data-quality-request="'+esc(item.id)+'" aria-label="Upload screenshot '+(n+1)+'"></label>':state)
+          +'</div>';
+      }).join('')
+      +'<p class="muted" style="margin:12px 0 4px">Upload only the requested chat. Screenshots are stored privately for the DropHero team.</p>'
+      +'<p id="qs-feedback" role="status" aria-live="polite"></p>';
+  }catch(e){
+    console.error('screenshot request load failed',e?.message||'error');
+    qsLastLoad=0;
+    if(startedFor===pendingUserId && !el.hidden){
+      const msg=$('qs-feedback');if(msg)msg.textContent='Could not refresh screenshots. Check your connection and try again.';
+    }
+  }finally{qsLoading=false;}
+}
+$('quality-screenshots').addEventListener('change',async(event)=>{
+  const input=event.target.closest('input[data-quality-request]');
+  if(!input||!input.files?.length) return;
+  const file=input.files[0],id=input.dataset.qualityRequest;
+  const feedback=$('qs-feedback');
+  if(!feedback)return;
+  const ext=({'image/jpeg':'jpg','image/png':'png','image/webp':'webp','image/heic':'heic','image/heif':'heif'})[file.type];
+  if(!ext || !file.size || file.size>10*1024*1024){
+    feedback.textContent='Please select a JPG, PNG, WEBP or HEIC screenshot under 10 MB.';
+    input.value='';return;
+  }
+  input.disabled=true;feedback.textContent='Uploading your screenshot…';
+  const forUser=pendingUserId;
+  const path=id+'/'+Date.now().toString(36)+'.'+ext;
+  try{
+    const upload=await sb.storage.from('va-quality-screenshots').upload(path,file,{contentType:file.type,upsert:false});
+    if(upload.error)throw upload.error;
+    const {data,error}=await sb.rpc('dh_va_quality_screenshot_submit',{p_request_id:id,p_path:path});
+    if(error || !data?.ok)throw error||new Error(data?.reason||'Could not confirm screenshot');
+    if(forUser!==pendingUserId)return;
+    feedback.textContent='Screenshot received. Thank you!';
+    qsLastLoad=0;
+    await refreshQualityScreenshots(true);
+  }catch(e){
+    if(forUser!==pendingUserId)return;
+    console.error('screenshot upload error',e?.message||'error');
+    feedback.textContent='Upload did not complete. Please try again or contact DropHero support.';
+    if(input.isConnected)input.disabled=false;
+  }
+});
+setInterval(()=>{if(!document.hidden&&!$('app').hidden)void refreshQualityScreenshots();},5*60*1000);
 
 // boot() reads pending state only after Supabase has identified the user, so one account can never
 // restore another account's creator or message from the shared origin.
