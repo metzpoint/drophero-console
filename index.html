@@ -1,14 +1,16 @@
 <!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://esm.sh; style-src 'unsafe-inline'; connect-src https://aexomkitwnxvpqlmtrik.supabase.co wss://aexomkitwnxvpqlmtrik.supabase.co https://esm.sh; img-src data: blob: https://aexomkitwnxvpqlmtrik.supabase.co; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://aexomkitwnxvpqlmtrik.supabase.co wss://aexomkitwnxvpqlmtrik.supabase.co; img-src data: blob: https://aexomkitwnxvpqlmtrik.supabase.co; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b0f14">
+<meta name="referrer" content="no-referrer">
 <title>DropHero — Owner</title>
 <style>
   :root{--bg:#0b0f14;--card:#151b24;--line:#232c39;--ink:#e8edf5;--dim:#8b98ab;
         --ok:#3ddc97;--warn:#ffb454;--bad:#ff6b6b;--accent:#6aa6ff}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  [hidden]{display:none!important}
   html,body{overflow-x:hidden;max-width:100%}
   body{margin:0;background:var(--bg);color:var(--ink);
        font:16px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;
@@ -41,12 +43,23 @@
   input,select,textarea{font:inherit;background:#10161e;color:var(--ink);border:1px solid var(--line);
                border-radius:11px;padding:10px;min-height:44px;width:100%;max-width:100%}
   textarea{min-height:96px;line-height:1.4}
+  .proofcheck{display:flex;gap:8px;align-items:center;min-height:44px;padding:6px 0}
+  .proofcheck input{width:20px;min-height:20px;height:20px;padding:0;flex:0 0 20px}
   .muted{color:var(--dim);font-size:12px}
   .bar{height:7px;background:#10161e;border-radius:6px;overflow:hidden;margin-top:9px}
   .bar>i{display:block;height:100%;background:var(--accent)}
   .banner{background:#3a2318;border:1px solid #6b3a1f;color:#ffcf9e;padding:12px;border-radius:12px;
           margin:10px 0;font-size:13px}
   .banner.bad{background:#3a1a1a;border-color:#6b2b2b;color:#ffd3d3}
+  .audit-warning{background:#2f1119;border:1px solid #bd4251;border-radius:13px;
+    padding:13px;color:#ffe1e4;box-shadow:0 0 0 1px #f45b6d20}
+  .audit-warning strong{color:#ff929e}
+  .audit-warning button{width:auto;min-width:130px;background:#7a2436;border-color:#d14b59;color:#fff}
+  .audit-warning .audit-title{font-size:16px;font-weight:700;margin-bottom:5px}
+  .audit-warning .audit-row{display:flex;gap:12px;align-items:center;justify-content:space-between;
+    flex-wrap:wrap;border-top:1px solid #6f2735;padding:12px 0}
+  #audit-cases details{margin-top:9px}#audit-cases summary{cursor:pointer;min-height:36px}
+
   .chips{display:flex;gap:7px;overflow-x:auto;padding-bottom:3px;-webkit-overflow-scrolling:touch}
   .chips button{white-space:nowrap;min-height:38px;padding:8px 13px;font-size:13px}
   #login{max-width:420px;margin:9vh auto}
@@ -61,60 +74,107 @@
   .fnl .trk>i{display:block;height:100%;background:linear-gradient(90deg,#2b5c96,#6aa6ff)}
   .fnl .num{width:96px;flex:none;text-align:right;font-variant-numeric:tabular-nums;font-size:13px}
   .fnl .num em{font-style:normal;color:var(--dim);font-size:11px}
+  /* The supply stage names are sentences, not words ("Needs personalization"), so they get more
+     room than the 96px the generic funnel labels use. Below 560px the bar is the first thing to
+     go: the number still reads, which is what the stage is actually for. */
+  #supply .fnl .lbl{width:168px}
+  #supply .supply-head{font-size:15px;padding:2px 0 9px;display:flex;align-items:center;
+    gap:8px;flex-wrap:wrap}
+  #supply .supply-head b{font-size:19px}
+  @media(max-width:560px){#supply .fnl .lbl{width:124px}#supply .fnl .trk{display:none}}
   .att{border-left:3px solid var(--warn);padding-left:10px;margin:10px 0}
   .att.crit{border-left-color:var(--bad)}
   .att h3{font-size:13px;margin:0 0 4px}
   .stack{display:flex;flex-direction:column;gap:9px}
   .two{display:grid;grid-template-columns:1fr 1fr;gap:9px}
   @media(min-width:720px){.grid{grid-template-columns:repeat(4,1fr)} body{max-width:1080px;margin:0 auto}}
+
+  .adminbrand{font-size:24px;margin-top:8px}.adminbrand span{color:var(--dim);font-weight:400;font-size:16px}
+  .adminnav{position:sticky;top:0;z-index:20;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;padding:9px 0;background:var(--bg);border-bottom:1px solid var(--line)}
+  .adminnav a{display:flex;justify-content:center;align-items:center;min-height:44px;padding:8px 4px;border:1px solid var(--line);border-radius:10px;color:var(--dim);font-size:13px;text-align:center;overflow-wrap:anywhere}
+  .adminnav a[aria-current="page"]{background:#18314f;border-color:var(--accent);color:var(--ink)}
+  .adminnav a:focus-visible,.quickcard:focus-visible,.showall:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+  .workspace-heading{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0}.showall{display:flex;align-items:center;min-height:44px;font-size:12px}
+  .sectionhead{padding:12px 0 6px}.sectionhead h2{font-size:21px;color:var(--ink);text-transform:none;letter-spacing:0;margin:0}.sectionhead p{font-size:13px;color:var(--dim);margin:6px 0 12px}
+  .quickgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-bottom:20px}
+  .quickcard{display:flex;flex-direction:column;gap:6px;padding:14px;background:var(--card);border:1px solid var(--line);border-radius:14px;min-width:0;color:var(--ink);overflow-wrap:anywhere}
+  .quickcard span{font-size:12px;color:var(--dim)}.quickcard b{font-size:24px}.quickcard small{color:var(--accent);font-size:12px}
+  [data-admin-section],[data-admin-section] h2,[data-admin-section] .card{scroll-margin-top:145px}
+  @media(min-width:720px){.adminnav{grid-template-columns:repeat(6,minmax(0,1fr))}.quickgrid{grid-template-columns:repeat(4,minmax(0,1fr))}[data-admin-section],[data-admin-section] h2,[data-admin-section] .card{scroll-margin-top:82px}}
+
+  .activity-cards{display:none}.activity-card{border:1px solid var(--line);border-radius:12px;padding:12px;min-width:0}.activity-card .row{padding-top:0}.activity-card .row b{overflow-wrap:anywhere;min-width:0}.activity-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px}.activity-metrics span{color:var(--dim);font-size:11px}.activity-metrics b{display:block;font-size:18px;color:var(--ink);margin-top:4px;overflow-wrap:anywhere}
+  @media(max-width:600px){.activity-cards{display:grid;gap:10px}.activity-table{display:none}}
+
+.sim-toolbar{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:12px 0}.sim-toolbar select{min-width:200px;max-width:100%}.sim-form{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px}.sim-form label,.sim-toolbar label{display:grid;gap:6px}.sim-wide{grid-column:1/-1;overflow-wrap:anywhere}.sim-form textarea{min-height:80px;resize:vertical}.sim-form input,.sim-form select,.sim-form textarea{width:100%;box-sizing:border-box}.sim-preview{max-width:200px;max-height:280px;object-fit:contain}.sim-step{padding:20px;background:var(--card,#111827);border:1px solid var(--line,#334155);border-radius:14px;margin:16px 0}.sim-step-head{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}.sim-step-grid{display:grid;grid-template-columns:minmax(120px,240px) 1fr;gap:20px;margin-top:12px}.sim-step img{max-width:100%;max-height:420px;object-fit:contain}.sim-step pre{white-space:pre-wrap;word-break:break-word;max-height:300px;overflow:auto;font-size:12px}.sim-answer{padding:16px;border-radius:10px;background:#14342c;white-space:pre-wrap;overflow-wrap:anywhere}.sim-status{font-weight:600}#sim-notice{min-height:24px}@media(max-width:600px){.sim-form,.sim-step-grid{grid-template-columns:1fr}.sim-toolbar>*{max-width:100%}.sim-toolbar select{min-width:0;width:100%}.sim-step{padding:14px}}
+
 </style></head><body>
 
 <div id="login" hidden>
-  <h1>DropHero</h1><p class="sub" id="loginlead">Owner and VA access.</p>
-  <div class="card">
-    <p class="k">Email</p><input id="email" type="email" autocomplete="username" inputmode="email">
-    <p class="k" style="margin-top:12px">Password</p>
-    <input id="pw" type="password" autocomplete="current-password">
-    <div class="two" style="margin-top:14px">
-      <button id="signin">Sign in</button>
-      <button id="signup">Create account</button>
+  <h1>DropHero</h1><p class="sub" id="loginlead">Owner admin access.</p>
+  <form class="card" id="login-form">
+    <label class="k" for="email">Email</label>
+    <input id="email" type="email" autocomplete="username" inputmode="email" required>
+    <label class="k" for="pw" style="display:block;margin-top:12px">Password</label>
+    <input id="pw" type="password" autocomplete="current-password" required minlength="8">
+    <div style="margin-top:14px">
+      <button id="signin" type="submit">Sign in</button>
     </div>
-    <p id="loginmsg" class="muted" style="margin-bottom:0"></p>
-  </div>
-  <p class="muted" style="margin-top:14px">First time? Use <b>Create account</b> with the address
-    that was invited and pick your own password. Access is granted by the invitation, not by
-    signing up.</p>
+    <p id="loginmsg" class="muted" style="margin-bottom:0" role="status" aria-live="polite"></p>
+    <!-- Zonder dit kan de eigenaar zichzelf niet herstellen: er is niemand boven hem die een
+         nieuwe uitnodiging kan sturen. type="button" houdt hem buiten het submit-pad. -->
+    <div style="margin-top:10px">
+      <button id="forgotpw" type="button" class="ghost" style="font-size:13px">
+        Forgot your password?</button>
+    </div>
+    <p id="forgotmsg" class="muted" style="margin:8px 0 0" role="status" aria-live="polite"></p>
+  </form>
+  <p class="muted" style="margin-top:14px">VA account? Open the invitation link your manager sent,
+    or use the <a href="./va.html">VA portal</a> if your account is already active.</p>
 </div>
 
 <main id="app" hidden>
-  <h1>DropHero</h1>
+  <h1 class="adminbrand">DropHero <span>Admin</span></h1>
   <p class="sub" id="asof">loading…</p>
   <div id="banners"></div>
+  <section id="audit-banner" hidden aria-live="polite"></section>
 
+
+
+<nav class="adminnav" aria-label="Admin sections"><a href="#overview" data-admin-nav="overview">Overview</a><a href="#team" data-admin-nav="team">Team</a><a href="#conversations" data-admin-nav="conversations">Conversations</a><a href="#payments" data-admin-nav="payments">Payments</a><a href="#creators" data-admin-nav="creators">Creators</a><a href="#settings" data-admin-nav="settings">Settings & sourcing</a><a href="#simulation" data-admin-nav="simulation">Testportal</a></nav>
+<div class="workspace-heading"><span class="muted" id="admin-view-label">Overview</span><a class="showall" href="#all" id="admin-show-all">Show all sections</a></div>
+<section id="section-overview" data-admin-section="overview" aria-labelledby="title-overview">
+<header class="sectionhead"><h2 id="title-overview">Overview</h2><p>Your daily decisions in one place.</p></header>
+<div class="quickgrid" id="admin-actions"><a href="#approvals" class="quickcard"><span>TikTok approvals</span><b id="action-approvals">—</b><small>Review applications</small></a><a href="#conversations" class="quickcard"><span>Creator follow-ups</span><b id="action-chats">—</b><small>Open conversations</small></a><a href="#proofs" class="quickcard"><span>Evidence in current view</span><b id="action-proofs">—</b><small>Check screenshots</small></a><a href="#payments" class="quickcard"><span>Ready to pay</span><b id="action-payouts">—</b><small>Review balances</small></a></div>
   <div class="chips" id="periods">
     <button data-p="TODAY">Today</button>
     <button data-p="7D">7 days</button>
     <button data-p="30D">30 days</button>
     <button data-p="ALL" aria-pressed="true">All time</button>
   </div>
+  <h2>Overview</h2>
+  <div class="grid" id="kpis"></div>
 
   <h2>Needs your attention</h2>
   <div class="card" id="attention"><div class="muted">loading…</div></div>
 
-  <h2>Overview</h2>
-  <div class="grid" id="kpis"></div>
+</section>
+<section id="section-team" data-admin-section="team" aria-labelledby="title-team" hidden>
+<header class="sectionhead"><h2 id="title-team">Team</h2><p>Approve accounts, follow activity and review response rates.</p></header>
+  <h2 id="approvals">TikTok approvals <small class="muted">waiting for you</small></h2>
+  <div class="card" id="ttapprovals"><div class="muted">loading…</div></div>
 
-  <h2>Budget</h2>
-  <div class="card" id="budget"></div>
+  <h2 id="activity">DMer activity <small class="muted">portal use and recorded work</small></h2>
+  <div class="card" id="vaactivity"><div class="muted">loading…</div></div>
+  <h2 id="audit-title">Message verification alerts</h2>
+  <div class="card" id="audit-signals">Loading verification alerts…</div>
+  <h2>Open verification cases</h2>
+  <div class="card" id="audit-cases">No open cases.</div>
 
-  <h2>Funnel</h2>
-  <div class="card" id="funnel"></div>
+  <h2 id="performance">VA performance <small class="muted">volume and quality</small></h2>
+  <div class="card" id="vaperf"><div class="muted">loading…</div></div>
 
-  <h2>Full funnel <small class="muted">all time</small></h2>
-  <div class="card" id="fullfunnel"><div class="muted">loading…</div></div>
-
-  <h2>Backlog &amp; generation</h2>
-  <div class="card" id="production"><div class="muted">loading…</div></div>
+  <h2>VAs</h2>
+  <div class="card" id="vas"></div>
 
   <h2 id="tiktok">TikTok accounts <small class="muted">per VA</small></h2>
   <div class="card" id="ttadmin"><div class="muted">loading…</div></div>
@@ -122,37 +182,46 @@
   <h2>TikTok moderation <small class="muted">block rate by sender, 24h and 7d</small></h2>
   <div class="card" id="modblock"><div class="muted">loading…</div></div>
 
-  <h2>First-touch templates <small class="muted">what gets sent, and what gets refused</small></h2>
-  <div class="card" id="templates"><div class="muted">loading…</div></div>
-
-  <h2 id="performance">VA performance <small class="muted">volume and quality</small></h2>
-  <div class="card" id="vaperf"><div class="muted">loading…</div></div>
+</section>
+<section id="section-conversations" data-admin-section="conversations" aria-labelledby="title-conversations" hidden>
+<header class="sectionhead"><h2 id="title-conversations">Conversations & evidence</h2><p>Follow up with interested creators and review screenshots.</p></header>
+  <h2>Interested creators <small class="muted">awaiting your follow-up</small></h2>
+  <div class="card" id="interested"><div class="muted">loading…</div></div>
 
   <h2 id="proofs">Proof checks <small class="muted">send and reply screenshots</small></h2>
   <div class="card" id="proofq"><div class="muted">loading…</div></div>
+  <h2>Requested screenshots <small class="muted">uploaded by DM’ers</small></h2>
+  <div id="quality-uploads" class="card"><span class="muted">loading…</span></div>
 
-  <h2 id="payouts">Payouts</h2>
+</section>
+<section id="section-payments" data-admin-section="payments" aria-labelledby="title-payments" hidden>
+<header class="sectionhead"><h2 id="title-payments">Payments</h2><p>Review balances and record completed payouts.</p></header>
+  <h2 id="payouts-title">Payouts</h2>
   <div class="card" id="payouts"><div class="muted">loading…</div></div>
 
+</section>
+<section id="section-creators" data-admin-section="creators" aria-labelledby="title-creators" hidden>
+<header class="sectionhead"><h2 id="title-creators">Creators & DM stock</h2><p>Search creators, check available stock and follow the outreach funnel.</p></header>
   <h2 id="directory">Creator directory</h2>
   <div class="card">
+    <label class="k" for="q">Search creators</label>
     <input id="q" type="search" placeholder="Search handle, name or email" autocomplete="off">
     <div class="chips" style="margin-top:9px">
-      <select id="f_platform"><option value="">All platforms</option></select>
-      <select id="f_route"><option value="">All routes</option></select>
-      <select id="f_priority"><option value="">Any priority</option>
+      <select id="f_platform" aria-label="Platform"><option value="">All platforms</option></select>
+      <select id="f_route" aria-label="Contact route"><option value="">All routes</option></select>
+      <select id="f_priority" aria-label="Priority"><option value="">Any priority</option>
         <option value="HIGH">High</option><option value="MEDIUM">Medium</option>
         <option value="LOW">Low</option></select>
-      <select id="f_status"><option value="">Any status</option></select>
+      <select id="f_status" aria-label="Contact status"><option value="">Any status</option></select>
     </div>
     <div class="chips" style="margin-top:7px">
-      <select id="f_category"><option value="">All categories</option></select>
-      <select id="f_country"><option value="">All countries</option></select>
-      <select id="f_va"><option value="">All VAs</option></select>
-      <select id="f_interested"><option value="">Interested: any</option>
+      <select id="f_category" aria-label="Category"><option value="">All categories</option></select>
+      <select id="f_country" aria-label="Country"><option value="">All countries</option></select>
+      <select id="f_va" aria-label="VA"><option value="">All VAs</option></select>
+      <select id="f_interested" aria-label="Interested status"><option value="">Interested: any</option>
         <option value="1">Interested only</option>
         <option value="0">Not interested yet</option></select>
-      <select id="f_affiliate"><option value="">Affiliate: any</option>
+      <select id="f_affiliate" aria-label="Affiliate status"><option value="">Affiliate: any</option>
         <option value="1">Affiliates only</option>
         <option value="0">Not an affiliate</option></select>
     </div>
@@ -162,8 +231,63 @@
             <button class="sm" id="next">More</button></span></div>
   </div>
 
-  <h2>VAs</h2>
-  <div class="card" id="vas"></div>
+  <h2>Supply pipeline <small class="muted">discovery to READY, continuous</small></h2>
+  <div class="card" id="supply"><div class="muted">loading…</div></div>
+
+  <h2>Backlog &amp; generation</h2>
+  <div class="card" id="production"><div class="muted">loading…</div></div>
+
+  <h2>Funnel</h2>
+  <div class="card" id="funnel"></div>
+
+  <h2>Full funnel <small class="muted">all time</small></h2>
+  <div class="card" id="fullfunnel"><div class="muted">loading…</div></div>
+
+  <h2>First-touch templates <small class="muted">what gets sent, and what gets refused</small></h2>
+  <div class="card" id="templates"><div class="muted">loading…</div></div>
+
+</section>
+
+<section id="section-simulation" data-admin-section="simulation" aria-labelledby="title-simulation" hidden>
+<header class="sectionhead"><h2 id="title-simulation">Testportal · DMer-simulatie</h2><p>Test met echte screenshots hoe de actuele screenshotcontrole en AI reageren. Verzending, aanmeldingen en verdiensten blijven binnen de simulatie.</p></header>
+<div class="card">
+ <div class="sim-toolbar"><select id="sim-runs" aria-label="Eerdere simulaties"><option value="">Kies een eerdere test</option></select><button id="sim-refresh" type="button" data-sim-action>Tests verversen</button></div>
+ <div class="sim-toolbar"><select id="sim-examples" aria-label="Bestaande VA-screenshot"><option value="">Of kies een bestaande VA-screenshot</option></select><button id="sim-import" type="button" data-sim-action>Deze screenshot testen</button></div>
+ <details><summary>Nieuwe simulatie met eigen screenshots</summary>
+ <form id="sim-create" class="sim-form">
+ <label>Naam van de test<input id="sim-title" maxlength="120" placeholder="Bijvoorbeeld: vraag over commissie"></label>
+ <label>TikTok-handle<input id="sim-handle" maxlength="80" placeholder="@creator"></label>
+ <label>Naam van de creator<input id="sim-name" maxlength="120"></label>
+ <label>Taal<select id="sim-language"><option value="en">Engels</option><option value="nl">Nederlands</option></select></label>
+ <label class="sim-wide">Profiel van de creator<textarea id="sim-bio" maxlength="1200" placeholder="Optioneel: bio of niche"></textarea></label>
+ <label class="sim-wide">Eerste DM<textarea id="sim-first" maxlength="2000" placeholder="De DM waarop de creator reageert. Nodig om een verzonden-DM-screenshot te testen."></textarea></label>
+ <button type="submit" data-sim-action>Simulatie starten</button>
+ </form></details>
+ <p id="sim-notice" role="status" aria-live="polite"></p>
+</div>
+<div id="sim-active" hidden>
+ <div class="card"><h3 id="sim-active-title"></h3><p><strong id="sim-person"></strong> · <span id="sim-facts"></span></p>
+ <p class="sim-status" id="sim-status" role="status" aria-live="polite">Klaar voor een screenshot</p>
+ <div class="sim-toolbar"><label>Wat test je?<select id="sim-kind"><option value="REPLY">Reactie van de creator</option><option value="SEND">Bewijs van een verstuurde DM</option></select></label>
+ <label>Screenshot<input id="sim-file" type="file" accept="image/png,image/jpeg,image/webp"></label><button id="sim-upload" type="button" data-sim-action>Uploaden en testen</button></div>
+ <img id="sim-preview" class="sim-preview" alt="Preview van je screenshot" hidden>
+ </div>
+ <div id="sim-steps"></div>
+ <div class="card sim-toolbar">
+ <button id="sim-copy" type="button" disabled>Antwoord kopiëren</button>
+ <button id="sim-sent" type="button" disabled>Verzending bevestigen (test)</button>
+ <button id="sim-invite" type="button" hidden>Aanmeldlink testen</button>
+ <button id="sim-clicked" type="button" hidden>Linkklik simuleren</button>
+ <button id="sim-registered" type="button" hidden>Aanmelding simuleren</button>
+ <p id="sim-test-link" class="sim-wide"></p>
+ </div>
+</div>
+</section>
+
+<section id="section-settings" data-admin-section="settings" aria-labelledby="title-settings" hidden>
+<header class="sectionhead"><h2 id="title-settings">Settings & sourcing</h2><p>Manage budgets, sourcing and integrations.</p></header>
+  <h2>Budget</h2>
+  <div class="card" id="budget"></div>
 
   <h2>Sourcing</h2>
   <div class="card" id="sourcing"></div>
@@ -171,111 +295,430 @@
   <h2>Config required</h2>
   <div class="card" id="config"></div>
 
-  <h2>Integrations</h2>
+  <h2>Telegram</h2><div class="card" id="telegram-bridge">
+<p class="muted">Connect @DropHeroTeamBot. Messages are captured only after owner group approval.</p>
+<p id="tg-bridge-status" role="status" aria-live="polite">Checking configuration…</p>
+<button id="tg-bridge-activate" type="button">Connect bot webhook</button>
+<button id="tg-bridge-refresh" class="ghost" type="button">Refresh groups</button>
+<p class="muted">After connecting, send a message to your Telegram group, refresh, and approve the correct group. Inform members about monitoring.</p>
+<div id="tg-bridge-groups"></div><div id="tg-bridge-messages"></div></div>
+<h2>Integrations</h2>
   <div class="card" id="integrations"></div>
 
+</section>
   <p style="margin-top:26px"><button id="signout" style="width:100%">Sign out</button></p>
+  <p class="muted" id="sessionmsg" role="status" aria-live="polite"></p>
   <p class="muted" id="whoami"></p>
 </main>
 
+<!-- Keep an actionable screen available even when the external module or a cold network request
+     never completes. This deliberately is not a module: it still runs when the module import does
+     not. A successful boot hides the login again for an authenticated owner. -->
+<script>
+  window.addEventListener('DOMContentLoaded', function () {
+    setTimeout(function () {
+      var login = document.getElementById('login');
+      var app = document.getElementById('app');
+      if (!login || !login.hidden || (app && !app.hidden)) return;
+      login.hidden = false;
+      var msg = document.getElementById('loginmsg');
+      if (msg && !msg.textContent) {
+        msg.textContent = 'The admin portal did not finish loading. Reload the page and try again.';
+      }
+    }, 4000);
+  });
+</script>
+
+<dialog id="pwdlg" aria-labelledby="pw-title"
+        style="background:var(--card);color:var(--ink);border:1px solid var(--line);
+               border-radius:12px;padding:20px;max-width:380px;width:92vw">
+  <h3 id="pw-title" style="margin:0 0 12px">Choose a new password</h3>
+  <p class="muted" style="margin:0 0 12px">At least 12 characters. Do not use DropHero, your email, or a common word such as admin or password.</p>
+  <label class="k" for="pw-new">New password</label>
+  <input id="pw-new" type="password" autocomplete="new-password" aria-label="New password"
+         minlength="12" style="width:100%">
+  <label class="k" for="pw-confirm" style="display:block;margin-top:11px">Repeat it</label>
+  <input id="pw-confirm" type="password" autocomplete="new-password"
+         aria-label="Repeat the new password" minlength="12" style="width:100%">
+  <p id="pw-msg" class="muted" style="margin:10px 0 0" role="status" aria-live="polite"></p>
+  <div style="display:flex;gap:8px;margin-top:14px">
+    <button id="pw-save">Save password</button>
+    <button id="pw-cancel" type="button" class="ghost">Cancel</button>
+  </div>
+</dialog>
+
 <script type="module">
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
-const sb = createClient('https://aexomkitwnxvpqlmtrik.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFleG9ta2l0d254dnBxbG10cmlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2MzEzMjQsImV4cCI6MjEwMjIwNzMyNH0.RPmcFB1YFzBGGuRLWJAZUYZXiKB1ILh9FFIie_EbFkQ',
+import { createClient } from './vendor/supabase.mjs';
+// Dezelfde wachtwoordcontrole als in het VA-portaal, uit dezelfde module -- de owner-login opent
+// alles wat er te openen valt, dus juist die mag niet de zwakste van de twee zijn. De build zet
+// va-portal-logic.mjs naast deze pagina; de deploy controleert dat het bestand er staat.
+import { passwordProblem } from './va-portal-logic.mjs';
+import { initOwnerSimulation } from './owner-simulation.mjs';
+import { initTelegramOwner } from './telegram-owner.mjs';
+const sb = createClient('https://aexomkitwnxvpqlmtrik.supabase.co', 'sb_publishable_Y88uWkdq3igd5dMkT1c8JA_qMB_ZB7d',
   // The session is kept and silently renewed, so opening the page on a phone tomorrow does not ask
   // for the password again.
   { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
 
+initOwnerSimulation({client:sb,baseUrl:'https://aexomkitwnxvpqlmtrik.supabase.co',apiKey:'sb_publishable_Y88uWkdq3igd5dMkT1c8JA_qMB_ZB7d'});
+const telegramBridge = initTelegramOwner({client:sb});
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const SAFE_PROFILE_HOSTS = ['tiktok.com', 'youtube.com', 'youtu.be', 'instagram.com'];
+function safeProfileUrl(value, handle = '') {
+  const fallback = String(handle || '').trim().replace(/^@/, '');
+  const candidate = value || (fallback && !/[\s/?#]/.test(fallback)
+    ? 'https://www.tiktok.com/@' + encodeURIComponent(fallback) : '');
+  if (!candidate) return null;
+  try {
+    const parsed = new URL(candidate);
+    const host = parsed.hostname.toLowerCase();
+    const allowed = SAFE_PROFILE_HOSTS.some((base) => host === base || host.endsWith('.' + base));
+    return parsed.protocol === 'https:' && allowed && !parsed.username && !parsed.password
+      ? parsed.href : null;
+  } catch { return null; }
+}
+function profileAnchor(value, label, handle = '') {
+  const url = safeProfileUrl(value, handle);
+  const text = esc(label);
+  return url ? '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">' + text + '</a>'
+             : text;
+}
 const n = (x) => (x === null || x === undefined) ? '–' : Number(x).toLocaleString('en-US');
 const usd = (x) => x === null || x === undefined ? '–'
   : '$' + Number(x).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const pct = (x) => x === null || x === undefined ? '–' : Number(x).toFixed(1) + '%';
 const when = (t) => t ? new Date(t).toLocaleString() : 'never';
 
+async function copyPlainText(text) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch { /* use the synchronous fallback below */ }
+  const box = document.createElement('textarea');
+  box.value = text;
+  box.setAttribute('readonly', '');
+  box.style.cssText = 'position:fixed;left:-9999px;top:0';
+  document.body.appendChild(box);
+  box.select();
+  let copied = false;
+  try { copied = document.execCommand('copy') === true; } catch { copied = false; }
+  box.remove();
+  return copied;
+}
+
 let period = 'ALL';
 let offset = 0;
 const PAGE = 25;
+const signedProofUrls = new Map();
+
+async function proofImageUrl(path) {
+  const cached = signedProofUrls.get(path);
+  if (cached && cached.expiresAt > Date.now()) return cached.url;
+  const { data, error } = await sb.storage.from('proofs').createSignedUrl(path, 300);
+  if (error || !data?.signedUrl) return null;
+  signedProofUrls.set(path, { url: data.signedUrl, expiresAt: Date.now() + 240000 });
+  return data.signedUrl;
+}
+async function revealProofImage(button, img) {
+  const path = img?.dataset.img || img?.dataset.path;
+  if (!path) return;
+  button.disabled = true;
+  button.textContent = 'Loading screenshot…';
+  try {
+    const url = await proofImageUrl(path);
+    if (!button.isConnected || !img.isConnected) return;
+    if (!url) { button.textContent = 'Retry screenshot'; return; }
+    img.src = url;
+    img.hidden = false;
+    button.hidden = true;
+  } catch {
+    if (button.isConnected) button.textContent = 'Retry screenshot';
+  } finally {
+    if (button.isConnected) button.disabled = false;
+  }
+}
 
 // ---------------------------------------------------------------------------------------------
 // AUTH. Two buttons, one form. Creating an account is the entire setup step.
 // ---------------------------------------------------------------------------------------------
-$('signin').onclick = async () => {
+async function signIn(event) {
+  event?.preventDefault();
+  $('signin').disabled = true;
   $('loginmsg').textContent = 'signing in…';
-  const { error } = await sb.auth.signInWithPassword(
-    { email: $('email').value.trim(), password: $('pw').value });
-  $('loginmsg').textContent = error ? error.message : '';
-  if (!error) boot();
-};
-
-$('signup').onclick = async () => {
-  const email = $('email').value.trim();
-  if (!email || $('pw').value.length < 8) {
-    $('loginmsg').textContent = 'Enter your email and a password of at least 8 characters.'; return;
+  const password = $('pw').value;
+  try {
+    const { error } = await sb.auth.signInWithPassword(
+      { email: $('email').value.trim(), password });
+    $('loginmsg').textContent = error ? error.message : '';
+    if (!error) await boot();
+  } catch {
+    $('loginmsg').textContent = 'Could not reach the server. Check your connection and try again.';
+  } finally {
+    $('pw').value = '';
+    $('signin').disabled = false;
   }
-  $('loginmsg').textContent = 'creating your account…';
-  const { data, error } = await sb.auth.signUp({ email, password: $('pw').value,
-    options: { emailRedirectTo: location.origin + location.pathname } });
-  if (error) { $('loginmsg').textContent = error.message; return; }
-  // Whether a session comes back depends on the project's confirmation setting, so the page reports
-  // what actually happened rather than assuming either one.
-  if (data.session) { $('loginmsg').textContent = ''; boot(); }
-  else $('loginmsg').textContent =
-    'Account created. Open the confirmation link we just emailed to ' + email + '. If it lands on a '
-    + 'blank or unfamiliar page, that is fine — the address is confirmed either way. Then come back '
-    + 'here and sign in with the password you just chose.';
+}
+$('login-form').addEventListener('submit', signIn);
+
+// ---------------------------------------------------------------------------------------------
+// WACHTWOORD VERGETEN -- EN WAAROM DIT VOOR DE EIGENAAR ANDERS WEEGT.
+//
+// Een VA die zijn wachtwoord kwijt is kan Rico vragen om een nieuwe uitnodiging. Boven Rico zit
+// niemand. Zonder deze route was hij bij een vergeten wachtwoord aangewezen op het Supabase-
+// dashboard, en dus op precies het soort technische handeling dat hij niet hoort te doen.
+//
+// Twee dingen maken het veilig, net als in de VA-portal:
+//  1. Het antwoord is altijd hetzelfde, of het adres nu bestaat of niet -- anders is dit formulier
+//     een werkende test of iemand een DropHero-account heeft.
+//  2. De mail bevat een kortdurende sessie, geen wachtwoord, en die sessie dwingt meteen een nieuw
+//     wachtwoord af.
+//
+// Inloggen zelf verandert niet, dus niemand kan hierdoor buitengesloten raken.
+// ---------------------------------------------------------------------------------------------
+$('forgotpw').onclick = async () => {
+  const btn = $('forgotpw');
+  const msg = $('forgotmsg');
+  const email = ($('email').value || '').trim();
+
+  if (!email || !email.includes('@')) {
+    msg.textContent = 'Type the email address you sign in with first, then press this again.';
+    $('email').focus();
+    return;
+  }
+
+  btn.disabled = true;
+  msg.textContent = 'Sending…';
+
+  const back = location.origin + location.pathname;
+  let failed = null;
+  try {
+    const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: back });
+    if (error) failed = error;
+  } catch (e) { failed = e; }
+
+  if (failed && /fetch|network|timeout/i.test(failed.message || '')) {
+    btn.disabled = false;
+    msg.textContent = 'Could not reach the server. Check your connection and try again.';
+    console.error('[owner-portal] password_reset transport failure');
+    return;
+  }
+  if (failed) console.error('[owner-portal] password_reset refused');
+
+  // Dezelfde zin, hoe het ook afliep. Het verschil hoort niet meetbaar te zijn.
+  msg.textContent = 'If that address has an account, a reset link is on its way. '
+    + 'It expires shortly, so open it soon.';
 };
 
-$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+// Terugkomen uit de herstelmail: Supabase levert een tijdelijke sessie en vuurt PASSWORD_RECOVERY.
+// Zonder deze luisteraar raakt de eigenaar ingelogd zonder ooit een nieuw wachtwoord te kiezen --
+// en staat hij de volgende keer weer buiten, want het oude kent hij nog steeds niet.
+sb.auth.onAuthStateChange((event) => {
+  if (event !== 'PASSWORD_RECOVERY') return;
+  $('login').hidden = true;
+  $('pw-msg').textContent = 'Choose a new password to finish signing in.';
+  $('pw-new').value = ''; $('pw-confirm').value = '';
+  if (!$('pwdlg').open) $('pwdlg').showModal();
+  $('pw-new').focus();
+});
+
+$('pw-cancel').onclick = () => $('pwdlg').close();
+// Velden bevatten alleen een wachtwoord zolang het venster openstaat.
+$('pwdlg').addEventListener('close', () => { $('pw-new').value = ''; $('pw-confirm').value = ''; });
+
+$('pw-save').onclick = async () => {
+  const a = $('pw-new').value, b = $('pw-confirm').value, msg = $('pw-msg');
+  let who = '';
+  try {
+    const { data } = await sb.auth.getSession();
+    who = (data && data.session && data.session.user && data.session.user.email) || '';
+  } catch { who = ''; }
+  const weak = passwordProblem(a, { email: who });
+  if (weak) { msg.textContent = weak; return; }
+  if (a !== b) { msg.textContent = 'The two passwords do not match.'; return; }
+
+  $('pw-save').disabled = true;
+  msg.textContent = 'Saving…';
+  let failed = null;
+  try {
+    const { error } = await sb.auth.updateUser({ password: a });
+    if (error) failed = error;
+  } catch (e) { failed = e; }
+  $('pw-save').disabled = false;
+
+  if (failed) {
+    // Nooit het wachtwoord zelf loggen, ook niet bij een fout.
+    console.error('[owner-portal] password change failed');
+    msg.textContent = 'That did not save. Try once more.';
+    return;
+  }
+  msg.textContent = 'Saved.';
+  setTimeout(() => { $('pwdlg').close(); boot(); }, 900);
+};
+
+$('signout').onclick = async () => {
+  $('signout').disabled = true;
+  $('sessionmsg').textContent = 'Signing out…';
+  let error;
+  try { ({ error } = await sb.auth.signOut()); }
+  catch { error = new Error('network'); }
+  if (error) {
+    $('sessionmsg').textContent = 'Could not sign out. Check your connection and try again.';
+    $('signout').disabled = false;
+    return;
+  }
+  $('pw').value = '';
+  location.replace(location.pathname);
+};
 
 // ---------------------------------------------------------------------------------------------
 // BOOT. One call decides which of the two audiences is looking: the owner RPC succeeds only for the
 // owner, and a VA is sent to their own portal rather than shown an empty owner page.
 // ---------------------------------------------------------------------------------------------
+let bootPromise = null;
+let bootRequested = false;
+let hasOwnerSnapshot = false;
+let facetsLoaded = false;
+let ownerUserId = null;
+
+function showRefreshFailure(detail) {
+  $('banners').innerHTML = '<div class="banner bad" id="refresh-error"><b>Refresh failed.</b> '
+    + esc(detail) + '</div>';
+}
+
+function resetOwnerSnapshot() {
+  hasOwnerSnapshot = false;
+  signedProofUrls.clear();
+  facetsLoaded = false;
+  offset = 0;
+  period = 'ALL';
+  window.__dm = '';
+  for(const id of ['action-approvals','action-chats','action-proofs','action-payouts'])$(id).textContent='—';
+  for (const id of ['attention', 'interested', 'kpis', 'budget', 'supply', 'funnel',
+                    'fullfunnel', 'production', 'ttadmin', 'modblock', 'templates', 'vaperf',
+                    'proofq', 'payouts', 'creators', 'vas', 'sourcing', 'config', 'integrations', 'vaactivity']) {
+    const el = $(id);
+    if (el) el.innerHTML = '';
+  }
+  $('creatorcount').textContent = '—';
+  $('loginmsg').textContent = '';
+  $('sessionmsg').textContent = '';
+  $('whoami').textContent = '';
+  $('q').value = '';
+  for (const id of ['f_platform', 'f_route', 'f_status', 'f_category', 'f_country', 'f_va']) {
+    const select = $(id);
+    while (select.options.length > 1) select.remove(1);
+    select.value = '';
+  }
+  for (const id of ['f_priority', 'f_interested', 'f_affiliate']) $(id).value = '';
+  for (const button of $('periods').querySelectorAll('button')) {
+    button.setAttribute('aria-pressed', String(button.dataset.p === 'ALL'));
+  }
+}
+
 async function boot() {
+  if (bootPromise) {
+    bootRequested = true;
+    return bootPromise;
+  }
+  bootPromise = (async () => {
+    do {
+      bootRequested = false;
+      try { await bootOnce(); }
+      catch (error) {
+        const message = 'The admin portal could not refresh. Check the connection and try again.';
+        if (hasOwnerSnapshot) {
+          show('app');
+          showRefreshFailure(message);
+        } else {
+          show('login');
+          $('loginmsg').textContent = message;
+        }
+        console.error('[owner-portal] boot failed', error);
+      }
+    } while (bootRequested);
+  })();
+  try { return await bootPromise; }
+  finally { bootPromise = null; }
+}
+
+async function bootOnce() {
   const { data: { session } } = await sb.auth.getSession();
-  if (!session) { show('login'); return; }
-  const { data: overview, error } = await sb.rpc('dh_owner_overview', { p_period: period });
-  if (error) {
+  if (!session) {
+    resetOwnerSnapshot();
+    ownerUserId = null;
     show('login');
-    const { data: vaq } = await sb.rpc('dh_va_queue');
-    $('loginmsg').innerHTML = vaq
-      ? 'This account is a VA. <a href="./va.html">Open the VA portal</a>.'
-      : 'This account has no access yet.';
     return;
   }
+  const nextUserId = session.user?.id || null;
+  if (ownerUserId && ownerUserId !== nextUserId) resetOwnerSnapshot();
+  ownerUserId = nextUserId;
+  const { data: overview, error } = await sb.rpc('dh_owner_overview', { p_period: period });
+  if (error) {
+    const { data: vaq, error: vaError } = await sb.rpc('dh_va_queue');
+    if (!vaError && vaq) {
+      show('login');
+      $('loginmsg').innerHTML = 'This account is a VA. <a href="./va.html">Open the VA portal</a>.';
+    } else if (hasOwnerSnapshot) {
+      show('app');
+      showRefreshFailure('The last confirmed dashboard data is still shown.');
+    } else {
+      show('login');
+      const denied = /owner only|permission|not authorized/i.test(error.message || '')
+        && /no va is linked|permission|not authorized/i.test(vaError?.message || '');
+      $('loginmsg').textContent = denied
+        ? 'This account has no owner or VA access.'
+        : 'Signed in, but the portal could not load. This is a server or connection error.';
+    }
+    return;
+  }
+  const firstOwnerView=!hasOwnerSnapshot;
   show('app');
+  $('banners').innerHTML = '';
   $('whoami').textContent = 'Signed in as ' + (session.user.email || '');
   renderOverview(overview);
 
-  const [funnel, full, attention, vas, sourcing, integrations, tiktok,
-         perf, proofs, payouts, templates, modblock] = await Promise.all([
+  const [funnel, full, attention, interested, vas, sourcing, integrations, tiktok,
+         perf, proofs, payouts, templates, modblock, supply, activity] = await Promise.all([
     sb.rpc('dh_owner_funnel', { p_period: period }), sb.rpc('dh_owner_full_funnel'),
-    sb.rpc('dh_owner_attention'),
+    sb.rpc('dh_owner_attention'), sb.rpc('dh_owner_interested_creators'),
     sb.rpc('dh_owner_va_admin'), sb.rpc('dh_owner_sourcing_settings'), sb.rpc('dh_owner_integrations'),
     sb.rpc('dh_tiktok_admin_overview'),
-    sb.rpc('dh_admin_va_performance'), sb.rpc('dh_admin_proof_queue', { p_limit: 60 }),
+    sb.rpc('dh_admin_va_performance'), sb.rpc('dh_admin_proof_queue', { p_limit: 60, p_status: proofFilter.status, p_kind: proofFilter.kind }),
     sb.rpc('dh_admin_payout_rows'), sb.rpc('dh_tiktok_template_metrics'),
-    sb.rpc('dh_tiktok_block_rate_by_sender')
+    sb.rpc('dh_tiktok_block_rate_by_sender'),
+    sb.rpc('dh_owner_supply_pipeline'), sb.rpc('dh_owner_va_activity')
   ]);
+  renderAdminActions(tiktok,interested,proofs,payouts);
+  renderSupply(supply.data, supply.error);
+  renderApprovals(tiktok.data, tiktok.error);
   renderTikTok(tiktok.data, tiktok.error);
   renderPerformance(perf.data, perf.error);
+  renderActivity(activity.data, activity.error);
   renderProofs(proofs.data, proofs.error);
+  void refreshQualityUploads();
   renderPayouts(payouts.data, payouts.error);
   renderTemplates(templates.data, templates.error);
   renderModerationBlocks(modblock.data, modblock.error);
-  renderFunnel(funnel.data || []);
+  renderFunnel(funnel.data || [], funnel.error);
   renderFullFunnel(full.data, full.error);
-  renderProduction(full.data);
-  renderAttention(attention.data || {});
-  renderVas(vas.data || {});
-  renderSourcing(sourcing.data || {});
-  renderBudget((sourcing.data || {}).budget || {});
-  renderConfig(((attention.data || {}).config_required) || []);
-  renderIntegrations(integrations.data || {});
-  fillFilterOptions();
-  loadCreators();
+  renderProduction(full.data, full.error);
+  renderAttention(attention.data || {}, attention.error);
+  renderInterested(interested.data || [], interested.error);
+  renderVas(vas.data || {}, vas.error);
+  void refreshOwnerMessageAudits();
+  void telegramBridge.refresh();
+  renderSourcing(sourcing.data || {}, sourcing.error);
+  renderBudget((sourcing.data || {}).budget || {}, sourcing.error);
+  renderConfig(((attention.data || {}).config_required) || [], attention.error);
+  renderIntegrations(integrations.data || {}, integrations.error);
+  if (!facetsLoaded) await fillFilterOptions();
+  await loadCreators();
+  hasOwnerSnapshot = true;
+  if(firstOwnerView)routeAdminSection();
 }
 
 function show(which) {
@@ -317,7 +760,89 @@ function renderOverview(d) {
 // FUNNEL. Each bar is scaled against the first stage, and the percentage under it is conversion
 // from the stage above -- which is the number that tells you where people are actually lost.
 // ---------------------------------------------------------------------------------------------
-function renderFunnel(stages) {
+// ---------------------------------------------------------------------------------------------
+// THE CONTINUOUS SUPPLY PIPELINE.
+//
+// The number an owner actually needs is not READY, it is how long READY lasts. 921 tasks sounds
+// like plenty until you divide by what the VAs can send, and 921 at 2,200 DMs/day is half a
+// morning. So days-remaining is the headline and the raw count is the supporting detail.
+//
+// Days-remaining is computed from the ACTIVE senders' real warm-up limits, not from a planned
+// fleet, which is why it currently reads 20 DM/day rather than an aspirational number. With no
+// ACTIVE sender there is no rate to divide by, and the panel says so instead of printing infinity.
+//
+// Spend is per provider and never averaged. One actor returns a Google redirect for three quarters
+// of what it finds; another returns a resolvable profile every time. A blended cost-per-creator
+// across those two describes nothing that exists. Where the sourcing ledger has no row for an
+// actor the cell reads "not attributed" rather than "$0.00" -- the curated import genuinely was
+// not billed through the ledger, and zero would read as free.
+// ---------------------------------------------------------------------------------------------
+function renderSupply(d, err) {
+  if (err) { $('supply').innerHTML = '<div class="muted">' + esc(err.message) + '</div>'; return; }
+  if (!d) { $('supply').innerHTML = '<div class="muted">no data yet</div>'; return; }
+
+  const s = d.stages || {}, inv = d.inventory || {}, enr = d.enrichment || {};
+  const cap = Number(inv.daily_send_capacity) || 0;
+
+  const stateLabel = { SOURCE_MORE: 'source more', NORMAL: 'healthy',
+                       PAUSE_PAID_SOURCING: 'hold paid sourcing' }[inv.state] || inv.state || '—';
+
+  const head = '<div class="supply-head">'
+    + (cap > 0
+        ? '<b>' + esc(String(inv.days_remaining)) + ' days</b> of READY inventory '
+          + '<span class="muted">at ' + n(cap) + ' DM/day</span>'
+        : '<b>—</b> <span class="muted">no ACTIVE sender, so nothing is being consumed</span>')
+    + ' <span class="pill">' + esc(stateLabel) + '</span></div>';
+
+  const rows = [
+    ['Raw discoveries',      s.raw_discoveries],
+    ['Valid profiles',       s.valid_profiles],
+    ['Waiting for enrichment', s.waiting_enrichment],
+    ['Qualified',            s.qualified],
+    ['Rejected',             s.rejected],
+    ['Needs personalization', s.needs_personalization],
+    ['READY',                s.ready],
+    ['Tier-1 READY',         s.tier_1_ready],
+    ['Sent',                 s.sent],
+    ['Replied',              s.replied]
+  ];
+  const top = Math.max(1, Number(s.raw_discoveries) || 0);
+  const bars = rows.map(([label, v]) => {
+    const c = Number(v) || 0;
+    return '<div class="fnl"><span class="lbl">' + esc(label) + '</span>'
+      + '<span class="trk"><i style="width:' + Math.max(c ? 2 : 0, (c / top) * 100) + '%"></i></span>'
+      + '<span class="num">' + n(c) + '</span></div>';
+  }).join('');
+
+  const prov = (d.providers || []).map((p) => {
+    const ready = Number(p.ready) || 0;
+    const spend = p.spend_usd === null || p.spend_usd === undefined ? null : Number(p.spend_usd);
+    const perReady = spend !== null && ready > 0 ? '$' + (spend / ready).toFixed(3) : '—';
+    return '<tr><td>' + esc(p.actor) + '</td><td>' + n(p.discovered) + '</td><td>'
+      + n(p.valid_profile) + '</td><td>' + n(p.qualified) + '</td><td>' + n(p.tier_1)
+      + '</td><td>' + n(ready) + '</td><td>'
+      + (spend === null ? '<span class="muted">not attributed</span>' : '$' + spend.toFixed(2))
+      + '</td><td>' + perReady + '</td></tr>';
+  }).join('');
+
+  const table = prov
+    ? '<table><thead><tr><th>provider</th><th>discovered</th><th>valid</th><th>qualified</th>'
+      + '<th>tier 1</th><th>READY</th><th>spend</th><th>per READY</th></tr></thead><tbody>'
+      + prov + '</tbody></table>'
+    : '<div class="muted">no provider data</div>';
+
+  const tick = (d.last_tick || {}).at;
+  const foot = '<div class="muted" style="margin-top:9px">'
+    + 'enrichment queue: ' + n(enr.profiles_queued) + ' profiles in ' + n(enr.pending_batches)
+    + ' pending batch(es), ' + n(enr.running_batches) + ' running'
+    + ' · last pipeline tick: ' + (tick ? esc(String(tick).slice(0, 16)).replace('T', ' ')
+                                        : '<b>never run unattended</b>') + '</div>';
+
+  $('supply').innerHTML = head + '<div style="margin:9px 0">' + bars + '</div>' + table + foot;
+}
+
+function renderFunnel(stages, err) {
+  if (err) { $('funnel').innerHTML = '<div class="muted">could not load — ' + esc(err.message) + '</div>'; return; }
   if (!stages.length) { $('funnel').innerHTML = '<div class="muted">no data yet</div>'; return; }
   const top = Math.max(1, Number(stages[0].count) || 0);
   $('funnel').innerHTML = stages.map((s, i) => {
@@ -366,7 +891,8 @@ function renderFullFunnel(d, err) {
 // ---------------------------------------------------------------------------------------------
 // BACKLOG AND GENERATION COST. What is left to do, and what each message cost to write.
 // ---------------------------------------------------------------------------------------------
-function renderProduction(d) {
+function renderProduction(d, err) {
+  if (err) { $('production').innerHTML = '<div class="muted">could not load — ' + esc(err.message) + '</div>'; return; }
   if (!d) { $('production').innerHTML = '<div class="muted">no data yet</div>'; return; }
   const b = d.backlog || {}, g = d.generation || {}, s = d.sourcing || {};
   const row = (k, v) => '<div class="row"><span class="muted">' + k + '</span><b>' + v + '</b></div>';
@@ -409,20 +935,21 @@ function renderProduction(d) {
 // NEEDS YOUR ATTENTION. Only blocks that actually have something in them are drawn -- an empty
 // heading is noise the owner has to read past.
 // ---------------------------------------------------------------------------------------------
-function renderAttention(a) {
+function renderAttention(a, err) {
+  if (err) { $('attention').innerHTML = '<div class="muted">could not load — ' + esc(err.message) + '</div>'; return; }
   const out = [];
   const block = (crit, title, body) =>
     out.push('<div class="att' + (crit ? ' crit' : '') + '"><h3>' + title + '</h3>' + body + '</div>');
 
   if ((a.interested || []).length) block(false, 'Interested creators (' + a.interested.length + ')',
-    a.interested.slice(0, 12).map((i) => '<div class="row"><span><a href="' + esc(i.profile_url)
-      + '" target="_blank" rel="noopener">@' + esc(i.handle || i.display_name || 'creator') + '</a>'
+    a.interested.slice(0, 12).map((i) => '<div class="row"><span>'
+      + profileAnchor(i.profile_url, '@' + (i.handle || i.display_name || 'creator'), i.handle)
       + '<span class="muted"> · ' + esc(i.va || 'unassigned') + '</span></span>'
       + '<span class="pill on">interested</span></div>').join(''));
 
   if ((a.replies || []).length) block(false, 'Replies to read (' + a.replies.length + ')',
-    a.replies.slice(0, 12).map((i) => '<div class="row"><span><a href="' + esc(i.profile_url)
-      + '" target="_blank" rel="noopener">@' + esc(i.handle || i.display_name || 'creator') + '</a>'
+    a.replies.slice(0, 12).map((i) => '<div class="row"><span>'
+      + profileAnchor(i.profile_url, '@' + (i.handle || i.display_name || 'creator'), i.handle)
       + (i.notes ? '<br><span class="muted">' + esc(i.notes) + '</span>' : '') + '</span>'
       + '<span class="pill">' + esc(when(i.replied_at)) + '</span></div>').join(''));
 
@@ -466,10 +993,120 @@ function renderAttention(a) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// INTERESTED CREATORS. VAs have found creators who replied INTERESTED. Owner can open their
+// TikTok profile and mark them HANDLED to remove from the active queue.
+// ---------------------------------------------------------------------------------------------
+function renderInterested(rows, err) {
+  if (err) { $('interested').innerHTML = '<div class="muted">' + esc(err.message) + '</div>'; return; }
+  if (!rows || !rows.length) {
+    $('interested').innerHTML = '<div class="muted">No interested creators waiting.</div>'; return;
+  }
+
+  const html = rows.map((r) => {
+    const url = safeProfileUrl(r.profile_url, r.handle);
+    const va_name = r.va_name || 'unknown VA';
+    const when_text = r.replied_at ? new Date(r.replied_at).toLocaleDateString() : 'unknown date';
+    let thumb = '';
+
+    if (r.storage_path) {
+      thumb = '<button type="button" class="sm" data-load-reply-proof style="margin-right:10px">View screenshot</button>'
+        + '<img style="width:80px;height:80px;border-radius:8px;object-fit:cover;margin-right:10px" '
+        + 'hidden alt="reply" data-path="' + esc(r.storage_path)
+        + '" data-task="' + esc(r.task_id) + '">';
+    }
+
+    // WAT ER GEZEGD IS, EN WAT WIJ TERUG ZOUDEN ZEGGEN.
+    //
+    // Dit paneel toonde alleen een handle, een VA, een datum en een miniatuur. Om er iets mee te
+    // doen moest de eigenaar de screenshot opengeklikken, zelf lezen en zelf een antwoord bedenken
+    // -- per creator opnieuw. Het voorstel bestond al (dh_suggested_reply, uit dh_reply_kb); alleen
+    // dit scherm liep eromheen. De affiliate-link blijft handwerk: die staat bewust niet in het
+    // voorstel en wordt hier ook niet verzonnen. Kopiëren, link erin, versturen.
+    const said = r.said ? '<div class="quote" style="margin:8px 0 0;font-size:13px">'
+      + esc(r.said) + '</div>' : '';
+    const kind = r.classification
+      ? '<span class="pill on" style="margin-left:6px">' + esc(r.classification) + '</span>' : '';
+    // Step one: creator information. Tracked FirstPromoter signup links must be issued separately.
+    const creatorOverview = "Here is our official DropHero creator partnership page:\nhttps://drophero.app/creators";
+    const response = r.suggestion
+      ? r.suggestion.trim() + "\n\n" + creatorOverview
+      : "Thanks for getting back to me! " + creatorOverview;
+    const proposal = '<div style="margin-top:10px">'
+      + '<div class="muted" style="font-size:12px;margin-bottom:4px">'
+      + 'STEP 1 · SEND CREATORS PAGE FIRST'
+      + (r.suggestion_topic ? ' · ' + esc(r.suggestion_topic) : '')
+      + ' — use a personal tracked signup link later, after they agree to join</div>'
+      + '<textarea readonly class="dh-suggestion" style="width:100%;min-height:105px;font-size:13px" '
+      + 'onclick="this.select()">' + esc(response) + '</textarea>'
+      + '<button class="sm" data-copy-suggestion="' + esc(r.task_id) + '" '
+      + 'style="margin-top:6px">Copy creator information reply</button>'
+      + '</div>';
+
+    return '<div class="row" style="align-items:flex-start;min-height:100px">'
+      + '<div style="display:flex;gap:10px;flex:1;min-width:0">'
+      + thumb
+      + '<div style="flex:1;min-width:0">'
+      + '<div style="font-weight:650">@' + esc(r.handle || 'creator') + kind + '</div>'
+      + '<div class="muted" style="font-size:12px;margin-top:2px">VA: ' + esc(va_name) + ' · ' + when_text + '</div>'
+      + said
+      + proposal
+      + '</div>'
+      + '</div>'
+      + '<div style="display:flex;gap:6px;flex-direction:column">'
+      + (url ? '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer" '
+        + 'style="padding:8px 12px;background:#e67e22;border-radius:8px;color:#fff;text-decoration:none;text-align:center;font-size:13px;font-weight:600">'
+        + 'OPEN TIKTOK</a>' : '<span class="muted">invalid profile link</span>')
+      + '<button class="sm" data-task="' + esc(r.task_id) + '" '
+      + 'style="padding:8px 12px;background:#1d2836;border:1px solid var(--line);border-radius:8px">Mark handled</button>'
+      + '</div>'
+      + '</div>';
+  }).join('');
+
+  $('interested').innerHTML = html;
+
+  // Kopiëren zonder het tekstvak aan te raken. Mislukt het, dan zegt de knop dat -- "Copied" boven
+  // een leeg klembord kost de eigenaar een verstuurde DM die nergens op slaat.
+  for (const btn of $('interested').querySelectorAll('button[data-copy-suggestion]')) {
+    btn.onclick = async () => {
+      const box = btn.parentElement.querySelector('textarea.dh-suggestion');
+      if (!box) return;
+      let ok = false;
+      try {
+        await navigator.clipboard.writeText(box.value);
+        ok = true;
+      } catch {
+        try { box.select(); ok = document.execCommand('copy') === true; } catch { ok = false; }
+      }
+      btn.textContent = ok ? 'Copied' : 'Select the text above';
+      setTimeout(() => { btn.textContent = 'Copy creator information reply'; }, 2500);
+    };
+  }
+
+  // Request private proof images only when reviewed. Auto-fetching every thumbnail
+  // on the 30s dashboard refresh caused unnecessary repeated Storage egress.
+  for (const btn of $('interested').querySelectorAll('button[data-load-reply-proof]')) {
+    btn.onclick = () => void revealProofImage(btn, btn.nextElementSibling);
+  }
+
+  // Wire up MARK HANDLED buttons
+  for (const btn of $('interested').querySelectorAll('button[data-task]')) {
+    btn.onclick = async () => {
+      const task_id = btn.dataset.task;
+      btn.disabled = true;
+      const { error } = await sb.rpc('dh_owner_mark_interested_handled', { p_task_id: task_id });
+      btn.disabled = false;
+      if (error) { alert('Could not mark as handled: ' + error.message); return; }
+      boot(); // Reload to refresh the list
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
 // BUDGET. Spent / ceiling / remaining / percentage, with the three warning bands the owner asked
 // for. Nothing on this card raises the ceiling by itself.
 // ---------------------------------------------------------------------------------------------
-function renderBudget(b) {
+function renderBudget(b, err) {
+  if (err) { $('budget').innerHTML = '<div class="muted">could not load — ' + esc(err.message) + '</div>'; return; }
   if (!b || b.ceiling === undefined) { $('budget').innerHTML = '<div class="muted">no budget set</div>'; return; }
   const p = Number(b.pct_used || 0);
   const colour = p >= 95 ? 'var(--bad)' : p >= 80 ? 'var(--warn)' : 'var(--accent)';
@@ -522,10 +1159,7 @@ $('next').onclick = () => { offset += PAGE; loadCreators(); };
 const tri = (id) => $(id).value === '' ? null : $(id).value === '1';
 
 const DIR_COLS = [
-  ['Creator', (r) => r.profile_url
-      ? '<a href="' + esc(r.profile_url) + '" target="_blank" rel="noopener">'
-        + esc(r.creator || r.handle || 'creator') + '</a>'
-      : esc(r.creator || r.handle || 'creator')],
+  ['Creator', (r) => profileAnchor(r.profile_url, r.creator || r.handle || 'creator', r.handle)],
   ['Handle', (r) => r.handle ? '@' + esc(r.handle) : '—'],
   ['Platform', (r) => esc(r.platform)],
   ['Country', (r) => esc(r.country || '—')],
@@ -551,8 +1185,11 @@ const DIR_COLS = [
   ['Added', (r) => r.created_at ? esc(new Date(r.created_at).toLocaleDateString()) : '—']
 ];
 
+let directoryRequest = 0;
 async function loadCreators() {
-  const { data, error } = await sb.rpc('dh_owner_directory', {
+  const request = ++directoryRequest;
+  let result;
+  try { result = await sb.rpc('dh_owner_directory', {
     p_search: $('q').value.trim() || null,
     p_platform: $('f_platform').value || null,
     p_route: $('f_route').value || null,
@@ -564,14 +1201,17 @@ async function loadCreators() {
     p_interested: tri('f_interested'),
     p_affiliate: tri('f_affiliate'),
     p_limit: PAGE, p_offset: offset
-  });
+  }); } catch (error) { result = { data: null, error }; }
+  if (request !== directoryRequest) return;
+  const { data, error } = result;
   if (error) { $('creators').innerHTML = ''; $('creatorcount').textContent = error.message; return; }
-  const rows = data.rows || [];
+  const rows = data?.rows || [];
+  const total = Number(data?.total || 0);
   $('creatorcount').textContent = rows.length
-    ? (offset + 1) + '–' + (offset + rows.length) + ' of ' + n(data.total)
+    ? (offset + 1) + '–' + (offset + rows.length) + ' of ' + n(total)
     : 'nothing matches those filters';
   $('prev').disabled = offset === 0;
-  $('next').disabled = offset + rows.length >= Number(data.total || 0);
+  $('next').disabled = offset + rows.length >= total;
   $('creators').innerHTML =
     '<tr>' + DIR_COLS.map(([h, , cls]) =>
       '<th' + (cls ? ' class="' + cls + '"' : '') + '>' + h + '</th>').join('') + '</tr>'
@@ -583,8 +1223,8 @@ async function loadCreators() {
 // The dropdowns are filled from what actually exists in the database, once, so they never offer a
 // filter that would return nothing and never miss a value that is only on page nine.
 async function fillFilterOptions() {
-  const { data } = await sb.rpc('dh_owner_directory_facets');
-  if (!data) return;
+  const { data, error } = await sb.rpc('dh_owner_directory_facets');
+  if (error || !data) return;
   const add = (id, values, label) => {
     const sel = $(id), have = new Set([...sel.options].map((o) => o.value));
     for (const v of values || []) {
@@ -602,6 +1242,7 @@ async function fillFilterOptions() {
   add('f_category', data.categories);
   add('f_country', data.countries);
   add('f_va', data.vas, true);
+  facetsLoaded = true;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -627,6 +1268,116 @@ const TT_REASON = {
   TEMPORARY_RESTRICTION: 'temporarily restricted', ACCOUNT_WARNING: 'account warning',
   LOGIN_ISSUE: 'cannot log in', OTHER: 'reported a problem'
 };
+
+// ---------------------------------------------------------------------------------------------
+// DE WACHTRIJ BOVENAAN.
+//
+// Eén regel per account dat op WAITING_APPROVAL staat, uit dezelfde payload die het blok "TikTok
+// accounts" verderop ook gebruikt -- er wordt niets extra's opgehaald en er bestaat geen tweede
+// bron van waarheid over wie er wacht.
+//
+// Drie dingen moeten in één oogopslag kloppen: wíe het is (de naam is meteen de link naar het
+// profiel, zodat controleren één tik is in plaats van overtypen), dát het wacht (het pilletje),
+// en de knop -- breed genoeg om met een duim te raken zonder te mikken. Geen keuzelijstje, geen
+// "weet je het zeker": één tik is de handeling. De beveiliging zit in de RPC, niet in een popup,
+// en een popup die je twintig keer per week wegklikt beschermt allang niets meer.
+//
+// Mislukken mag hier geen alert() worden. Een alert zet de hele pagina stil voor iets dat één
+// regel betreft; de melding hoort bij de regel waar hij over gaat, zodat de rest van de wachtrij
+// gewoon doorwerkt.
+// ---------------------------------------------------------------------------------------------
+// ACCOUNTS WAARVAN DE SERVER AL "ok" ZEI, MAAR DIE NOG IN EEN ANTWOORD KUNNEN ZITTEN.
+//
+// Waarom dit bestaat. De pagina verversching zich ook zelf: setInterval elke 30 seconden, een
+// realtime-melding op dh_contact_tasks, en visibilitychange. boot() heeft een herintredingsslot --
+// loopt er al een, dan zet een tweede aanroep alleen bootRequested en wacht op de lopende. Die
+// lopende kan begonnen zijn VÓÓR het goedkeuren, en haalt dus een overzicht op waarin dit account
+// nog WAITING_APPROVAL is. Die oudere gegevens worden dan getekend: de regel komt terug, met een
+// nieuwe, ingeschakelde knop. In productie is dat precies gebeurd -- twee APPROVED-events op
+// @drophero04_2026, zes seconden na elkaar, omdat de regel terugkwam en er opnieuw geklikt werd.
+//
+// Een geslaagde goedkeuring is daarom een feit dat deze pagina onthoudt. De regel verdwijnt meteen
+// en kan door geen enkel laat antwoord terugkomen. Het is geen verzonnen toestand: de server heeft
+// ok gezegd en de nieuwe status meegestuurd.
+const goedgekeurdInDezeSessie = new Set();
+
+function renderApprovals(vas, err) {
+  if (err) {
+    $('ttapprovals').innerHTML = '<div class="muted">could not load — ' + esc(err.message) + '</div>';
+    return;
+  }
+
+  const wachtend = [];
+  const nogSteedsWachtend = new Set();
+  for (const v of vas || []) {
+    for (const a of (v.accounts || [])) {
+      if (a.status !== 'WAITING_APPROVAL') continue;
+      nogSteedsWachtend.add(a.account_id);
+      if (goedgekeurdInDezeSessie.has(a.account_id)) continue;
+      wachtend.push({ a: a, va: v.va_name || 'VA' });
+    }
+  }
+  // Zodra een verversing het account niet meer als wachtend opgeeft, is het onthouden niet langer
+  // nodig. Daarmee blijft de lijst ook kloppen als de eigenaar een account later opnieuw op
+  // WAITING_APPROVAL zet: dan is dit geen blijvende blinde vlek.
+  for (const id of goedgekeurdInDezeSessie) {
+    if (!nogSteedsWachtend.has(id)) goedgekeurdInDezeSessie.delete(id);
+  }
+
+  if (!wachtend.length) {
+    $('ttapprovals').innerHTML = '<div class="muted">No TikTok accounts waiting for approval.</div>';
+    return;
+  }
+
+  $('ttapprovals').innerHTML = wachtend.map((w) =>
+    '<div class="row" data-pending="' + esc(w.a.account_id) + '">'
+    + '<span>'
+      + '<span style="font-size:15px">'
+        + profileAnchor(w.a.profile_url, '@' + w.a.username, w.a.username) + '</span>'
+      + ' <span class="pill warnp">waiting for approval</span>'
+      + '<div class="muted" style="margin-top:3px">' + esc(w.va) + '</div>'
+      + '<div class="muted" data-approvemsg="' + esc(w.a.account_id) + '" role="status"'
+        + ' aria-live="polite" style="margin-top:3px;color:var(--bad)"></div>'
+    + '</span>'
+    + '<button data-approve="' + esc(w.a.account_id) + '"'
+      + ' style="min-width:124px;min-height:48px;font-weight:600">Approve</button>'
+    + '</div>').join('');
+
+  for (const b of $('ttapprovals').querySelectorAll('[data-approve]')) {
+    b.onclick = async () => {
+      const id = b.dataset.approve;
+      const msg = $('ttapprovals').querySelector('[data-approvemsg="' + CSS.escape(id) + '"]');
+      if (msg) msg.textContent = '';
+      b.disabled = true;
+      b.textContent = 'Approving…';
+
+      // Exact dezelfde aanroep als de knop bij "TikTok accounts". p_value blijft null: goedkeuren
+      // kent geen getal, en niveau en limiet blijven wat de server ervan vindt (1 en 25).
+      const { data, error } = await sb.rpc('dh_tiktok_admin_action',
+        { p_account_id: id, p_action: 'APPROVE', p_value: null });
+
+      if (error || !data || !data.ok) {
+        b.disabled = false;
+        b.textContent = 'Approve';
+        const tekst = (error && error.message) || (data && data.error) || 'That did not work.';
+        if (msg) msg.textContent = tekst; else alert(tekst);
+        return;
+      }
+
+      // Eerst vastleggen dát het gelukt is, dan pas verversen. Andersom -- alleen boot() aanroepen
+      // en de lijst laten beslissen -- was de fout: een verversing die al liep kon de regel met
+      // oudere gegevens terugzetten, en dan keurt de eigenaar hetzelfde account twee keer goed.
+      goedgekeurdInDezeSessie.add(id);
+      const rij = $('ttapprovals').querySelector('[data-pending="' + CSS.escape(id) + '"]');
+      if (rij) rij.remove();
+      // Anders staat er na de laatste goedkeuring een leeg vak in plaats van de zin.
+      if (!$('ttapprovals').querySelector('[data-pending]')) {
+        $('ttapprovals').innerHTML = '<div class="muted">No TikTok accounts waiting for approval.</div>';
+      }
+      await boot();
+    };
+  }
+}
 
 function renderTikTok(vas, err) {
   if (err) { $('ttadmin').innerHTML = '<div class="muted">could not load — ' + esc(err.message) + '</div>'; return; }
@@ -807,6 +1558,36 @@ function renderTemplates(rows, err) {
     + '</tbody></table></div>';
 }
 
+function renderActivity(rows, err) {
+  if (err) { $('vaactivity').innerHTML = '<div class="muted">Activity unavailable — ' + esc(err.message) + '</div>'; return; }
+  const responsePct = value => value == null ? '—' : Number(value).toFixed(2) + '%';
+  const stamp = value => value ? esc(new Date(value).toLocaleString()) : 'Not recorded';
+  const recent = value => value && Date.now() - Date.parse(value) < 5 * 60000;
+  const working = value => value && Date.now() - Date.parse(value) < 7 * 86400000;
+  $('vaactivity').innerHTML = '<p class="muted">Track recent portal use, recorded DMs and verified replies. Portal activity alone does not confirm sending.</p>'
+    + '<p class="muted">Response rates use all recorded DMs and count one verified response per conversation. The weighted team average includes active DMers only. A low response rate is a review signal; no automatic removal is enabled.</p>'
+    + '<div class="activity-cards">' + (Array.isArray(rows) ? rows : []).map(r =>
+      '<article class="activity-card"><div class="row"><b>' + esc(r.va_name || '—') + '</b><span class="pill ' + (r.active ? 'on' : 'off') + '">' + (r.active ? 'Enabled' : 'Disabled') + '</span></div>'
+      + '<div class="activity-metrics"><span>DMs · today / 7 days<b>' + n(r.sent_today) + ' / ' + n(r.sent_7d) + '</b></span><span>Assigned stock<b>' + n(r.ready_stock) + '</b></span>'
+      + '<span>Verified response<b>' + responsePct(r.response_pct) + '</b></span><span>Active team average<b>' + responsePct(r.active_team_response_pct) + '</b></span></div>'
+      + '<p class="muted">Portal last used: ' + stamp(r.last_portal_at) + '</p>'
+      + '<p class="muted">' + (!r.active ? 'Disabled · not assessed' : r.below_team_response ? 'Below team average · review' : r.response_pct == null ? 'No response sample yet' : 'At or above team average') + '</p></article>').join('') + '</div>'
+    + '<div class="scroll activity-table"><table><thead><tr>'
+    + ['DMer', 'Account status', 'Portal last used', 'Last claimed DM', 'Last reply upload', 'DMs today / 7 days', 'Assigned stock', 'Claimed / photographed DMs', 'Verified responses', 'Response %', 'Active team %', 'Response review', 'Proofs needing review', 'Work status'].map(x => '<th>' + x + '</th>').join('')
+    + '</tr></thead><tbody>' + (Array.isArray(rows) ? rows : []).map(r => '<tr>'
+      + '<td><b>' + esc(r.va_name || '—') + '</b></td>'
+      + '<td>' + (r.active ? 'Enabled' : 'Disabled') + ' · ' + esc(r.approved_accounts) + ' approved</td>'
+      + '<td>' + stamp(r.last_portal_at) + (recent(r.last_portal_at) ? ' · recent use' : '') + '</td>'
+      + '<td>' + stamp(r.last_dm_at) + '</td><td>' + stamp(r.last_reply_at) + '</td>'
+      + '<td>' + esc(r.sent_today) + ' / ' + esc(r.sent_7d) + '</td><td>' + esc(r.ready_stock) + '</td>'
+      + '<td>' + esc(r.claimed_sends) + ' / ' + esc(r.photographed_sends) + '</td>'
+      + '<td>' + n(r.verified_responses) + '</td><td>' + responsePct(r.response_pct) + '</td><td>' + responsePct(r.active_team_response_pct) + '</td>'
+      + '<td>' + (!r.active ? 'Disabled · not assessed' : r.below_team_response ? 'Below team average · review' : r.response_pct == null ? 'No response sample' : 'At or above team average') + '</td>'
+      + '<td>' + esc(r.proofs_need_review) + '</td>'
+      + '<td>' + (working(r.last_work_at) ? 'Work recorded within 7 days' : r.last_work_at ? 'No work recorded in 7 days' : 'No work recorded yet') + '</td></tr>').join('')
+    + '</tbody></table></div>';
+}
+
 function renderPerformance(rows, err) {
   if (err) { $('vaperf').innerHTML = '<div class="muted">could not load — ' + esc(err.message) + '</div>'; return; }
   if (!rows || !rows.length) { $('vaperf').innerHTML = '<div class="muted">no VAs yet</div>'; return; }
@@ -836,17 +1617,91 @@ function renderPerformance(rows, err) {
 }
 
 // ---------------------------------------------------------------------------------------------
+
+// OWNER VIEW FOR FRIENDLY VA SCREENSHOT REQUESTS. Separate from fraud audits and paid proof checks.
+async function refreshQualityUploads(){
+ const el=$('quality-uploads');
+ if(!el||$('app').hidden)return;
+ const {data,error}=await sb.rpc('dh_owner_quality_screenshot_requests');
+ if(error){el.textContent='Screenshot requests could not be loaded.';return;}
+ const rows=Array.isArray(data)?data:[];
+ if(!rows.length){el.innerHTML='<p class="muted">No screenshot requests yet.</p>';return;}
+ el.innerHTML=rows.map((r)=>{
+   const pending=r.status==='PENDING'||r.status==='REUPLOAD_REQUIRED';
+   const submitted=r.status==='SUBMITTED';
+   const status=({PENDING:'Waiting for upload',REUPLOAD_REQUIRED:'Needs clearer screenshot',SUBMITTED:'Ready for review',APPROVED:'Approved'})[r.status]||r.status;
+   return '<div class="card" data-quality-review="'+esc(r.id)+'">'
+     +'<strong>'+esc(r.va_name)+' · @'+esc(r.handle||'creator')+'</strong>'
+     +'<p class="muted">'+esc(status)+' · requested '+esc(new Date(r.requested_at).toLocaleDateString())+'</p>'
+     +(r.image_path?'<button class="sm" type="button" data-quality-image>View uploaded screenshot</button>'
+       +'<img data-quality-path="'+esc(r.image_path)+'" alt="DMer screenshot" hidden style="width:100%;max-height:480px;object-fit:contain;margin:10px 0;border-radius:8px">':
+       '<p class="muted">Awaiting screenshot upload.</p>')
+     +(submitted?'<p class="muted">Compare the recipient and sent message with the original TikTok conversation before approving.</p>'
+       +'<textarea data-quality-note placeholder="Reason, if another screenshot is required"></textarea>'
+       +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
+       +'<button type="button" class="sm" data-quality-decision="approve">Approve</button>'
+       +'<button type="button" class="sm" data-quality-decision="retry">Request clearer screenshot</button></div>':'')
+     +'<p data-quality-feedback role="status" class="muted"></p>'
+     +'</div>';
+ }).join('');
+ for(const card of el.querySelectorAll('[data-quality-review]')){
+   const imgBtn=card.querySelector('button[data-quality-image]');
+   if(imgBtn)imgBtn.onclick=async()=>{
+     const img=card.querySelector('img[data-quality-path]');
+     imgBtn.disabled=true;imgBtn.textContent='Loading screenshot…';
+     try{
+       const {data,error}=await sb.storage.from('va-quality-screenshots').createSignedUrl(img.dataset.qualityPath,300);
+       if(error||!data?.signedUrl)throw error||new Error('Not found');
+       if(!img.isConnected)return;
+       img.src=data.signedUrl;img.hidden=false;imgBtn.hidden=true;
+     }catch{
+       const msg=card.querySelector('[data-quality-feedback]');
+       if(msg)msg.textContent='Screenshot unavailable. Please retry.';
+       if(imgBtn.isConnected)imgBtn.textContent='Retry screenshot';
+     }finally{if(imgBtn.isConnected)imgBtn.disabled=false;}
+   };
+   for(const btn of card.querySelectorAll('[data-quality-decision]')){
+     btn.onclick=async()=>{
+       const approved=btn.dataset.qualityDecision==='approve';
+       const note=card.querySelector('textarea[data-quality-note]')?.value.trim()||null;
+       const status=card.querySelector('[data-quality-feedback]');
+       if(!approved && (!note||note.length<8)){status.textContent='Add a short reason (at least eight characters).';return;}
+       for(const b of card.querySelectorAll('[data-quality-decision]'))b.disabled=true;
+       const {data,error}=await sb.rpc('dh_owner_quality_screenshot_review',{
+         p_request_id:card.dataset.qualityReview,p_approved:approved,p_note:note
+       });
+       if(error||!data?.ok){
+         status.textContent='Could not save review. Please retry.';
+         for(const b of card.querySelectorAll('[data-quality-decision]'))b.disabled=false;
+         return;
+       }
+       await refreshQualityUploads();
+     };
+   }
+ }
+}
+
 // PROOF REVIEW.
 //
 // The screenshot is the whole point, so it is shown rather than linked: a queue that costs a click
 // per image is a queue nobody works. Signed URLs are fetched per row because the bucket is private
 // and the images must not become public to be reviewable.
 // ---------------------------------------------------------------------------------------------
-let proofFilter = { status: 'PENDING_REVIEW', kind: null };
+let proofFilter = { status: null, kind: null };
 
 async function renderProofs(rows, err) {
   if (err) { $('proofq').innerHTML = '<div class="muted">could not load — ' + esc(err.message) + '</div>'; return; }
   rows = rows || [];
+  const ids = rows.map(r => r.proof_check_id);
+  const [{ data: contexts, error: contextError }, { data: archives },
+         { data: transcripts, error: transcriptsError }] = await Promise.all([
+    sb.rpc('dh_owner_send_proof_contexts', {p_ids: rows.filter(r => r.proof_kind === 'SEND').map(r => r.proof_check_id)}),
+    sb.rpc('dh_owner_proof_media_archives', {p_ids: ids}),
+    sb.rpc('dh_owner_proof_text_transcripts', {p_ids: ids})
+  ]);
+  const contextById = new Map((Array.isArray(contexts) ? contexts : []).map(r => [r.proof_check_id,r]));
+  const archiveById = new Map((Array.isArray(archives) ? archives : []).map(r => [r.proof_check_id,r]));
+  const transcriptById = new Map((!transcriptsError && Array.isArray(transcripts) ? transcripts : []).map(r => [r.proof_check_id,r]));
 
   const chip = (label, on, key, val) =>
     '<button class="sm' + (on ? ' good' : '') + '" data-f="' + key + '" data-v="'
@@ -854,6 +1709,7 @@ async function renderProofs(rows, err) {
 
   const filters = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">'
     + chip('Waiting', proofFilter.status === 'PENDING_REVIEW', 'status', 'PENDING_REVIEW')
+    + chip('Ready to approve', proofFilter.status === 'LIKELY_VALID', 'status', 'LIKELY_VALID')
     + chip('Needs a look', proofFilter.status === 'NEEDS_REVIEW', 'status', 'NEEDS_REVIEW')
     + chip('Not uploaded', proofFilter.status === 'PENDING_UPLOAD', 'status', 'PENDING_UPLOAD')
     + chip('Rejected', proofFilter.status === 'REJECTED', 'status', 'REJECTED')
@@ -876,9 +1732,29 @@ async function renderProofs(rows, err) {
                          : ' · not sent yet')
         + ' · ' + esc(r.review_status)
         + (r.ai_verdict ? ' · machine says ' + esc(r.ai_verdict) : '') + '</div>'
-        + (r.image_path ? '<img data-img="' + esc(r.image_path) + '" alt="proof screenshot"'
+        + (archiveById.get(r.proof_check_id)?.state === 'DELETED'
+            ? '<div class="muted">Screenshot removed after its text and verification data were saved.</div>'
+              + '<details><summary>Saved screenshot text</summary><p style="white-space:pre-wrap">'
+              + esc(archiveById.get(r.proof_check_id).text_archive.text) + '</p></details>'
+            : r.image_path ? '<button type="button" class="sm" data-load-proof>View screenshot</button>'
+                + '<img data-img="' + esc(r.image_path) + '" hidden alt="proof screenshot"'
             + ' style="max-width:320px;width:100%;border-radius:10px;border:1px solid var(--line)">'
             : '<div class="muted">no screenshot yet</div>')
+        + (transcriptById.get(r.proof_check_id)?.text_archive?.text
+          ? '<details style="margin:8px 0"><summary>Saved chat text (OCR'
+            + (transcriptById.get(r.proof_check_id).status==='PARTIAL' ? ' · partial, verify against screenshot' : ' · complete visible screenshot')
+            + ')</summary><p style="white-space:pre-wrap;overflow-wrap:anywhere">'
+            + esc(transcriptById.get(r.proof_check_id).text_archive.text)
+            + '</p></details>'
+          : '')
+        + (contextById.has(r.proof_check_id)
+          ? '<p><b>Expected outgoing message</b></p><p style="white-space:pre-wrap">' + esc(contextById.get(r.proof_check_id).message) + '</p>'
+            + '<p class="muted">Claimed ' + esc(new Date(contextById.get(r.proof_check_id).claimed_at).toLocaleString())
+            + (contextById.get(r.proof_check_id).image_duplicate_of ? ' · REUSED SCREENSHOT: upload different evidence before approval' : !contextById.get(r.proof_check_id).image_sha256 ? ' · Image integrity check pending' : '') + '</p>'
+            + '<label class="proofcheck"><input type="checkbox" data-check="recipient"> Correct creator handle</label>'
+            + '<label class="proofcheck"><input type="checkbox" data-check="message"> Complete message matches the expected text</label>'
+            + '<label class="proofcheck"><input type="checkbox" data-check="sent"> Message is visibly sent, not a draft or failed send</label>'
+          : '')
         + '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:9px">'
         + '<button class="sm good" data-d="APPROVE">Approve</button>'
         + '<button class="sm bad" data-d="REJECT">Reject</button>'
@@ -897,24 +1773,38 @@ async function renderProofs(rows, err) {
     };
   }
 
-  // A private bucket means every image needs its own short-lived URL. Done after the markup so the
-  // rows appear immediately and fill in, rather than the whole queue waiting on the slowest signature.
-  for (const img of $('proofq').querySelectorAll('img[data-img]')) {
-    sb.storage.from('proofs').createSignedUrl(img.dataset.img, 300).then(({ data }) => {
-      if (data?.signedUrl) img.src = data.signedUrl;
-      else img.replaceWith(Object.assign(document.createElement('div'),
-        { className: 'muted', textContent: 'screenshot could not be loaded' }));
-    });
+  // Evidence stays private and is downloaded on demand, not every 30-second poll.
+  for (const btn of $('proofq').querySelectorAll('button[data-load-proof]')) {
+    btn.onclick = () => void revealProofImage(btn, btn.nextElementSibling);
   }
 
   for (const card of $('proofq').querySelectorAll('[data-proof]')) {
     for (const b of card.querySelectorAll('button[data-d]')) {
       b.onclick = async () => {
+        const context = contextById.get(card.dataset.proof);
+        if (b.dataset.d === 'APPROVE' && contextError) { alert('Evidence context could not load. Refresh before approving.'); return; }
+        if (b.dataset.d === 'APPROVE' && context) {
+          if (!context.image_sha256 || context.image_duplicate_of) { alert('The image integrity check must pass before approval.'); return; }
+          if (!['recipient','message','sent'].every(key => card.querySelector('[data-check="' + key + '"]').checked)) {
+            alert('Check the recipient, complete message and sent status in the screenshot first.'); return;
+          }
+        }
         for (const o of card.querySelectorAll('button[data-d]')) o.disabled = true;
-        const note = b.dataset.d === 'REJECT'
-          ? (prompt('Why is this being rejected? (the VA is not paid for it)') || null) : null;
-        const { data, error } = await sb.rpc('dh_admin_proof_decide',
-          { p_proof_check_id: card.dataset.proof, p_decision: b.dataset.d, p_notes: note });
+        let note = null;
+        if (b.dataset.d === 'REJECT') {
+          const typed = prompt('Why is this being rejected? (the VA is not paid for it)');
+          if (typed === null || typed.trim().length < 8) {
+            for (const o of card.querySelectorAll('button[data-d]')) o.disabled = false;
+            if (typed !== null) alert('Write a reason of at least 8 characters. Nothing was rejected.');
+            return;
+          }
+          note = typed.trim();
+        }
+        const { data, error } = await sb.rpc(context ? 'dh_admin_send_proof_decide' : 'dh_admin_proof_decide',
+          { p_proof_check_id: card.dataset.proof, p_decision: b.dataset.d, p_notes: note,
+            ...(context ? {p_image_sha256:context.image_sha256,p_verified_recipient:card.querySelector('[data-check="recipient"]').checked,
+              p_verified_message:card.querySelector('[data-check="message"]').checked,
+              p_verified_sent:card.querySelector('[data-check="sent"]').checked} : {}) });
         if (error || !data?.ok) { alert(error?.message || data?.reason || 'failed'); boot(); return; }
         boot();
       };
@@ -954,10 +1844,10 @@ function renderPayouts(rows, err) {
     b.onclick = async () => {
       const name = tr.querySelector('b').textContent;
       const amount = tr.querySelectorAll('td')[1].textContent;
-      if (!confirm('Mark ' + amount + ' as paid to ' + name + '?\n\n'
-                   + 'This records the payment. It does not send any money.')) return;
-      const method = prompt('How was it paid? (e.g. Wise, PayPal)') || null;
-      const ref = prompt('Transaction reference (optional)') || null;
+      if (!confirm('Confirm ' + amount + ' was paid to ' + name + ' through FirstPromoter?\n\n'
+                   + 'Process the payout in FirstPromoter first. This button only records the completed FirstPromoter payout in the DropHero ledger; it does not send money.')) return;
+      const method = 'FirstPromoter';
+      const ref = prompt('FirstPromoter payout/reference ID (optional)') || null;
       b.disabled = true;
       const { data, error } = await sb.rpc('dh_admin_payout_mark_paid',
         { p_va: tr.dataset.va, p_method: method, p_reference: ref });
@@ -967,7 +1857,8 @@ function renderPayouts(rows, err) {
   }
 }
 
-function renderVas(d) {
+function renderVas(d, err) {
+  if (err) { $('vas').innerHTML = '<div class="muted">could not load — ' + esc(err.message) + '</div>'; return; }
   const rows = d.vas || [];
   window.__dm = d.dm_template ?? '';   // the Config-required card edits this same value
   const sel = $('f_va'), have = new Set([...sel.options].map((o) => o.value));
@@ -1013,14 +1904,15 @@ function renderVas(d) {
   // own password and is signed in immediately -- no confirmation mail, and therefore no encounter
   // with the redirect to this project's factory-default Site URL, which lands on a browser error.
   const inviteLink = (code) =>
-    location.origin + location.pathname.replace(/[^/]*$/, '') + 'va.html?invite=' + code;
+    location.origin + location.pathname.replace(/[^/]*$/, '') + 'va.html#invite=' + encodeURIComponent(code);
 
   // The link is a credential for 14 days, so it is shown once, offered to the clipboard, and never
   // stored anywhere the dashboard can redisplay it.
   async function handOver(email, code) {
     const url = inviteLink(code);
-    try { await navigator.clipboard.writeText(url); } catch { /* shown below either way */ }
-    prompt('Send this link to ' + email + '. It is already copied.\\n\\n'
+    const copied = await copyPlainText(url);
+    prompt('Send this link to ' + email + '. '
+      + (copied ? 'It is copied to your clipboard.' : 'Copy it from the field below.') + '\\n\\n'
       + 'They open it, choose their own password, and are straight in. Nothing is emailed.\\n'
       + 'The link works once and expires in 14 days.', url);
   }
@@ -1067,9 +1959,10 @@ async function editVa(v) {
     const { data, error } = await sb.rpc('dh_owner_reissue_invite', { p_va_id: v.va_id });
     if (error) { alert(error.message); return; }
     const url = location.origin + location.pathname.replace(/[^/]*$/, '')
-              + 'va.html?invite=' + data.invite_code;
-    try { await navigator.clipboard.writeText(url); } catch { /* shown below either way */ }
-    prompt('New link for ' + data.email + '. The previous one no longer works.', url);
+              + 'va.html#invite=' + encodeURIComponent(data.invite_code);
+    const copied = await copyPlainText(url);
+    prompt('New link for ' + data.email + '. The previous one no longer works. '
+      + (copied ? 'The new link is copied.' : 'Copy the new link from the field below.'), url);
     return;
   }
   if (what === 'creators') {
@@ -1096,7 +1989,8 @@ async function editVa(v) {
 // SOURCING CONTROLS. Everything that costs more money asks first, in words that name the cost.
 // The outbound send kill-switch is deliberately NOT here: this card configures discovery only.
 // ---------------------------------------------------------------------------------------------
-function renderSourcing(s) {
+function renderSourcing(s, err) {
+  if (err) { $('sourcing').innerHTML = '<div class="muted">could not load — ' + esc(err.message) + '</div>'; return; }
   const on = s.sourcing_enabled === true;
   const q = s.qualification || {};
   const territory = (s.territory && s.territory.countries) || [];
@@ -1188,7 +2082,8 @@ function renderSourcing(s) {
 // ---------------------------------------------------------------------------------------------
 // CONFIG REQUIRED and INTEGRATIONS. Both read state; neither exposes a secret.
 // ---------------------------------------------------------------------------------------------
-function renderConfig(items) {
+function renderConfig(items, err) {
+  if (err) { $('config').innerHTML = '<div class="muted">could not load — ' + esc(err.message) + '</div>'; return; }
   $('config').innerHTML = (items.length
     ? items.map((c) => '<div class="row"><span><b>' + esc(c.label) + '</b><br>'
         + '<span class="muted">' + esc(c.detail) + '</span></span></div>').join('')
@@ -1206,7 +2101,8 @@ function renderConfig(items) {
   };
 }
 
-function renderIntegrations(d) {
+function renderIntegrations(d, err) {
+  if (err) { $('integrations').innerHTML = '<div class="muted">could not load — ' + esc(err.message) + '</div>'; return; }
   const fp = d.firstpromoter || {};
   $('integrations').innerHTML =
     '<div class="row"><span>FirstPromoter</span><span class="pill ' + (fp.configured ? 'on' : 'warnp')
@@ -1229,13 +2125,131 @@ function renderIntegrations(d) {
 }
 
 // ---------------------------------------------------------------------------------------------
+
+// Navigation changes presentation only. Existing cards and action handlers retain their IDs.
+const adminLabels={overview:'Overview',team:'Team',conversations:'Conversations',payments:'Payments',creators:'Creators',settings:'Settings',simulation:'Testportal'};
+function routeAdminSection(){
+  const hash=location.hash.slice(1); const all=hash==='all';
+  let key=Object.hasOwn(adminLabels,hash)?hash:null;
+  if(!key && hash){const target=document.getElementById(hash);key=target?.closest('[data-admin-section]')?.dataset.adminSection;}
+  key=key||'overview';
+  for(const section of document.querySelectorAll('[data-admin-section]'))section.hidden=!all&&section.dataset.adminSection!==key;
+  for(const link of document.querySelectorAll('[data-admin-nav]')){
+    if(!all&&link.dataset.adminNav===key)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');
+  }
+  $('admin-view-label').textContent=all?'All sections':adminLabels[key];
+  $('admin-show-all').textContent=all?'Back to overview':'Show all sections';
+  $('admin-show-all').href=all?'#overview':'#all';
+  if(all||Object.hasOwn(adminLabels,hash)){requestAnimationFrame(()=>$('section-'+(all?'overview':key)).scrollIntoView({block:'start'}));}
+  else if(hash){
+    const target=document.getElementById(hash);if(target?.closest('[data-admin-section]'))requestAnimationFrame(()=>target.scrollIntoView({block:'start'}));
+  }
+}
+window.addEventListener('hashchange',routeAdminSection);
+routeAdminSection();
+function renderAdminActions(tiktok,interested,proofs,payouts){
+  const accounts=Array.isArray(tiktok.data)?tiktok.data:[];
+  $('action-approvals').textContent=tiktok.error?'Unavailable':n(accounts.reduce((count,v)=>count+(v.accounts||[]).filter(a=>a.status==='WAITING_APPROVAL').length,0));
+  $('action-chats').textContent=interested.error?'Unavailable':n(Array.isArray(interested.data)?interested.data.length:0);
+  $('action-proofs').textContent=proofs.error?'Unavailable':n(Array.isArray(proofs.data)?proofs.data.filter(p=>!['APPROVED','REJECTED'].includes(p.review_status)).length:0);
+  $('action-payouts').textContent=payouts.error?'Unavailable':money((Array.isArray(payouts.data)?payouts.data:[]).filter(r=>r.payable).reduce((sum,r)=>sum+Number(r.approved_cents||0),0));
+}
+
+
+// Separate manual review. No case is created by the zero-reply warning alone.
+let ownerAuditLastLoad=0,ownerAuditBusy=false;
+async function refreshOwnerMessageAudits(force=false){
+  if(ownerAuditBusy || (!force&&Date.now()-ownerAuditLastLoad<60000)) return;
+  ownerAuditBusy=true;ownerAuditLastLoad=Date.now();
+  try{
+    const [alerts,cases]=await Promise.all([
+      sb.rpc('dh_owner_message_audit_alerts'),sb.rpc('dh_owner_message_audits')
+    ]);
+    if(alerts.error||cases.error) throw alerts.error||cases.error;
+    const rows=Array.isArray(alerts.data)?alerts.data:[];
+    const openCases=Array.isArray(cases.data)?cases.data:[];
+    $('audit-banner').hidden=rows.length===0;
+    $('audit-banner').innerHTML=rows.length?
+      '<div class="audit-warning"><div class="audit-title">⚠️ '+rows.length+
+      ' account'+(rows.length===1?'':'s')+' flagged for review</div>'+
+      '<p>More than 100 recorded first contacts aged 24+ hours and no verified creator replies. This is a review signal, not a fraud finding.</p>'+
+      '<a href="#audit-title">View accounts and start a manual check →</a></div>':'';
+    $('audit-signals').innerHTML=rows.length?rows.map(row=>
+      '<div class="audit-warning" style="margin-bottom:10px"><div class="audit-row">'+
+      '<div><strong>⚠️ '+esc(row.name)+'</strong>'+
+      '<div class="muted">'+n(row.mature_sends)+' mature messages · '+n(row.verified_replies)+
+      ' verified replies · '+n(row.pending_proofs)+' pending proofs</div></div>'+
+      '<button type="button" data-audit-start="'+esc(row.va_id)+'"'+(row.audit_open?' disabled':'')+'>'+
+      (row.audit_open?'Check active':'Start check')+'</button></div></div>'
+    ).join(''):'No participants currently meet the review threshold.';
+    $('audit-cases').innerHTML=openCases.length?openCases.map(a=>
+      '<div class="card" style="margin:9px 0"><div class="row"><strong>'+esc(a.name)+'</strong>'+
+      '<span class="pill">'+esc(a.state)+'</span></div><p class="muted">Deadline: '+esc(when(a.due_at))+'</p>'+
+      (Array.isArray(a.items)?a.items.map((i,index)=>
+        '<div class="row" style="display:block"><strong>'+(index+1)+'. '+esc(i.handle)+'</strong>'+
+        '<span class="pill" style="margin-left:8px">'+esc(i.status)+'</span>'+
+        '<details><summary>Owner-only original message and reply</summary>'+
+        '<p class="k">Original first DM</p><p style="white-space:pre-wrap">'+esc(i.expected_first_message)+'</p>'+
+        (i.expected_followup?'<p class="k">Saved AI reply (if applicable)</p><p style="white-space:pre-wrap">'+esc(i.expected_followup)+'</p>':'')+
+        '</details>'+
+        (i.evidence_path?'<button class="sm" type="button" data-audit-photo="'+esc(i.evidence_path)+'">View screenshot</button>':'<span class="muted">No screenshot uploaded</span>')+
+        (a.state==='OPEN'&&['PENDING','SUBMITTED'].includes(i.status)?
+         '<div class="two" style="margin-top:8px">'+
+         '<button type="button" class="sm" data-audit-review="'+esc(i.id)+'" data-pass="1"'+
+         (i.status!=='SUBMITTED'?' disabled':'')+'>Accept</button>'+
+         '<button type="button" class="sm danger" data-audit-review="'+esc(i.id)+'" data-pass="0">Reject</button></div>':'')+
+        '</div>').join(''):'')+'</div>'
+    ).join(''):'No verification cases have been activated.';
+  }catch(error){
+    console.error('verification check refresh failed',error?.message||'error');
+    $('audit-signals').textContent='Verification status temporarily unavailable.';
+  }finally{ownerAuditBusy=false;}
+}
+$('audit-signals').addEventListener('click',async(event)=>{
+  const b=event.target.closest('[data-audit-start]');
+  if(!b)return;
+  const va=b.dataset.auditStart;
+  if(!confirm('Activate a random 3-message screenshot review for this participant?'))return;
+  b.disabled=true;
+  const {data,error}=await sb.rpc('dh_owner_message_audit_start',{p_va:va});
+  if(error||!data?.ok){alert('Could not start verification: '+(error?.message||data?.reason));b.disabled=false;return;}
+  ownerAuditLastLoad=0;await refreshOwnerMessageAudits(true);
+});
+$('audit-cases').addEventListener('click',async(event)=>{
+  const photo=event.target.closest('[data-audit-photo]');
+  if(photo){
+    const {data,error}=await sb.storage.from('message-audit').createSignedUrl(photo.dataset.auditPhoto,180);
+    if(error||!data?.signedUrl){alert('Screenshot unavailable.');return;}
+    window.open(data.signedUrl,'_blank','noopener,noreferrer');
+    return;
+  }
+  const button=event.target.closest('[data-audit-review]');
+  if(!button)return;
+  const pass=button.dataset.pass==='1';
+  const reason=pass?'Screenshot reviewed and matched.' : prompt('Reason for rejecting this proof (required):');
+  if(!pass&&(!reason||reason.trim().length<8))return;
+  if(!confirm(pass?'Accept this screenshot?':'Mark this screenshot as not verified? Three confirmed failures suspend new assignments.'))return;
+  button.disabled=true;
+  const {data,error}=await sb.rpc('dh_owner_message_audit_review',
+    {p_item:button.dataset.auditReview,p_pass:pass,p_reason:reason});
+  if(error||!data?.ok){alert('Review failed: '+(error?.message||data?.reason));button.disabled=false;return;}
+  ownerAuditLastLoad=0;await refreshOwnerMessageAudits(true);
+});
+
 // LIVE, without a refresh button. Realtime pushes the moment a VA touches the queue; the 30-second
 // poll is the belt to that braces, so a dropped socket costs freshness rather than correctness.
 // ---------------------------------------------------------------------------------------------
+let realtimeRefreshTimer = 0;
+function scheduleBoot(delay = 250) {
+  clearTimeout(realtimeRefreshTimer);
+  realtimeRefreshTimer = setTimeout(() => boot(), delay);
+}
 sb.channel('dash')
-  .on('postgres_changes', { event: '*', schema: 'public', table: 'dh_contact_tasks' }, () => boot())
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'dh_contact_tasks' },
+    () => scheduleBoot())
   .subscribe();
 setInterval(() => { if (!document.hidden && !$('app').hidden) boot(); }, 30000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) boot(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) scheduleBoot(0); });
 boot();
 </script></body></html>
+
