@@ -37,6 +37,18 @@
   #ssdlg .ss-hidden{display:none!important}
   #ssdlg #ss-feedback{min-height:19px;font-size:13px;margin:8px 0}
 
+
+  /* Verified, owner-approved creator partnership follow-ups; advisory and manual only. */
+  #creator-followups{padding:14px;margin:12px 0;border:1px solid #b17c3c;border-radius:14px;background:#242018}
+  #creator-followups h2{font-size:18px;margin:0 0 5px;color:#ffda9c}
+  #creator-followups .cf-item{border:1px solid #5a4a37;padding:12px;border-radius:11px;background:#171c23;margin:10px 0}
+  #creator-followups .cf-count{background:#a85629;padding:3px 9px;color:white;border-radius:99px;font-size:12px;font-weight:700}
+  #creator-followups .cf-draft{white-space:pre-wrap;background:#0f1924;border:1px solid #355574;border-radius:9px;padding:12px;font-size:13px;line-height:1.5;overflow-wrap:anywhere}
+  #creator-followups .cf-incoming{white-space:pre-wrap;overflow-wrap:anywhere;background:#252a32;padding:9px;border-radius:8px;font-size:13px}
+  #creator-followups .cf-actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px}
+  #creator-followups .cf-actions button{flex:1;min-width:140px;font-size:13px;min-height:45px}
+  #creator-followups .cf-status{min-height:18px;margin:5px 0;color:#a5eec9}
+
   /* Friendly, optional evidence sample. Separate from fraud audits, work allocation and earnings. */
   #quality-screenshots{margin:12px 0 15px;border:1px solid #305d79;background:#112331;
     border-radius:14px;padding:15px}
@@ -374,6 +386,9 @@
     <div><b id="done">–</b><span>Done today</span></div>
   </div>
 
+
+
+  <section id="creator-followups" hidden aria-label="Creator follow-ups ready to review" aria-live="polite" role="region"></section>
 
   <section id="screenshot-tools" aria-label="Upload screenshots">
     <button id="ss-open" type="button" class="good full">📸 Upload screenshot</button>
@@ -1284,6 +1299,7 @@ async function bootOrThrow() {
   render();
   void refreshMessageAudit();
   void refreshQualityScreenshots();
+  void refreshCreatorFollowups();
   return { accountsOk: accountsRes.ok, moneyOk: moneyRes.ok };
 }
 
@@ -4117,6 +4133,137 @@ $('ss-upload').onclick=async()=>{
    }
  }finally{ssState.busy=false;}
 };
+
+
+// Creator follow-ups come from owner-approved database knowledge for the currently signed-in VA.
+// They are advisory: copying or opening TikTok cannot record delivery or increase earnings.
+const creatorFollowups={user:null,lastLoad:0,loading:false,items:[],total:0,expanded:false,
+ copied:new Set(),message:'',seq:0,busy:new Set()};
+function followupKey(r){return r.task_id+':'+r.reply_event_id;}
+function renderCreatorFollowups(){
+ const box=$('creator-followups');
+ if(!box||$('app').hidden||creatorFollowups.user!==pendingUserId)return;
+ const items=creatorFollowups.items,total=creatorFollowups.total;
+ if(total===0){box.hidden=true;box.innerHTML='';return;}
+ box.hidden=false;
+ const shown=creatorFollowups.expanded?items:items.slice(0,3);
+ box.innerHTML='<div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap">'
+   +'<h2 style="flex:1">Creator replies ready to review</h2>'
+   +'<span class="cf-count">'+esc(total)+' to check</span></div>'
+   +'<p class="muted">DropHero prepared a suggested answer to each verified, positive creator reply. '
+   +'Review the chat first. If you have already answered in TikTok, do not send it again. '
+   +'Only you can send the message from your own TikTok account.</p>'
+   +shown.map(r=>{
+     const key=followupKey(r), profile=safeTikTokProfileUrl(r.profile_url,r.handle);
+     const awaiting=creatorFollowups.busy.has(key),copied=creatorFollowups.copied.has(key);
+     return '<article class="cf-item" data-cf-task="'+esc(r.task_id)+'" data-cf-event="'+esc(r.reply_event_id)+'">'
+       +'<strong>@'+esc(r.handle||'creator')+'</strong>'
+       +'<p class="muted">Their latest verified reply:</p><div class="cf-incoming">'+esc(r.creator_question||'')+'</div>'
+       +'<p class="muted">Suggested message to review and send:</p>'
+       +'<div class="cf-draft">'+esc(r.draft||'')+'</div>'
+       +(r.link_clicked?'<p class="muted">A previous affiliate invitation was clicked. Check whether they have already joined before sending another link.</p>':'')
+       +'<div class="cf-actions">'
+       +'<button class="good" type="button" data-cf-copy="'+esc(key)+'" '+(awaiting?'disabled':'')+'>COPY MESSAGE'+(profile?' &amp; OPEN TIKTOK':'')+'</button>'
+       +'<button type="button" data-cf-sent="'+esc(key)+'" '+(!copied||awaiting?'disabled':'')+'>I SENT IT</button>'
+       +'<button type="button" data-cf-handled="'+esc(key)+'" '+(awaiting?'disabled':'')+'>Already handled</button>'
+       +'<button type="button" data-cf-skip="'+esc(key)+'" '+(awaiting?'disabled':'')+'>Not appropriate</button>'
+       +'</div>'
+       +'<p class="cf-status" data-cf-msg="'+esc(key)+'">'+(copied?'Copied; confirm only after tapping Send in TikTok.':'')+'</p>'
+       +'</article>';
+   }).join('')
+   +'<p class="muted">Copying is not proof of sending. No fixed sponsorships, unverified trial limits, or guaranteed earnings are promised.</p>'
+   +(total>3?'<button id="cf-more" type="button" class="sm">'+(creatorFollowups.expanded?'Show fewer':'Show all '+esc(total)+' follow-ups')+'</button>':'')
+   +'<p role="status" class="muted" id="cf-global">'+esc(creatorFollowups.message)+'</p>';
+ box.querySelector('#cf-more')?.addEventListener('click',()=>{
+   creatorFollowups.expanded=!creatorFollowups.expanded;renderCreatorFollowups();
+ });
+ const rowFor=(key)=>items.find(r=>followupKey(r)===key);
+ const status=(key,text)=>{
+   const el=box.querySelector('[data-cf-msg="'+key+'"]');if(el)el.textContent=text;
+ };
+ for(const b of box.querySelectorAll('[data-cf-copy]')){
+   b.onclick=async()=>{
+     const key=b.dataset.cfCopy,r=rowFor(key);if(!r||creatorFollowups.busy.has(key))return;
+     const user=creatorFollowups.user;
+     b.disabled=true;
+     const copied=await copyNow(r.draft,true);
+     if(user!==pendingUserId)return;
+     if(copied.ok){
+       creatorFollowups.copied.add(key);
+       const next=box.querySelector('[data-cf-sent="'+key+'"]');if(next)next.disabled=false;
+       const profile=safeTikTokProfileUrl(r.profile_url,r.handle);
+       const opened=profile&&leaveForTikTok(profile,r.handle);
+       status(key,opened?'Copied — send it in TikTok, then return and confirm.':
+        'Copied. Open the creator in TikTok, send it, then return and confirm.');
+     }else{
+       prompt('Copy the message below, then paste it into TikTok.',r.draft);
+       status(key,'Clipboard unavailable. Copy the text manually; only confirm after sending.');
+     }
+     if(b.isConnected)b.disabled=false;
+   };
+ }
+ async function finish(key,disposition){
+   const r=rowFor(key);if(!r||creatorFollowups.busy.has(key))return;
+   if(disposition==='SENT_REPORTED'&&!creatorFollowups.copied.has(key))return;
+   const warning=disposition==='SENT_REPORTED'
+      ?'Confirm only if you actually pressed Send in TikTok for @'+r.handle+'. Copying alone does NOT count as sent.'
+      :disposition==='ALREADY_HANDLED'
+       ?'Confirm that you already handled @'+r.handle+' in TikTok and should not send this message again.'
+       :'Skip this suggestion for @'+r.handle+'? You can still upload a new creator reply later.';
+   if(!confirm(warning))return;
+   creatorFollowups.busy.add(key);
+   for(const control of box.querySelectorAll('.cf-item[data-cf-task="'+r.task_id+'"] button'))control.disabled=true;
+   status(key,'Saving your selection…');
+   try{
+     const {data,error}=await sb.rpc('dh_va_creator_followup_report',{
+        p_task_id:r.task_id,p_reply_event_id:r.reply_event_id,p_disposition:disposition
+     });
+     if(error||!data?.ok||!data?.recorded)throw error||new Error(data?.reason||'Status not saved');
+     creatorFollowups.items=creatorFollowups.items.filter(x=>followupKey(x)!==key);
+     creatorFollowups.total=Math.max(0,creatorFollowups.total-1);
+     creatorFollowups.message='Saved. '+(disposition==='SENT_REPORTED'?
+       'Your manual confirmation was recorded; delivery was not independently verified.':
+       'This message will not be suggested again for the same reply.');
+     renderCreatorFollowups();
+   }catch(e){
+     status(key,'Could not save; try again. Nothing was marked as sent.');
+     for(const control of box.querySelectorAll('.cf-item[data-cf-task="'+r.task_id+'"] button'))
+       control.disabled=false;
+   }finally{creatorFollowups.busy.delete(key);}
+ }
+ for(const b of box.querySelectorAll('[data-cf-sent]'))b.onclick=()=>void finish(b.dataset.cfSent,'SENT_REPORTED');
+ for(const b of box.querySelectorAll('[data-cf-handled]'))b.onclick=()=>void finish(b.dataset.cfHandled,'ALREADY_HANDLED');
+ for(const b of box.querySelectorAll('[data-cf-skip]'))b.onclick=()=>void finish(b.dataset.cfSkip,'SKIPPED');
+}
+async function refreshCreatorFollowups(force=false){
+ if($('app').hidden||!pendingUserId)return;
+ const currentUser=pendingUserId;
+ if(creatorFollowups.user!==currentUser){
+   creatorFollowups.user=currentUser;creatorFollowups.lastLoad=0;creatorFollowups.total=0;
+   creatorFollowups.items=[];creatorFollowups.copied.clear();creatorFollowups.busy.clear();
+   creatorFollowups.message='';creatorFollowups.expanded=false;
+   $('creator-followups').hidden=true;$('creator-followups').innerHTML='';
+ }
+ if(creatorFollowups.loading||(!force&&Date.now()-creatorFollowups.lastLoad<60000))return;
+ creatorFollowups.loading=true;creatorFollowups.lastLoad=Date.now();
+ const token=++creatorFollowups.seq;
+ try{
+   const {data,error}=await sb.rpc('dh_va_creator_followups',{p_limit:80});
+   if(token!==creatorFollowups.seq||currentUser!==pendingUserId)return;
+   if(error||!data?.ok)throw error||new Error('unavailable');
+   creatorFollowups.items=Array.isArray(data.rows)?data.rows:[];
+   creatorFollowups.total=Math.max(0,Number(data.total)||0);
+   const ids=new Set(creatorFollowups.items.map(followupKey));
+   for(const id of creatorFollowups.copied)if(!ids.has(id))creatorFollowups.copied.delete(id);
+   renderCreatorFollowups();
+ }catch(e){
+   if(currentUser===pendingUserId){
+      creatorFollowups.lastLoad=0;
+      console.error('creator follow-up notices unavailable',e?.message||'error');
+   }
+ }finally{creatorFollowups.loading=false;}
+}
+setInterval(()=>{if(!document.hidden&&!$('app').hidden&&!typing())void refreshCreatorFollowups();},60000);
 
 // boot() reads pending state only after Supabase has identified the user, so one account can never
 // restore another account's creator or message from the shared origin.
