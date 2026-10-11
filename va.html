@@ -2693,7 +2693,7 @@ function chatHtml(c) {
   // gevallen hetzelfde: waar de zin vandaan komt, is niet hun probleem.
   const sug = suggestedFor(c);
   const shareInfo = !['NOT_INTERESTED', 'FOLLOW_UP_LATER'].includes(c.classification)
-    && !['WAIT', 'CLOSE'].includes(sug.nextAction);
+    && !['WAIT', 'CLOSE', 'ESCALATE_TO_OWNER'].includes(sug.nextAction);
   if (shareInfo) {
     h += '<div class="suggest" style="margin:10px 0;border-color:#408d76">'
       + '<span class="lbl">STEP 1 · SEND CREATOR INFORMATION FIRST</span>'
@@ -2701,11 +2701,11 @@ function chatHtml(c) {
       + '<a class="open" href="' + CREATOR_INFO_URL
       + '" target="_blank" rel="noopener noreferrer">drophero.app/creators</a></div>';
   }
-  if (sug.text && ['WAIT','CLOSE'].includes(sug.nextAction)) {
-    h += '<div class="suggest"><span class="lbl">' + (sug.nextAction === 'CLOSE' ? 'Conversation finished' : 'Waiting for the creator') + '</span>' + esc(sug.text) + '</div>'
-      + '<p class="muted" style="margin:6px 0 0">No message to send now. Upload a new screenshot if the creator answers.</p>';
+  if (sug.text && ['WAIT','CLOSE','ESCALATE_TO_OWNER'].includes(sug.nextAction)) {
+    h += '<div class="suggest"><span class="lbl">' + (sug.nextAction === 'ESCALATE_TO_OWNER' ? 'Needs team review' : sug.nextAction === 'CLOSE' ? 'Conversation finished' : 'Waiting for the creator') + '</span>' + esc(sug.text) + '</div>'
+      + '<p class="muted" style="margin:6px 0 0">' + (sug.nextAction === 'ESCALATE_TO_OWNER' ? 'The DropHero team needs to review this request before you reply.' : 'No message to send now. Upload a new screenshot if the creator answers.') + '</p>';
   } else if (sug.text) {
-    const fullConversion = c.affiliate_available && c.classification === 'INTERESTED' && !['WAIT','CLOSE'].includes(sug.nextAction);
+    const fullConversion = c.affiliate_available && c.classification === 'INTERESTED' && !['WAIT','CLOSE','ESCALATE_TO_OWNER'].includes(sug.nextAction);
     h += '<div class="suggest"><span class="lbl">Suggested reply</span>' + esc(shareInfo && !fullConversion ? creatorInfoMessage(sug.text, c.classification) : sug.text) + '</div>'
       + (fullConversion
           ? '<p class="muted" style="margin:6px 0 0">Interest confirmed — the button below includes the information page first and the personal signup link second.</p>'
@@ -2744,11 +2744,11 @@ function chatHtml(c) {
   // SECTION M, ON SCREEN. Not shown merely because a reply exists -- only once the creator has said
   // they are interested or asked for details. A link that appears the moment anyone answers turns
   // every conversation into a pitch, and the question they actually asked goes unanswered.
-  if (c.affiliate_available && c.classification === 'INTERESTED' && !['WAIT','CLOSE'].includes(sug.nextAction)) {
+  if (c.affiliate_available && c.classification === 'INTERESTED' && !['WAIT','CLOSE','ESCALATE_TO_OWNER'].includes(sug.nextAction)) {
     h += '<button class="good" style="margin-top:8px" data-invite="' + esc(c.task_id) + '">'
       + (c.affiliate_state === 'REGISTERED' ? 'They joined — copy link again'
                                             : 'STEP 2 · COPY INFO + SIGNUP LINK') + '</button>';
-  } else if (c.classification === 'QUESTION' || c.classification === 'SEND_DETAILS') {
+  } else if (!['WAIT','CLOSE','ESCALATE_TO_OWNER'].includes(sug.nextAction) && (c.classification === 'QUESTION' || c.classification === 'SEND_DETAILS')) {
     h += '<p class="muted" style="margin:8px 0 0">Share the creator information page first. The tracked FirstPromoter signup link comes after they confirm they want to join.</p>';
   }
 
@@ -2831,7 +2831,8 @@ function wireChats(rows) {
   for (const b of list.querySelectorAll('[data-copy-creators]')) {
     b.onclick = async () => {
       const row = rows.find((r) => r.reply_event_id === b.dataset.copyCreators);
-      if (!row || ['NOT_INTERESTED', 'FOLLOW_UP_LATER'].includes(row.classification)) return;
+      if (!row || ['NOT_INTERESTED', 'FOLLOW_UP_LATER'].includes(row.classification)
+        || ['WAIT','CLOSE','ESCALATE_TO_OWNER'].includes(suggestedFor(row).nextAction)) return;
       const text = creatorInfoMessage('', row.classification);
       b.disabled = true;
       const result = await copyNow(text);
@@ -2848,8 +2849,10 @@ function wireChats(rows) {
       // Copy the displayed answer, then open the profile. The DMer still sends it manually;
       // neither action records a send, changes earnings, nor calls an RPC.
       const row = rows.find((r) => r.reply_event_id === b.dataset.copyReply);
+      const suggested = row ? suggestedFor(row) : null;
+      if (['WAIT','CLOSE','ESCALATE_TO_OWNER'].includes(suggested?.nextAction)) return;
       const text = row ? (['NOT_INTERESTED','FOLLOW_UP_LATER'].includes(row.classification)
-        ? suggestedFor(row).text : creatorInfoMessage(suggestedFor(row).text, row.classification)) : null;
+        ? suggested.text : creatorInfoMessage(suggested.text, row.classification)) : null;
       if (!text) return;
       b.disabled = true;
       const r = await copyNow(text, true);
@@ -2868,6 +2871,8 @@ function wireChats(rows) {
   }
   for (const b of list.querySelectorAll('[data-invite]')) {
     b.onclick = async () => {
+      const current = rows.find((r) => r.task_id === b.dataset.invite);
+      if (current && ['WAIT','CLOSE','ESCALATE_TO_OWNER'].includes(suggestedFor(current).nextAction)) return;
       b.disabled = true;
       const { data, error } = await sb.rpc('dh_affiliate_invite_issue', { p_task_id: b.dataset.invite });
       b.disabled = false;
