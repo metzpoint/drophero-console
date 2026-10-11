@@ -190,6 +190,8 @@
 
   <h2 id="proofs">Proof checks <small class="muted">send and reply screenshots</small></h2>
   <div class="card" id="proofq"><div class="muted">loading…</div></div>
+  <h2>Requested screenshots <small class="muted">uploaded by DM’ers</small></h2>
+  <div id="quality-uploads" class="card"><span class="muted">loading…</span></div>
 
 </section>
 <section id="section-payments" data-admin-section="payments" aria-labelledby="title-payments" hidden>
@@ -697,6 +699,7 @@ async function bootOnce() {
   renderPerformance(perf.data, perf.error);
   renderActivity(activity.data, activity.error);
   renderProofs(proofs.data, proofs.error);
+  void refreshQualityUploads();
   renderPayouts(payouts.data, payouts.error);
   renderTemplates(templates.data, templates.error);
   renderModerationBlocks(modblock.data, modblock.error);
@@ -1614,6 +1617,70 @@ function renderPerformance(rows, err) {
 }
 
 // ---------------------------------------------------------------------------------------------
+
+// OWNER VIEW FOR FRIENDLY VA SCREENSHOT REQUESTS. Separate from fraud audits and paid proof checks.
+async function refreshQualityUploads(){
+ const el=$('quality-uploads');
+ if(!el||$('app').hidden)return;
+ const {data,error}=await sb.rpc('dh_owner_quality_screenshot_requests');
+ if(error){el.textContent='Screenshot requests could not be loaded.';return;}
+ const rows=Array.isArray(data)?data:[];
+ if(!rows.length){el.innerHTML='<p class="muted">No screenshot requests yet.</p>';return;}
+ el.innerHTML=rows.map((r)=>{
+   const pending=r.status==='PENDING'||r.status==='REUPLOAD_REQUIRED';
+   const submitted=r.status==='SUBMITTED';
+   const status=({PENDING:'Waiting for upload',REUPLOAD_REQUIRED:'Needs clearer screenshot',SUBMITTED:'Ready for review',APPROVED:'Approved'})[r.status]||r.status;
+   return '<div class="card" data-quality-review="'+esc(r.id)+'">'
+     +'<strong>'+esc(r.va_name)+' · @'+esc(r.handle||'creator')+'</strong>'
+     +'<p class="muted">'+esc(status)+' · requested '+esc(new Date(r.requested_at).toLocaleDateString())+'</p>'
+     +(r.image_path?'<button class="sm" type="button" data-quality-image>View uploaded screenshot</button>'
+       +'<img data-quality-path="'+esc(r.image_path)+'" alt="DMer screenshot" hidden style="width:100%;max-height:480px;object-fit:contain;margin:10px 0;border-radius:8px">':
+       '<p class="muted">Awaiting Wendy’s screenshot.</p>')
+     +(submitted?'<p class="muted">Compare the recipient and sent message with the original TikTok conversation before approving.</p>'
+       +'<textarea data-quality-note placeholder="Reason, if another screenshot is required"></textarea>'
+       +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
+       +'<button type="button" class="sm" data-quality-decision="approve">Approve</button>'
+       +'<button type="button" class="sm" data-quality-decision="retry">Request clearer screenshot</button></div>':'')
+     +'<p data-quality-feedback role="status" class="muted"></p>'
+     +'</div>';
+ }).join('');
+ for(const card of el.querySelectorAll('[data-quality-review]')){
+   const imgBtn=card.querySelector('button[data-quality-image]');
+   if(imgBtn)imgBtn.onclick=async()=>{
+     const img=card.querySelector('img[data-quality-path]');
+     imgBtn.disabled=true;imgBtn.textContent='Loading screenshot…';
+     try{
+       const {data,error}=await sb.storage.from('va-quality-screenshots').createSignedUrl(img.dataset.qualityPath,300);
+       if(error||!data?.signedUrl)throw error||new Error('Not found');
+       if(!img.isConnected)return;
+       img.src=data.signedUrl;img.hidden=false;imgBtn.hidden=true;
+     }catch{
+       const msg=card.querySelector('[data-quality-feedback]');
+       if(msg)msg.textContent='Screenshot unavailable. Please retry.';
+       if(imgBtn.isConnected)imgBtn.textContent='Retry screenshot';
+     }finally{if(imgBtn.isConnected)imgBtn.disabled=false;}
+   };
+   for(const btn of card.querySelectorAll('[data-quality-decision]')){
+     btn.onclick=async()=>{
+       const approved=btn.dataset.qualityDecision==='approve';
+       const note=card.querySelector('textarea[data-quality-note]')?.value.trim()||null;
+       const status=card.querySelector('[data-quality-feedback]');
+       if(!approved && (!note||note.length<8)){status.textContent='Add a short reason (at least eight characters).';return;}
+       for(const b of card.querySelectorAll('[data-quality-decision]'))b.disabled=true;
+       const {data,error}=await sb.rpc('dh_owner_quality_screenshot_review',{
+         p_request_id:card.dataset.qualityReview,p_approved:approved,p_note:note
+       });
+       if(error||!data?.ok){
+         status.textContent='Could not save review. Please retry.';
+         for(const b of card.querySelectorAll('[data-quality-decision]'))b.disabled=false;
+         return;
+       }
+       await refreshQualityUploads();
+     };
+   }
+ }
+}
+
 // PROOF REVIEW.
 //
 // The screenshot is the whole point, so it is shown rather than linked: a queue that costs a click
