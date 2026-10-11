@@ -1635,7 +1635,7 @@ async function refreshQualityUploads(){
      +'<p class="muted">'+esc(status)+' · requested '+esc(new Date(r.requested_at).toLocaleDateString())+'</p>'
      +(r.image_path?'<button class="sm" type="button" data-quality-image>View uploaded screenshot</button>'
        +'<img data-quality-path="'+esc(r.image_path)+'" alt="DMer screenshot" hidden style="width:100%;max-height:480px;object-fit:contain;margin:10px 0;border-radius:8px">':
-       '<p class="muted">Awaiting Wendy’s screenshot.</p>')
+       '<p class="muted">Awaiting screenshot upload.</p>')
      +(submitted?'<p class="muted">Compare the recipient and sent message with the original TikTok conversation before approving.</p>'
        +'<textarea data-quality-note placeholder="Reason, if another screenshot is required"></textarea>'
        +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
