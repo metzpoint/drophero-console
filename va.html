@@ -3926,9 +3926,10 @@ async function refreshQualityScreenshots(force=false){
     if(!items.length){el.hidden=true;el.innerHTML='';return;}
     el.hidden=false;
     const submitted=items.filter(x=>x.status==='SUBMITTED'||x.status==='APPROVED').length;
-    el.innerHTML='<h2>Two quick screenshots</h2>'
-      +'<p class="muted">Please share the requested TikTok chat screenshots here. Open each creator link, find the message in the TikTok account you used, and include the creator name and your sent DM. You can hide unrelated private conversations.</p>'
-      +'<p><strong>'+submitted+' of '+items.length+' screenshots received</strong> · Your normal work and earnings are not affected.</p>'
+    const requested=items.filter(x=>x.origin==='OWNER_REQUESTED').length;
+    el.innerHTML='<h2>Screenshot history &amp; requests</h2>'
+      +'<p class="muted">Your uploaded sent-message evidence and any team-requested checks appear here. Keep unrelated private messages out of the screenshot. Received replies should be uploaded using the Upload screenshot button above.</p>'
+      +'<p><strong>'+submitted+' of '+items.length+' screenshots received</strong>'+(requested?' · '+requested+' requested by DropHero':'')+' · Your normal work and earnings are not affected.</p>'
       +items.map((item,n)=>{
         const url=safeAuditProfile(item.profile_url,item.handle);
         const who=esc(item.handle||'Creator');
@@ -3938,13 +3939,13 @@ async function refreshQualityScreenshots(force=false){
         if(item.status==='SUBMITTED')state='<p class="qs-status">✓ Screenshot received · awaiting review</p>';
         else if(item.status==='APPROVED')state='<p class="qs-status">✓ Checked and accepted</p>';
         else if(item.status==='REUPLOAD_REQUIRED')state='<p class="muted">Please upload a clearer screenshot.</p>';
-        return '<div class="qs-row"><strong>Screenshot '+(n+1)+' of '+items.length+'</strong>'
+        return '<div class="qs-row"><strong>'+(item.origin==='OWNER_REQUESTED'?'Requested screenshot':'Optional screenshot')+' '+(n+1)+' of '+items.length+'</strong>'
           +'<p>'+link+'</p><p class="muted">Previous DM: '+esc(item.sent_at?new Date(item.sent_at).toLocaleDateString():'See chat')+'</p>'
           +(isPending?'<label>Choose screenshot (JPG, PNG, WEBP or HEIC, max 10 MB)'
             +'<input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/*" data-quality-request="'+esc(item.id)+'" aria-label="Upload screenshot '+(n+1)+'"></label>':state)
           +'</div>';
       }).join('')
-      +'<p class="muted" style="margin:12px 0 4px">Upload only the requested chat. Screenshots are stored privately for the DropHero team.</p>'
+      +'<p class="muted" style="margin:12px 0 4px">Uploaded screenshots are private and available to the DropHero review team. Uploads are not an automatic reward or confirmation of delivery.</p>'
       +'<p id="qs-feedback" role="status" aria-live="polite"></p>';
   }catch(e){
     console.error('screenshot request load failed',e?.message||'error');
