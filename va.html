@@ -48,6 +48,11 @@
   #creator-followups .cf-actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px}
   #creator-followups .cf-actions button{flex:1;min-width:140px;font-size:13px;min-height:45px}
   #creator-followups .cf-status{min-height:18px;margin:5px 0;color:#a5eec9}
+  #creator-followups .cf-modes{display:flex;flex-wrap:wrap;gap:8px;margin:11px 0 8px}
+  #creator-followups .cf-modes button{flex:1;min-width:120px;min-height:45px}
+  #creator-followups .cf-modes [aria-pressed="true"]{border-color:#70c6ff;background:#204d62;color:#fff}
+  #creator-followups .cf-ai-loading{color:#ffd38c;padding:10px;background:#31281b;border-radius:8px}
+  #creator-followups .cf-blocked{color:#ffd38c;padding:10px;background:#31281b;border-radius:8px}
 
   /* Friendly, optional evidence sample. Separate from fraud audits, work allocation and earnings. */
   #quality-screenshots{margin:12px 0 15px;border:1px solid #305d79;background:#112331;
@@ -4138,7 +4143,7 @@ $('ss-upload').onclick=async()=>{
 // Creator follow-ups come from owner-approved database knowledge for the currently signed-in VA.
 // They are advisory: copying or opening TikTok cannot record delivery or increase earnings.
 const creatorFollowups={user:null,lastLoad:0,loading:false,items:[],total:0,expanded:false,
- copied:new Set(),message:'',seq:0,busy:new Set()};
+ copied:new Map(),mode:new Map(),ai:new Map(),aiPending:new Set(),blocked:new Map(),message:'',seq:0,busy:new Set()};
 function followupKey(r){return r.task_id+':'+r.reply_event_id;}
 function renderCreatorFollowups(){
  const box=$('creator-followups');
@@ -4155,20 +4160,32 @@ function renderCreatorFollowups(){
    +'Only you can send the message from your own TikTok account.</p>'
    +shown.map(r=>{
      const key=followupKey(r), profile=safeTikTokProfileUrl(r.profile_url,r.handle);
-     const awaiting=creatorFollowups.busy.has(key),copied=creatorFollowups.copied.has(key);
+     const awaiting=creatorFollowups.busy.has(key), mode=creatorFollowups.mode.get(key)||'COPY_PASTE';
+     const result=creatorFollowups.ai.get(key);
+     const blocked=creatorFollowups.blocked.get(key);
+     const draft=mode==='AI_REPLY' ? (result?.text||'') : r.draft;
+     const copied=!!draft&&creatorFollowups.copied.get(key)===draft;
+     const fetching=creatorFollowups.aiPending.has(key);
      return '<article class="cf-item" data-cf-task="'+esc(r.task_id)+'" data-cf-event="'+esc(r.reply_event_id)+'">'
        +'<strong>@'+esc(r.handle||'creator')+'</strong>'
        +'<p class="muted">Their latest verified reply:</p><div class="cf-incoming">'+esc(r.creator_question||'')+'</div>'
-       +'<p class="muted">Suggested message to review and send:</p>'
-       +'<div class="cf-draft">'+esc(r.draft||'')+'</div>'
+       +'<p class="muted">Choose how to prepare your reply. Both methods require you to paste and send it manually in TikTok.</p>'
+       +'<div class="cf-modes">'
+       +'<button type="button" data-cf-ai-mode="'+esc(key)+'" aria-pressed="'+String(mode==='AI_REPLY')+'" '+(awaiting?'disabled':'')+'>✨ AI REPLY</button>'
+       +'<button type="button" data-cf-paste-mode="'+esc(key)+'" aria-pressed="'+String(mode==='COPY_PASTE')+'" '+(awaiting?'disabled':'')+'>COPY &amp; PASTE</button></div>'
+       +'<p class="muted">'+(mode==='AI_REPLY'?'AI reply for this creator':'Ready-to-copy approved reply')+':</p>'
+       +(blocked?'<div class="cf-blocked">The AI recommends waiting or ending this conversation. Do not send another message: '+esc(blocked)+'</div>'
+          :fetching?'<div class="cf-ai-loading">Preparing an AI reply for this specific question…</div>'
+          :draft?'<div class="cf-draft">'+esc(draft)+'</div>'
+          :'<div class="cf-ai-loading">AI reply is not available now. Select Copy &amp; Paste to use the approved message instead.</div>')
        +(r.link_clicked?'<p class="muted">A previous affiliate invitation was clicked. Check whether they have already joined before sending another link.</p>':'')
        +'<div class="cf-actions">'
-       +'<button class="good" type="button" data-cf-copy="'+esc(key)+'" '+(awaiting?'disabled':'')+'>COPY MESSAGE'+(profile?' &amp; OPEN TIKTOK':'')+'</button>'
-       +'<button type="button" data-cf-sent="'+esc(key)+'" '+(!copied||awaiting?'disabled':'')+'>I SENT IT</button>'
+       +'<button class="good" type="button" data-cf-copy="'+esc(key)+'" '+(awaiting||fetching||!!blocked||!draft?'disabled':'')+'>COPY &amp; OPEN TIKTOK</button>'
+       +'<button type="button" data-cf-sent="'+esc(key)+'" '+(!copied||awaiting||!!blocked?'disabled':'')+'>I SENT IT</button>'
        +'<button type="button" data-cf-handled="'+esc(key)+'" '+(awaiting?'disabled':'')+'>Already handled</button>'
        +'<button type="button" data-cf-skip="'+esc(key)+'" '+(awaiting?'disabled':'')+'>Not appropriate</button>'
        +'</div>'
-       +'<p class="cf-status" data-cf-msg="'+esc(key)+'">'+(copied?'Copied; confirm only after tapping Send in TikTok.':'')+'</p>'
+       +'<p class="cf-status" data-cf-msg="'+esc(key)+'">'+(copied?'Copied the selected message. Confirm only after sending in TikTok.':'')+'</p>'
        +'</article>';
    }).join('')
    +'<p class="muted">Copying is not proof of sending. No fixed sponsorships, unverified trial limits, or guaranteed earnings are promised.</p>'
@@ -4181,22 +4198,65 @@ function renderCreatorFollowups(){
  const status=(key,text)=>{
    const el=box.querySelector('[data-cf-msg="'+key+'"]');if(el)el.textContent=text;
  };
+ // Both modes share the exact same single manual-send reporting flow.
+ for(const b of box.querySelectorAll('[data-cf-paste-mode]')){
+   b.onclick=()=>{
+     const key=b.dataset.cfPasteMode;if(creatorFollowups.busy.has(key))return;
+     creatorFollowups.mode.set(key,'COPY_PASTE');
+     renderCreatorFollowups();
+   };
+ }
+ for(const b of box.querySelectorAll('[data-cf-ai-mode]')){
+   b.onclick=async()=>{
+     const key=b.dataset.cfAiMode,r=rowFor(key);
+     if(!r||creatorFollowups.busy.has(key))return;
+     creatorFollowups.mode.set(key,'AI_REPLY');
+     if(creatorFollowups.ai.has(key)||creatorFollowups.blocked.has(key)){
+       renderCreatorFollowups();return;
+     }
+     if(creatorFollowups.aiPending.has(key))return;
+     const user=creatorFollowups.user,replyEvent=r.reply_event_id;
+     creatorFollowups.aiPending.add(key);
+     renderCreatorFollowups();
+     try{
+       // Reuse the current, server-guarded AI reply assistant. Never generate client-side claims.
+       const existing=aiRow(replyEvent);
+       const result=await assistantFor(replyEvent,existing);
+       if(user!==pendingUserId||!rowFor(key)||creatorFollowups.user!==user)return;
+       if(['WAIT','CLOSE'].includes(result?.nextAction)){
+         creatorFollowups.blocked.set(key,'Wait for the next reply or let the DropHero team handle this creator.');
+       }else if(result?.text&&!result?.withheld){
+         creatorFollowups.ai.set(key,{text:result.text});
+       }else{
+         creatorFollowups.message='AI reply not ready. You can choose Copy & Paste instead.';
+       }
+     }catch(e){
+       if(user===pendingUserId)creatorFollowups.message='AI reply unavailable right now. Use Copy & Paste instead.';
+     }finally{
+       creatorFollowups.aiPending.delete(key);
+       if(user===pendingUserId)renderCreatorFollowups();
+     }
+   };
+ }
  for(const b of box.querySelectorAll('[data-cf-copy]')){
    b.onclick=async()=>{
      const key=b.dataset.cfCopy,r=rowFor(key);if(!r||creatorFollowups.busy.has(key))return;
+     const mode=creatorFollowups.mode.get(key)||'COPY_PASTE';
+     const text=mode==='AI_REPLY' ? creatorFollowups.ai.get(key)?.text : r.draft;
+     if(!text||creatorFollowups.blocked.has(key)||creatorFollowups.aiPending.has(key))return;
      const user=creatorFollowups.user;
      b.disabled=true;
-     const copied=await copyNow(r.draft,true);
-     if(user!==pendingUserId)return;
+     const copied=await copyNow(text,true);
+     if(user!==pendingUserId||creatorFollowups.user!==user)return;
      if(copied.ok){
-       creatorFollowups.copied.add(key);
+       creatorFollowups.copied.set(key,text);
        const next=box.querySelector('[data-cf-sent="'+key+'"]');if(next)next.disabled=false;
        const profile=safeTikTokProfileUrl(r.profile_url,r.handle);
        const opened=profile&&leaveForTikTok(profile,r.handle);
        status(key,opened?'Copied — send it in TikTok, then return and confirm.':
         'Copied. Open the creator in TikTok, send it, then return and confirm.');
      }else{
-       prompt('Copy the message below, then paste it into TikTok.',r.draft);
+       prompt('Copy the message below, then paste it into TikTok.',text);
        status(key,'Clipboard unavailable. Copy the text manually; only confirm after sending.');
      }
      if(b.isConnected)b.disabled=false;
@@ -4204,7 +4264,11 @@ function renderCreatorFollowups(){
  }
  async function finish(key,disposition){
    const r=rowFor(key);if(!r||creatorFollowups.busy.has(key))return;
-   if(disposition==='SENT_REPORTED'&&!creatorFollowups.copied.has(key))return;
+   if(disposition==='SENT_REPORTED'){
+     const mode=creatorFollowups.mode.get(key)||'COPY_PASTE';
+     const selected=mode==='AI_REPLY'?creatorFollowups.ai.get(key)?.text:r.draft;
+     if(!selected||creatorFollowups.copied.get(key)!==selected||creatorFollowups.blocked.has(key))return;
+   }
    const warning=disposition==='SENT_REPORTED'
       ?'Confirm only if you actually pressed Send in TikTok for @'+r.handle+'. Copying alone does NOT count as sent.'
       :disposition==='ALREADY_HANDLED'
@@ -4241,6 +4305,8 @@ async function refreshCreatorFollowups(force=false){
  if(creatorFollowups.user!==currentUser){
    creatorFollowups.user=currentUser;creatorFollowups.lastLoad=0;creatorFollowups.total=0;
    creatorFollowups.items=[];creatorFollowups.copied.clear();creatorFollowups.busy.clear();
+   creatorFollowups.mode.clear();creatorFollowups.ai.clear();creatorFollowups.aiPending.clear();
+   creatorFollowups.blocked.clear();
    creatorFollowups.message='';creatorFollowups.expanded=false;
    $('creator-followups').hidden=true;$('creator-followups').innerHTML='';
  }
@@ -4254,7 +4320,10 @@ async function refreshCreatorFollowups(force=false){
    creatorFollowups.items=Array.isArray(data.rows)?data.rows:[];
    creatorFollowups.total=Math.max(0,Number(data.total)||0);
    const ids=new Set(creatorFollowups.items.map(followupKey));
-   for(const id of creatorFollowups.copied)if(!ids.has(id))creatorFollowups.copied.delete(id);
+   for(const id of creatorFollowups.copied.keys())if(!ids.has(id))creatorFollowups.copied.delete(id);
+   for(const map of [creatorFollowups.mode,creatorFollowups.ai,creatorFollowups.blocked]){
+     for(const id of map.keys())if(!ids.has(id))map.delete(id);
+   }
    renderCreatorFollowups();
  }catch(e){
    if(currentUser===pendingUserId){
