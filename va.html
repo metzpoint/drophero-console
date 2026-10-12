@@ -4172,11 +4172,11 @@ function drawCreatorFollowupPush(){
    banner.hidden=true;banner.innerHTML='';return;
  }
  banner.hidden=false;
- banner.innerHTML='<strong>🔔 '+esc(n)+' creator '+(n===1?'reply':'replies')+' assigned to you</strong>'
-   +'<p>Priority: answer interested creators who are waiting for details. '
-   +'Choose AI Reply or Copy &amp; Paste, send manually on TikTok, then confirm.</p>'
+ banner.innerHTML='<strong>🔔 '+esc(n)+' creator '+(n===1?'conversation needs':'conversations need')+' your review</strong>'
+   +'<p>Open the conversation and check your latest TikTok message. '
+   +'Already replied? Choose &quot;Already replied — remove reminder&quot; without sending again. Otherwise, prepare a reply, send in TikTok, then confirm.</p>'
    +'<div class="cf-push-actions"><button class="good" id="cf-push-open" type="button">'
-   +'VIEW &amp; SEND '+esc(n)+' REPLIES</button>'
+   +'REVIEW '+esc(n)+' CONVERSATIONS</button>'
    +'<button class="sm" id="cf-push-refresh" type="button">Refresh</button></div>';
  $('cf-push-open').onclick=()=>{
    creatorFollowups.expanded=true;
@@ -4214,7 +4214,7 @@ function renderCreatorFollowups(){
    +'<h2 style="flex:1">Creator replies ready to review</h2>'
    +'<span class="cf-count">'+esc(total)+' to check</span></div>'
    +'<p class="muted">DropHero prepared a suggested answer to each verified, positive creator reply. '
-   +'Review the chat first. If you have already answered in TikTok, do not send it again. '
+   +'This reminder does not mean the creator sent a new message. If you already answered their latest message in TikTok, choose &quot;Already replied — remove reminder&quot;. This saves your confirmation and removes this reminder without sending again. '
    +'Only you can send the message from your own TikTok account.</p>'
    +shown.map(r=>{
      const key=followupKey(r), profile=safeTikTokProfileUrl(r.profile_url,r.handle);
@@ -4240,7 +4240,7 @@ function renderCreatorFollowups(){
        +'<div class="cf-actions">'
        +'<button class="good" type="button" data-cf-copy="'+esc(key)+'" '+(awaiting||fetching||!!blocked||!draft?'disabled':'')+'>COPY &amp; OPEN TIKTOK</button>'
        +'<button type="button" data-cf-sent="'+esc(key)+'" '+(!copied||awaiting||!!blocked?'disabled':'')+'>I SENT IT</button>'
-       +'<button type="button" data-cf-handled="'+esc(key)+'" '+(awaiting?'disabled':'')+'>Already handled</button>'
+       +'<button type="button" data-cf-handled="'+esc(key)+'" '+(awaiting?'disabled':'')+'>Already replied — remove reminder</button>'
        +'<button type="button" data-cf-skip="'+esc(key)+'" '+(awaiting?'disabled':'')+'>Not appropriate</button>'
        +'</div>'
        +'<p class="cf-status" data-cf-msg="'+esc(key)+'">'+(copied?'Copied the selected message. Confirm only after sending in TikTok.':'')+'</p>'
