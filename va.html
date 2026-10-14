@@ -4200,16 +4200,16 @@ function renderCreatorFollowups(){
      const awaiting=creatorFollowups.busy.has(key), mode=creatorFollowups.mode.get(key)||'COPY_PASTE';
      const result=creatorFollowups.ai.get(key);
      const blocked=creatorFollowups.blocked.get(key);
-     const draft=mode==='AI_REPLY' ? (result?.text||'') : r.draft;
+     const draft=r.qa ? (r.draft||'') : mode==='AI_REPLY' ? (result?.text||'') : r.draft;
      const copied=!!draft&&creatorFollowups.copied.get(key)===draft;
      const fetching=creatorFollowups.aiPending.has(key);
      return '<article class="cf-item" data-cf-task="'+esc(r.task_id)+'" data-cf-event="'+esc(r.reply_event_id)+'">'
        +'<strong>@'+esc(r.handle||'creator')+'</strong>'
        +'<p class="muted">Their latest verified reply:</p><div class="cf-incoming">'+esc(r.creator_question||'')+'</div>'
-       +'<p class="muted">Choose how to prepare your reply. Both methods require you to paste and send it manually in TikTok.</p>'
-       +'<div class="cf-modes">'
-       +'<button type="button" data-cf-ai-mode="'+esc(key)+'" aria-pressed="'+String(mode==='AI_REPLY')+'" '+(awaiting?'disabled':'')+'>✨ AI REPLY</button>'
-       +'<button type="button" data-cf-paste-mode="'+esc(key)+'" aria-pressed="'+String(mode==='COPY_PASTE')+'" '+(awaiting?'disabled':'')+'>COPY &amp; PASTE</button></div>'
+       +(r.qa?'<p class="muted" style="color:#ffd38c">⚠ DropHero QA: '+esc(r.review_reason||'Owner review required')+'</p>':'<p class="muted">Choose how to prepare your reply. Both methods require you to paste and send it manually in TikTok.</p>')
+       +(r.qa?'':'<div class="cf-modes">')
+       +(r.qa?'':'<button type="button" data-cf-ai-mode="'+esc(key)+'" aria-pressed="'+String(mode==='AI_REPLY')+'" '+(awaiting?'disabled':'')+'>✨ AI REPLY</button>')
+       +(r.qa?'':'<button type="button" data-cf-paste-mode="'+esc(key)+'" aria-pressed="'+String(mode==='COPY_PASTE')+'" '+(awaiting?'disabled':'')+'>COPY &amp; PASTE</button></div>')
        +'<p class="muted">'+(mode==='AI_REPLY'?'AI reply for this creator':'Ready-to-copy approved reply')+':</p>'
        +(blocked?'<div class="cf-blocked">The AI recommends waiting or ending this conversation. Do not send another message: '+esc(blocked)+'</div>'
           :fetching?'<div class="cf-ai-loading">Preparing an AI reply for this specific question…</div>'
@@ -4279,7 +4279,7 @@ function renderCreatorFollowups(){
    b.onclick=async()=>{
      const key=b.dataset.cfCopy,r=rowFor(key);if(!r||creatorFollowups.busy.has(key))return;
      const mode=creatorFollowups.mode.get(key)||'COPY_PASTE';
-     const text=mode==='AI_REPLY' ? creatorFollowups.ai.get(key)?.text : r.draft;
+     const text=r.qa ? r.draft : mode==='AI_REPLY' ? creatorFollowups.ai.get(key)?.text : r.draft;
      if(!text||creatorFollowups.blocked.has(key)||creatorFollowups.aiPending.has(key))return;
      const user=creatorFollowups.user;
      b.disabled=true;
@@ -4303,7 +4303,7 @@ function renderCreatorFollowups(){
    const r=rowFor(key);if(!r||creatorFollowups.busy.has(key))return;
    if(disposition==='SENT_REPORTED'){
      const mode=creatorFollowups.mode.get(key)||'COPY_PASTE';
-     const selected=mode==='AI_REPLY'?creatorFollowups.ai.get(key)?.text:r.draft;
+     const selected=r.qa?r.draft:mode==='AI_REPLY'?creatorFollowups.ai.get(key)?.text:r.draft;
      if(!selected||creatorFollowups.copied.get(key)!==selected||creatorFollowups.blocked.has(key))return;
    }
    const warning=disposition==='SENT_REPORTED'
@@ -4316,9 +4316,9 @@ function renderCreatorFollowups(){
    for(const control of box.querySelectorAll('.cf-item[data-cf-task="'+r.task_id+'"] button'))control.disabled=true;
    status(key,'Saving your selection…');
    try{
-     const {data,error}=await sb.rpc('dh_va_creator_followup_report',{
-        p_task_id:r.task_id,p_reply_event_id:r.reply_event_id,p_disposition:disposition
-     });
+     const {data,error}=await (r.qa
+       ?sb.rpc('dh_va_reply_qa_ack',{p_reply_event_id:r.reply_event_id,p_disposition:disposition})
+       :sb.rpc('dh_va_creator_followup_report',{p_task_id:r.task_id,p_reply_event_id:r.reply_event_id,p_disposition:disposition}));
      if(error||!data?.ok||!data?.recorded)throw error||new Error(data?.reason||'Status not saved');
      creatorFollowups.items=creatorFollowups.items.filter(x=>followupKey(x)!==key);
      creatorFollowups.total=Math.max(0,creatorFollowups.total-1);
@@ -4357,6 +4357,18 @@ async function refreshCreatorFollowups(force=false){
    if(error||!data?.ok)throw error||new Error('unavailable');
    creatorFollowups.items=Array.isArray(data.rows)?data.rows:[];
    creatorFollowups.total=Math.max(0,Number(data.total)||0);
+   // QA has priority over old immutable AI drafts. Only verified assigned replies are returned.
+   const qa=await sb.rpc('dh_va_reply_qa_queue',{p_limit:100});
+   if(qa.error||!qa.data?.ok){
+     creatorFollowups.items=[];creatorFollowups.total=0;
+     creatorFollowups.message='Quality checks unavailable. Old replies withheld.';
+   }else{
+     const reviewed=Array.isArray(qa.data.rows)?qa.data.rows:[];
+     const ids=new Set(reviewed.map(r=>r.reply_event_id));
+     creatorFollowups.items=creatorFollowups.items.filter(r=>!ids.has(r.reply_event_id));
+     creatorFollowups.items.unshift(...reviewed.map(r=>({...r,qa:true,draft:r.status==='READY'?r.proposed_reply:null})));
+     creatorFollowups.total=creatorFollowups.items.length;
+   }
    const ids=new Set(creatorFollowups.items.map(followupKey));
    for(const id of creatorFollowups.copied.keys())if(!ids.has(id))creatorFollowups.copied.delete(id);
    for(const map of [creatorFollowups.mode,creatorFollowups.ai,creatorFollowups.blocked]){
