@@ -136,6 +136,7 @@
   <h1 class="adminbrand">DropHero <span>Admin</span></h1>
   <p class="sub" id="asof">loading…</p>
   <div id="banners"></div>
+  <section id="ops-health" aria-label="Automation health" aria-live="polite" style="border:1px solid #6a5261;border-radius:12px;padding:12px;margin:12px 0" hidden></section>
   <section id="audit-banner" hidden aria-live="polite"></section>
 
 
@@ -2250,6 +2251,30 @@ sb.channel('dash')
   .subscribe();
 setInterval(() => { if (!document.hidden && !$('app').hidden) boot(); }, 30000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) scheduleBoot(0); });
+// Read-only operations health: owner-only RPC; never expose credentials or mutate jobs.
+let opsHealthBusy=false;
+async function refreshOpsHealth(){
+  if(document.hidden||$('app').hidden||opsHealthBusy)return;
+  opsHealthBusy=true;
+  const el=$('ops-health');
+  try{
+    const {data,error}=await sb.rpc('dh_owner_ops_health');
+    if(error||!data?.ok)throw error||new Error('Ops health unavailable');
+    const alerts=Array.isArray(data.alerts)?data.alerts:[];
+    const jobs=Array.isArray(data.jobs)?data.jobs:[];
+    const inactive=jobs.filter(j=>!j.active).length;
+    el.hidden=false;
+    el.innerHTML='<h2 style="margin:0 0 8px">⚙ Automation health — '+alerts.length+' alert(s)</h2>'
+      +'<p class="muted">'+jobs.length+' scheduled jobs, '+inactive+' paused. Monitoring checks every 15 minutes.</p>'
+      +(alerts.length?alerts.map(a=>'<p style="padding:8px;border-bottom:1px solid #555"><strong>'+esc(a.severity)+': '+esc(a.title)+'</strong> — '+esc(a.detail)+'</p>').join('')
+        :'<p>All monitored checks are clear. This does not prove every external provider succeeded.</p>');
+  }catch(e){
+    el.hidden=false;el.textContent='Automation health unavailable. Check Supabase Cron and integrations.';
+  }finally{opsHealthBusy=false;}
+}
+setInterval(()=>{void refreshOpsHealth();},60000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)void refreshOpsHealth();});
+setTimeout(()=>{void refreshOpsHealth();},5000);
 boot();
 </script></body></html>
 
