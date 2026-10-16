@@ -405,6 +405,7 @@
   <section id="creator-followup-push" hidden aria-label="Assigned creator replies" role="status" aria-live="polite"></section>
 
   <section id="creator-followups" hidden aria-label="Creator follow-ups ready to review" aria-live="polite" role="region"></section>
+  <section id="reply-priority-queue" hidden aria-label="Prioritized creator reply quality queue" role="region" aria-live="polite"></section>
 
   <section id="screenshot-tools" aria-label="Upload screenshots">
     <button id="ss-open" type="button" class="good full">📸 Upload screenshot</button>
@@ -1316,6 +1317,7 @@ async function bootOrThrow() {
   void refreshMessageAudit();
   void refreshQualityScreenshots();
   void refreshCreatorFollowups();
+  void refreshPriorityQA();
   return { accountsOk: accountsRes.ok, moneyOk: moneyRes.ok };
 }
 
@@ -4391,8 +4393,10 @@ async function refreshCreatorFollowups(force=false){
    const {data,error}=await sb.rpc('dh_va_creator_followups',{p_limit:80});
    if(token!==creatorFollowups.seq||currentUser!==pendingUserId)return;
    if(error||!data?.ok)throw error||new Error('unavailable');
-   creatorFollowups.items=Array.isArray(data.rows)?data.rows:[];
-   creatorFollowups.total=Math.max(0,Number(data.total)||0);
+   const rawFollowups=Array.isArray(data.rows)?data.rows:[];
+   const prioritized=new Set(priorityQA.rows.map(x=>x.reply_event_id));
+   creatorFollowups.items=rawFollowups.filter(x=>!prioritized.has(x.reply_event_id));
+   creatorFollowups.total=Math.max(0,(Number(data.total)||0)-(rawFollowups.length-creatorFollowups.items.length));
    const ids=new Set(creatorFollowups.items.map(followupKey));
    for(const id of creatorFollowups.copied.keys())if(!ids.has(id))creatorFollowups.copied.delete(id);
    for(const map of [creatorFollowups.mode,creatorFollowups.ai,creatorFollowups.blocked]){
@@ -4407,6 +4411,115 @@ async function refreshCreatorFollowups(force=false){
  }finally{creatorFollowups.loading=false;}
 }
 setInterval(()=>{if(!document.hidden&&!$('app').hidden&&!typing())void refreshCreatorFollowups();},60000);
+
+// Important, verified replies from the server-side QA queue.
+// These are suggestions only: there is no TikTok messaging API here and copying NEVER claims delivery.
+const priorityQA={user:null,rows:[],lastLoad:0,busy:new Set(),copied:new Set(),loading:false,seq:0,error:''};
+function priorityQaRender(){
+  const host=$('reply-priority-queue');
+  if(!host || $('app').hidden || priorityQA.user!==pendingUserId)return;
+  const rows=priorityQA.rows;
+  if(!rows.length && !priorityQA.error){host.hidden=true;host.innerHTML='';return;}
+  host.hidden=false;
+  const ready=rows.filter(r=>r.status==='READY').length;
+  const reviews=rows.length-ready;
+  host.innerHTML='<div class="card"><h2>Priority creator replies</h2>'
+    +'<p class="muted">'+esc(ready)+' ready to prepare · '+esc(reviews)+' require review. '
+    +'Only send a reply manually after checking the current TikTok conversation. '
+    +'A reported send is not proof of TikTok delivery.</p>'
+    +(priorityQA.error?'<p role="status" class="fieldmsg bad">'+esc(priorityQA.error)+'</p>':'')
+    +rows.map(row=>{
+      const id=row.reply_event_id,working=priorityQA.busy.has(id),isReady=row.status==='READY' && !!row.proposed_reply;
+      const copied=priorityQA.copied.has(id);
+      return '<article class="cf-item" data-pr-event="'+esc(id)+'">'
+        +'<strong>@'+esc(row.handle||'creator')+'</strong>'
+        +'<p class="muted">Latest verified question</p>'
+        +'<div class="cf-incoming">'+esc(row.creator_question||'')+'</div>'
+        +(isReady?'<div class="cf-draft">'+esc(row.proposed_reply)+'</div>'
+         :'<p class="cf-blocked">Review needed: '+esc(row.review_reason||row.issue_code||'Human approval required.')+'</p>')
+        +'<div class="cf-actions">'
+        +(isReady?'<button class="good" type="button" data-pr-copy="'+esc(id)+'" '+(working?'disabled':'')+'>COPY &amp; OPEN TIKTOK</button>'
+         +'<button type="button" data-pr-sent="'+esc(id)+'" '+(!copied||working?'disabled':'')+'>I SENT IT</button>':'')
+        +'<button type="button" data-pr-handled="'+esc(id)+'" '+(working?'disabled':'')+'>Already replied</button>'
+        +'<button type="button" data-pr-skip="'+esc(id)+'" '+(working?'disabled':'')+'>Skip / needs review</button>'
+        +'</div><p class="cf-status" role="status" data-pr-status="'+esc(id)+'"></p>'
+        +'</article>';
+    }).join('')+'</div>';
+  const find=id=>priorityQA.rows.find(row=>row.reply_event_id===id);
+  const say=(id,message)=>{const el=host.querySelector('[data-pr-status="'+id+'"]');if(el)el.textContent=message;};
+  for(const btn of host.querySelectorAll('button[data-pr-copy]')){
+    btn.onclick=async()=>{
+      const id=btn.dataset.prCopy,row=find(id);
+      if(!row||row.status!=='READY'||!row.proposed_reply||priorityQA.busy.has(id))return;
+      btn.disabled=true;
+      try{
+        const copied=await copyNow(row.proposed_reply,true);
+        if(priorityQA.user!==pendingUserId || !find(id))return;
+        if(!copied?.ok){say(id,'Copy failed. Nothing has been sent.');return;}
+        priorityQA.copied.add(id);
+        const profile=safeTikTokProfileUrl(row.profile_url,row.handle);
+        if(profile)leaveForTikTok(profile,row.handle);
+        priorityQaRender();
+        say(id,'Copied. Check TikTok, send manually, then confirm here.');
+      }finally{if(btn.isConnected)btn.disabled=false;}
+    };
+  }
+  async function finish(id,disposition){
+    const row=find(id);
+    if(!row || priorityQA.busy.has(id))return;
+    if(disposition==='SENT_REPORTED' && (row.status!=='READY'||!priorityQA.copied.has(id)))return;
+    const promptText=disposition==='SENT_REPORTED'
+      ?'Confirm only if you actually SENT this message in TikTok to @'+row.handle+'. Copying is not sending.'
+      :disposition==='ALREADY_HANDLED'
+       ?'Confirm that you already handled the latest TikTok reply from @'+row.handle+'. Do not send a duplicate.'
+       :'Skip this suggestion for @'+row.handle+'? No message will be sent.';
+    if(!confirm(promptText))return;
+    priorityQA.busy.add(id);priorityQaRender();say(id,'Recording manual action…');
+    try{
+      const {data,error}=await sb.rpc('dh_va_reply_qa_ack',{p_reply_event_id:id,p_disposition:disposition});
+      if(error||!data?.ok||!data?.recorded)throw error||new Error(data?.reason||'Not recorded');
+      priorityQA.rows=priorityQA.rows.filter(x=>x.reply_event_id!==id);
+      priorityQA.copied.delete(id);
+      priorityQA.lastLoad=0;
+      await refreshPriorityQA(true);
+    }catch(e){say(id,'Could not record. No delivery was claimed. Reload and try again.');}
+    finally{priorityQA.busy.delete(id);priorityQaRender();}
+  }
+  for(const btn of host.querySelectorAll('button[data-pr-sent]'))
+    btn.onclick=()=>void finish(btn.dataset.prSent,'SENT_REPORTED');
+  for(const btn of host.querySelectorAll('button[data-pr-handled]'))
+    btn.onclick=()=>void finish(btn.dataset.prHandled,'ALREADY_HANDLED');
+  for(const btn of host.querySelectorAll('button[data-pr-skip]'))
+    btn.onclick=()=>void finish(btn.dataset.prSkip,'SKIPPED');
+}
+async function refreshPriorityQA(force=false){
+  if($('app').hidden||!pendingUserId)return;
+  const user=pendingUserId;
+  if(priorityQA.user!==user){
+    priorityQA.user=user;priorityQA.rows=[];priorityQA.lastLoad=0;
+    priorityQA.copied.clear();priorityQA.busy.clear();priorityQA.error='';
+    const el=$('reply-priority-queue');if(el){el.hidden=true;el.innerHTML='';}
+  }
+  if(priorityQA.loading||(!force && Date.now()-priorityQA.lastLoad<60000))return;
+  priorityQA.loading=true;const request=++priorityQA.seq;priorityQA.lastLoad=Date.now();
+  try{
+    const {data,error}=await sb.rpc('dh_va_reply_qa_queue',{p_limit:50});
+    if(user!==pendingUserId||request!==priorityQA.seq)return;
+    if(error||!data?.ok||!Array.isArray(data.rows))throw error||new Error('Queue unavailable');
+    priorityQA.rows=data.rows;priorityQA.error='';
+    const ids=new Set(priorityQA.rows.map(x=>x.reply_event_id));
+    for(const id of priorityQA.copied)if(!ids.has(id))priorityQA.copied.delete(id);
+    priorityQaRender();
+    // QA corrections take priority over the old generic follow-up suggestion for the same event.
+    creatorFollowups.lastLoad=0;void refreshCreatorFollowups(true);
+  }catch(e){
+    if(user===pendingUserId){
+      priorityQA.error='Could not load priority replies. Refresh to retry.';
+      priorityQA.lastLoad=0;priorityQaRender();
+    }
+  }finally{priorityQA.loading=false;}
+}
+setInterval(()=>{if(!document.hidden&&!$('app').hidden&&!typing())void refreshPriorityQA();},60000);
 
 // boot() reads pending state only after Supabase has identified the user, so one account can never
 // restore another account's creator or message from the shared origin.
