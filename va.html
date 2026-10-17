@@ -402,8 +402,6 @@
 
 
 
-  <section id="my-trust-score" aria-label="Your Trust Score" role="region" aria-live="polite" hidden></section>
-  <section id="dmer-coaching" role="region" aria-label="Personalized training and reminders" aria-live="polite"></section>
   <section id="workhub-dashboard" role="region" aria-label="Daily DropHero dashboard" aria-live="polite">
     <div class="card"><span class="muted">Loading account stock and earnings…</span></div>
   </section>
@@ -1345,9 +1343,7 @@ async function bootOrThrow() {
   void refreshCreatorFollowups();
   void refreshPriorityQA();
   void refreshHotLeads(true);
-  void refreshMyTrustScore();
   void refreshWorkhub(true);
-  void refreshCoachingInbox(true);
   if ($('workhub-followups')?.open) void refreshWorkhubFollowups(true);
   if ($('workhub-leaderboard')?.open) void refreshWorkhubLeaderboard(true);
   return { accountsOk: accountsRes.ok, moneyOk: moneyRes.ok };
@@ -1910,48 +1906,6 @@ function render() {
 // advances the queue or touches money until the VA has said, after the fact, that it went out.
 // =====================================================================================================
 
-let trustScoreUser = null;
-let trustScoreLastFetch = 0;
-async function refreshMyTrustScore(force=false){
-  const box=$('my-trust-score');
-  if (!box || $('app').hidden || !pendingUserId) return;
-  const who=pendingUserId;
-  if (who!==trustScoreUser){trustScoreUser=who;trustScoreLastFetch=0;box.hidden=true;box.innerHTML='';}
-  if (!force && Date.now()-trustScoreLastFetch<5*60*1000) return;
-  trustScoreLastFetch=Date.now();
-  try {
-    const {data,error}=await sb.rpc('dh_va_trust_score');
-    if (who!==pendingUserId) return;
-    if (error || !data?.ok || !data.row) throw error || new Error('Trust Score unavailable');
-    const r=data.row;
-    const states={
-      HEALTHY:{label:'Healthy',color:'#20864e'},
-      WATCH:{label:'Keep improving',color:'#b78100'},
-      REVIEW_SUGGESTED:{label:'Coaching suggested',color:'#c65959'},
-      INSUFFICIENT_DATA:{label:'Gathering data',color:'#64748b'}
-    };
-    const status=states[r.status]||states.INSUFFICIENT_DATA;
-    box.hidden=false;
-    box.innerHTML='<div class="card" style="padding:12px 14px;margin:8px 0">'
-      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">'
-      +'<b>📊 My Trust Score: '+(r.trust_score==null?'—':esc(r.trust_score)+'/100')+'</b>'
-      +'<span style="font-weight:700;color:'+status.color+'">'+status.label+'</span></div>'
-      +'<p class="muted" style="margin:6px 0">Last 7 days · '+esc(r.mature_sends)+' messages at least 24 hours old · '
-      +esc(r.verified_replies)+' verified replies · '+(r.reply_rate_pct==null?'—':esc(r.reply_rate_pct)+'%')+' reply rate.</p>'
-      +'<p class="muted" style="margin:6px 0">Compared with the three top active DM’ers: '
-      +(data.benchmark_pct==null?'not yet available':esc(data.benchmark_pct)+'%')+'. '
-      +(r.trust_score==null?'Your score becomes available after 100 mature messages.':'Scores show performance, not proof of sending.')+'</p>'
-      +'<p class="muted" style="margin:6px 0 0">No automatic bans or payment deductions. Paste real creator replies in Chats; pasted text is not independently verified.</p>'
-      +'</div>';
-  } catch {
-    if (who!==pendingUserId)return;
-    trustScoreLastFetch=0;
-    box.hidden=false;
-    box.innerHTML='<p class="muted">Trust Score temporarily unavailable. Your work and earnings are unaffected.</p>';
-  }
-}
-
-
 const workhub = {
   user:null,lastLoad:0,loading:false,data:null,followups:[],followupTotal:0,
   followupOffset:0,followupLastLoad:0,leaderboardLastLoad:0,copied:new Set(),pending:new Set()
@@ -2138,37 +2092,6 @@ async function refreshWorkhubLeaderboard(force=false){
  }
 }
 $('workhub-leaderboard').addEventListener('toggle',()=>{if($('workhub-leaderboard').open)void refreshWorkhubLeaderboard(true);});
-
-const dmCoach={user:null,loading:false,lastFetch:0};
-async function refreshCoachingInbox(force=false) {
- const box=$('dmer-coaching');if(!box||$('app').hidden||!pendingUserId)return;
- const user=pendingUserId;
- if(dmCoach.user!==user){dmCoach.user=user;dmCoach.lastFetch=0;box.innerHTML='';}
- if(dmCoach.loading||(!force&&Date.now()-dmCoach.lastFetch<5*60*1000))return;
- dmCoach.loading=true;dmCoach.lastFetch=Date.now();
- try{
-  const {data,error}=await sb.rpc('dh_va_coaching_inbox');
-  if(user!==pendingUserId)return;
-  if(error||!data?.ok||!Array.isArray(data.rows))throw error||new Error('Unavailable');
-  const rows=data.rows;
-  const label=(r)=>r.code==='INACTIVE_WITH_STOCK'?'Welcome back':r.code==='LOW_REPLY_RATE'
-   ?'Improve your results':r.code==='NO_STOCK'?'No new assignments':r.code==='NO_ACTIVE_ACCOUNT'
-   ?'Account approval needed':r.title;
-  box.innerHTML='<details id="dm-coach-guide" style="margin:8px 0">'
-   +'<summary style="cursor:pointer;padding:12px;background:var(--card);border-radius:12px;font-weight:700">📘 Quick start: 3 simple steps</summary>'
-   +'<ol style="margin:12px 0;padding-left:23px"><li>Choose an approved TikTok account in Accounts.</li>'
-   +'<li>Open Work, copy the DM, send it in TikTok, then confirm only after sending.</li>'
-   +'<li>Paste actual creator replies in Chats. We help write a natural next answer.</li></ol>'
-   +'</details>'
-   +rows.map(r=>'<div class="card" style="margin:8px 0;padding:12px;border-left:3px solid '
-     +(r.severity==='ACTION'?'#dc6262':r.severity==='WATCH'?'#dfa73c':'#5484a5')+'">'
-     +'<b>'+esc(label(r))+'</b><p class="muted" style="margin:5px 0">'+esc(r.guidance)+'</p></div>').join('')
-   +(rows.length?'<p class="muted" style="margin:7px 0">These reminders are here to help. No automatic punishment or pay reductions.</p>':'');
- }catch{
-  if(user===pendingUserId){dmCoach.lastFetch=0;box.innerHTML='<details><summary class="muted">Quick start help</summary><p>Use an approved TikTok account, work your next DM, and paste real replies into Chats.</p></details>';}
- }finally{dmCoach.loading=false;}
-}
-setInterval(()=>{if(!$('app').hidden&&!document.hidden)void refreshCoachingInbox();},60000);
 
 function drawWork() {
   if (view.performance?.terms_required) {
