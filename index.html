@@ -163,6 +163,8 @@
   <h2 id="approvals">TikTok approvals <small class="muted">waiting for you</small></h2>
   <div class="card" id="ttapprovals"><div class="muted">loading…</div></div>
 
+  <h2 id="trust-score-title">Trust Score <small class="muted">last 7 days · top 3 active DM’ers benchmark</small></h2>
+  <div class="card" id="trust-team" role="region" aria-label="All DMer Trust Scores" aria-live="polite"><span class="muted">Loading Trust Scores…</span></div>
   <h2 id="activity">DMer activity <small class="muted">portal use and recorded work</small></h2>
   <div class="card" id="vaactivity"><div class="muted">loading…</div></div>
   <h2 id="audit-title">Message verification alerts</h2>
@@ -697,6 +699,7 @@ async function bootOnce() {
   renderApprovals(tiktok.data, tiktok.error);
   renderTikTok(tiktok.data, tiktok.error);
   renderPerformance(perf.data, perf.error);
+  void refreshTrustTeam();
   renderActivity(activity.data, activity.error);
   renderProofs(proofs.data, proofs.error);
   void refreshQualityUploads();
@@ -1586,6 +1589,38 @@ function renderActivity(rows, err) {
       + '<td>' + esc(r.proofs_need_review) + '</td>'
       + '<td>' + (working(r.last_work_at) ? 'Work recorded within 7 days' : r.last_work_at ? 'No work recorded in 7 days' : 'No work recorded yet') + '</td></tr>').join('')
     + '</tbody></table></div>';
+}
+
+
+async function refreshTrustTeam() {
+  const root = $('trust-team');
+  if (!root || $('app').hidden) return;
+  const viewer=ownerUserId;
+  try {
+    const { data, error } = await sb.rpc('dh_owner_trust_scores');
+    if (viewer !== ownerUserId) return;
+    if (error || !data?.ok || !Array.isArray(data.rows)) throw error || new Error('Trust Scores unavailable');
+    const rows = data.rows;
+    const top = Array.isArray(data.top_three) ? data.top_three : [];
+    const summary = { HEALTHY:0, WATCH:0, REVIEW_SUGGESTED:0, INSUFFICIENT_DATA:0 };
+    rows.forEach(r => { if (Object.prototype.hasOwnProperty.call(summary,r.status)) summary[r.status]++; });
+    const colors={ HEALTHY:'#20a05a', WATCH:'#b78100', REVIEW_SUGGESTED:'#c95151', INSUFFICIENT_DATA:'#64748b' };
+    const labels={ HEALTHY:'Healthy', WATCH:'Watch', REVIEW_SUGGESTED:'Coaching review', INSUFFICIENT_DATA:'Gathering data' };
+    const num=(x)=>Number(x||0).toLocaleString();
+    root.innerHTML = '<p><strong>Current benchmark: ' + (data.benchmark_pct==null ? 'Not available' : esc(data.benchmark_pct)+'%') + '</strong> verified reply rate'
+      + ' · top 3 active DM’ers with 100+ mature DMs'
+      + ' · 7-day rolling window (24h reply opportunity)</p>'
+      + '<p class="muted">Top 3: ' + (top.length ? top.map(x=>esc(x.name)+' ('+esc(x.reply_rate_pct)+'%)').join(', ') : 'Not enough reliable data') + '</p>'
+      + '<p><b>'+summary.HEALTHY+'</b> healthy · <b>'+summary.WATCH+'</b> watch · <b>'+summary.REVIEW_SUGGESTED+'</b> coaching review · <b>'+summary.INSUFFICIENT_DATA+'</b> gathering data</p>'
+      + '<p class="muted">Score reflects measured engagement relative to the top three, not whether a DM was actually sent. Text-only reports are never counted as verified. No automatic bans, payment holds or accusations.</p>'
+      + '<div class="scroll"><table><thead><tr><th>DM’er</th><th>Trust</th><th>Status</th><th>Mature DMs</th><th>Verified replies</th><th>Reply %</th><th>Awaiting review</th></tr></thead><tbody>'
+      + rows.map(r=>'<tr><td><b>'+esc(r.name)+'</b></td><td><b>'+(r.trust_score == null?'—':esc(r.trust_score)+'/100')+'</b></td>'
+        + '<td><span style="color:'+colors[r.status]+';font-weight:700">'+labels[r.status]+'</span></td>'
+        + '<td>'+num(r.mature_sends)+'</td><td>'+num(r.verified_replies)+'</td><td>'+(r.reply_rate_pct==null?'—':esc(r.reply_rate_pct)+'%')+'</td><td>'+num(r.pending_text_or_proof_reports)+'</td></tr>').join('')
+      + '</tbody></table></div>';
+  } catch (err) {
+    if (viewer===ownerUserId) root.innerHTML='<p class="muted">Trust Score data could not be loaded. Refresh to retry.</p>';
+  }
 }
 
 function renderPerformance(rows, err) {
