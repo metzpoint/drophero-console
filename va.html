@@ -2961,12 +2961,13 @@ function chatHtml(c) {
   // WAT DE DMER LEEST. Eén zin, of één gewone regel dat er nog geen is. Het label is in alle drie de
   // gevallen hetzelfde: waar de zin vandaan komt, is niet hun probleem.
   const sug = suggestedFor(c);
-  const shareInfo = !['NOT_INTERESTED', 'FOLLOW_UP_LATER'].includes(c.classification)
+  const shareInfo = creatorAsksForDetails(c.extracted_text)
+    && !['NOT_INTERESTED', 'FOLLOW_UP_LATER'].includes(c.classification)
     && !['WAIT', 'CLOSE', 'ESCALATE_TO_OWNER'].includes(sug.nextAction);
   if (shareInfo) {
     h += '<div class="suggest" style="margin:10px 0;border-color:#408d76">'
-      + '<span class="lbl">STEP 1 · SEND CREATOR INFORMATION FIRST</span>'
-      + '<p class="muted" style="margin:5px 0 0">The first link to share whenever a creator wants to know more.</p>'
+      + '<span class="lbl">OPTIONAL · CREATOR INFORMATION (IF REQUESTED)</span>'
+      + '<p class="muted" style="margin:5px 0 0">Only share this page if the creator actually asked for details.</p>'
       + '<a class="open" href="' + CREATOR_INFO_URL
       + '" target="_blank" rel="noopener noreferrer">drophero.app/creators</a></div>';
   }
@@ -2974,11 +2975,13 @@ function chatHtml(c) {
     h += '<div class="suggest"><span class="lbl">' + (sug.nextAction === 'ESCALATE_TO_OWNER' ? 'Needs team review' : sug.nextAction === 'CLOSE' ? 'Conversation finished' : 'Waiting for the creator') + '</span>' + esc(sug.text) + '</div>'
       + '<p class="muted" style="margin:6px 0 0">' + (sug.nextAction === 'ESCALATE_TO_OWNER' ? 'The DropHero team needs to review this request before you reply.' : 'No message to send now. Paste their latest reply if the creator answers.') + '</p>';
   } else if (sug.text) {
-    const fullConversion = c.affiliate_available && c.classification === 'INTERESTED' && !['WAIT','CLOSE','ESCALATE_TO_OWNER'].includes(sug.nextAction);
-    h += '<div class="suggest"><span class="lbl">Suggested reply</span>' + esc(shareInfo && !fullConversion ? creatorInfoMessage(sug.text, c.classification) : sug.text) + '</div>'
+    const fullConversion = c.affiliate_available && c.classification === 'INTERESTED'
+      && sug.nextAction === 'SEND_AFFILIATE_LINK'
+      && creatorExplicitlyRequestsSignup(c.extracted_text);
+    h += '<div class="suggest"><span class="lbl">Suggested reply</span>' + esc(gentleCreatorReply(sug.text, c.extracted_text)) + '</div>'
       + (fullConversion
-          ? '<p class="muted" style="margin:6px 0 0">Interest confirmed — the button below includes the information page first and the personal signup link second.</p>'
-          : '<button class="good full" data-copy-reply="' + esc(c.reply_event_id) + '">COPY REPLY + INFO PAGE' + (url ? ' &amp; OPEN TIKTOK' : '') + '</button>'
+          ? '<p class="muted" style="margin:6px 0 0">Signup link requested — check the live chat before sharing the unique link.</p>'
+          : '<button class="good full" data-copy-reply="' + esc(c.reply_event_id) + '">COPY REPLY' + (url ? ' &amp; OPEN TIKTOK' : '') + '</button>'
             + '<p class="muted" style="margin:6px 0 0">Paste this into their chat and tap Send in TikTok. Paste their latest message when they answer.</p>');
   } else if (sug.pending) {
     // De knop staat er en is uitgeschakeld in plaats van afwezig: er valt nog niets te kopiëren, en
@@ -2992,9 +2995,7 @@ function chatHtml(c) {
         + '">COPY CREATOR PAGE NOW</button>' : '');
   } else {
     h += '<div class="suggest none"><span class="lbl">' + (c.affiliate_available ? 'Ready for the next step' : 'Suggested reply') + '</span>'
-      + esc(c.affiliate_available
-          ? 'Use the button below. It will copy the complete personalized reply with the creator fit, DropHero value, 30% recurring commission and their direct tracked signup link.'
-          : (sug.guidance || 'We could not prepare a reply yet. Try again later, or upload a clearer screenshot of their latest reply.')) + '</div>';
+      + esc(sug.guidance || 'Check the latest creator reply before suggesting the next step.') + '</div>';
   }
 
   // A failed or delayed AI reply must always offer an explicit recovery action.
@@ -3013,10 +3014,12 @@ function chatHtml(c) {
   // SECTION M, ON SCREEN. Not shown merely because a reply exists -- only once the creator has said
   // they are interested or asked for details. A link that appears the moment anyone answers turns
   // every conversation into a pitch, and the question they actually asked goes unanswered.
-  if (c.affiliate_available && c.classification === 'INTERESTED' && !['WAIT','CLOSE','ESCALATE_TO_OWNER'].includes(sug.nextAction)) {
+  if (c.affiliate_available && c.classification === 'INTERESTED'
+      && sug.nextAction === 'SEND_AFFILIATE_LINK'
+      && creatorExplicitlyRequestsSignup(c.extracted_text)) {
     h += '<button class="good" style="margin-top:8px" data-invite="' + esc(c.task_id) + '">'
       + (c.affiliate_state === 'REGISTERED' ? 'They joined — copy link again'
-                                            : 'STEP 2 · COPY INFO + SIGNUP LINK') + '</button>';
+                                            : 'COPY REQUESTED SIGNUP LINK') + '</button>';
   } else if (!['WAIT','CLOSE','ESCALATE_TO_OWNER'].includes(sug.nextAction) && (c.classification === 'QUESTION' || c.classification === 'SEND_DETAILS')) {
     h += '<p class="muted" style="margin:8px 0 0">Share the creator information page first. The tracked FirstPromoter signup link comes after they confirm they want to join.</p>';
   }
@@ -3030,16 +3033,30 @@ function chatHtml(c) {
 
 const CREATOR_INFO_URL = 'https://drophero.app/creators';
 
-// Creator information comes first; attribution tokens are issued only by the backend.
-function creatorInfoMessage(suggestedReply = '', classification = '') {
-  const overview = "Here is our official DropHero creator partnership page:\n" + CREATOR_INFO_URL;
-  if (classification === 'SEND_DETAILS') {
-    return "Thanks for your interest! " + overview
-      + "\n\nHave a look, and if you'd like to join, I'll share your personal signup link.";
-  }
-  const lead = String(suggestedReply || '').trim();
-  if (lead.includes(CREATOR_INFO_URL)) return lead;
-  return (lead ? lead + "\n\n" : "Thanks for your reply! ") + overview;
+// A positive acknowledgement is not consent to receive signup links or long pitches.
+function creatorExplicitlyRequestsSignup(latestMessage = '') {
+  const text=String(latestMessage||'').trim();
+  return /(?:send|share|give|drop|have|get).{0,40}(?:sign.?up|join|registration|affiliate).{0,25}link|(?:how|where).{0,25}(?:do i|can i|to).{0,15}(?:sign.?up|join|register)|(?:i (?:want|would like|am ready) to|let me).{0,20}(?:sign.?up|join|register)|(?:sign me up|i'?m ready to join)/i.test(text);
+}
+function creatorAsksForDetails(latestMessage = '') {
+  return /(?:details|more info|explain|how (?:does|it) work|tell me more|website|creator page|partnership page|show me the (?:site|page))/i.test(String(latestMessage||''));
+}
+function isBriefAcknowledgement(latestMessage=''){
+  return /^(?:(?:yes|yeah|yep|sure|okay|ok|i am|yes i am|yeah i am|i do|indeed|correct|right|true)[.!\s]*){1,3}$/i.test(String(latestMessage||'').trim());
+}
+// Old stored replies and generic templates must never become a surprise sales essay.
+function gentleCreatorReply(suggested = '', latestMessage = '') {
+  if (isBriefAcknowledgement(latestMessage))
+    return 'Thanks for confirming! Would you like a quick overview of our creator partnership?';
+  const lead=String(suggested||'').trim();
+  if (!lead || lead.length>320 || /https?:\/\/|firstpromoter|strong fit|perfect —|30% recurring.{0,140}sign.?up/i.test(lead))
+    return 'Thanks for getting back to me! What would you like to know about the DropHero creator partnership?';
+  return lead;
+}
+
+// Info pages are shared only on request. Never combine creator page and signup URL.
+function creatorInfoMessage(suggestedReply = '', classification = '', latestReply = '') {
+  return gentleCreatorReply(suggestedReply, latestReply);
 }
 
 const CLASSES = [
@@ -3049,15 +3066,9 @@ const CLASSES = [
 ];
 
 function signupMessage(url, suggestedReply = '') {
-  let lead = String(suggestedReply || '').trim();
-  // Old cached suggestions sometimes promised a demo or said we'd send the link later. The video is
-  // already on the TikTok profile and this exact action appends the real signup link now, so never
-  // copy that stale wording into a creator chat.
-  if (!lead || /\b(?:send|show)\b.{0,45}\b(?:demo|video|signup link)\b/i.test(lead)) {
-    lead = "Perfect — DropHero helps ecommerce sellers turn products into ready-to-test Meta ads and product pages in minutes, and you earn 30% recurring on every customer you refer. The video is already on our profile — you can join here and get your personal affiliate link right away:";
-  }
-  return lead + "\n\nFirst, see how our creator partnership works:\n" + CREATOR_INFO_URL
-    + "\n\nWhen you are ready, join using your personal FirstPromoter signup link:\n" + url;
+  // This is allowed only after the creator explicitly asked for the link.
+  // One concise sentence, one short tracked URL, no automatic upsell.
+  return "Sure — here's the signup link you requested:\n" + url;
 }
 
 function wireChats(rows) {
@@ -3102,7 +3113,7 @@ function wireChats(rows) {
       const row = rows.find((r) => r.reply_event_id === b.dataset.copyCreators);
       if (!row || ['NOT_INTERESTED', 'FOLLOW_UP_LATER'].includes(row.classification)
         || ['WAIT','CLOSE','ESCALATE_TO_OWNER'].includes(suggestedFor(row).nextAction)) return;
-      const text = creatorInfoMessage('', row.classification);
+      const text = creatorInfoMessage('', row.classification, row.extracted_text);
       b.disabled = true;
       const result = await copyNow(text);
       b.disabled = false;
@@ -3121,7 +3132,7 @@ function wireChats(rows) {
       const suggested = row ? suggestedFor(row) : null;
       if (['WAIT','CLOSE','ESCALATE_TO_OWNER'].includes(suggested?.nextAction)) return;
       const text = row ? (['NOT_INTERESTED','FOLLOW_UP_LATER'].includes(row.classification)
-        ? suggested.text : creatorInfoMessage(suggested.text, row.classification)) : null;
+        ? suggested.text : creatorInfoMessage(suggested.text, row.classification, row.extracted_text)) : null;
       if (!text) return;
       b.disabled = true;
       const r = await copyNow(text, true);
@@ -3141,7 +3152,11 @@ function wireChats(rows) {
   for (const b of list.querySelectorAll('[data-invite]')) {
     b.onclick = async () => {
       const current = rows.find((r) => r.task_id === b.dataset.invite);
-      if (current && ['WAIT','CLOSE','ESCALATE_TO_OWNER'].includes(suggestedFor(current).nextAction)) return;
+      if (!current || suggestedFor(current).nextAction !== 'SEND_AFFILIATE_LINK'
+        || !creatorExplicitlyRequestsSignup(current.extracted_text)) {
+        notice('The creator must explicitly ask to join before a signup link is shared.');
+        return;
+      }
       b.disabled = true;
       const { data, error } = await sb.rpc('dh_affiliate_invite_issue', { p_task_id: b.dataset.invite });
       b.disabled = false;
@@ -3156,9 +3171,9 @@ function wireChats(rows) {
       }
       const row = rows.find((r) => r.task_id === b.dataset.invite);
       const suggested = row ? suggestedFor(row).text : '';
-      const message = signupMessage(data.url, suggested);
+      const message = signupMessage(data.url);
       const cr = await copyNow(message);
-      if (cr.ok) notice('Creator information page and personal tracked FirstPromoter signup link copied.');
+      if (cr.ok) notice('Requested tracked signup link copied — check the chat before sending.');
       else {
         prompt('Automatic copy was blocked. Copy this signup message from the field below.', message);
         notice('Use the signup message shown in the copy field.');
@@ -4416,19 +4431,20 @@ function drawCreatorFollowupPush(){
 }
 
 // Both buttons copy the current answer and use only the portal-issued signup URL.
-async function prepareCreatorFollowupCopy(selected, taskId, issueInvite) {
+async function prepareCreatorFollowupCopy(selected, taskId, issueInvite, latestCreatorMessage = '') {
  const text=String(selected?.text||'').trim();
  const action=selected?.nextAction;
  if(!text||!['SEND_REPLY','SEND_AFFILIATE_LINK'].includes(action))
    throw new Error('REPLY_NOT_READY_TO_SEND');
  if(action==='SEND_AFFILIATE_LINK'){
+   if(!creatorExplicitlyRequestsSignup(latestCreatorMessage))
+     throw new Error('EXPLICIT_SIGNUP_REQUEST_REQUIRED');
    const {data,error}=await issueInvite(taskId);
    if(error||!data?.ok||typeof data.url!=='string'||!data.url.startsWith('https://'))
      throw new Error('SIGNUP_LINK_UNAVAILABLE');
    return signupMessage(data.url,text);
  }
- return text.includes(CREATOR_INFO_URL)?text:
-   text+'\n\nCreator partnership details:\n'+CREATOR_INFO_URL;
+ return gentleCreatorReply(text, latestCreatorMessage);
 }
 
 function renderCreatorFollowups(){
@@ -4450,7 +4466,8 @@ function renderCreatorFollowups(){
      const awaiting=creatorFollowups.busy.has(key), mode=creatorFollowups.mode.get(key)||'COPY_PASTE';
      const result=creatorFollowups.ai.get(key);
      const blocked=creatorFollowups.blocked.get(key);
-     const draft=mode==='AI_REPLY' ? (result?.text||'') : r.draft;
+     const rawDraft=mode==='AI_REPLY' ? (result?.text||'') : r.draft;
+     const draft=rawDraft?gentleCreatorReply(rawDraft,r.creator_question):'';
      const copied=!!draft&&creatorFollowups.copied.get(key)===draft;
      const fetching=creatorFollowups.aiPending.has(key);
      return '<article class="cf-item" data-cf-task="'+esc(r.task_id)+'" data-cf-event="'+esc(r.reply_event_id)+'">'
@@ -4537,7 +4554,7 @@ function renderCreatorFollowups(){
      let text;
      try{
        text=await prepareCreatorFollowupCopy(selected,r.task_id,
-         taskId=>sb.rpc('dh_affiliate_invite_issue',{p_task_id:taskId}));
+         taskId=>sb.rpc('dh_affiliate_invite_issue',{p_task_id:taskId}),r.creator_question);
      }catch(e){
        if(user===pendingUserId&&creatorFollowups.user===user)
          status(key,e?.message==='SIGNUP_LINK_UNAVAILABLE'
