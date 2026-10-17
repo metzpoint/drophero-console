@@ -407,14 +407,18 @@
   <section id="creator-followups" hidden aria-label="Creator follow-ups ready to review" aria-live="polite" role="region"></section>
   <section id="reply-priority-queue" hidden aria-label="Prioritized creator reply quality queue" role="region" aria-live="polite"></section>
 
-  <section id="screenshot-tools" aria-label="Upload screenshots">
+  <section id="text-reply-tools" aria-label="Paste a creator reply">
+    <button id="text-reply-start" type="button" class="good full">📝 Paste a creator reply</button>
+    <p class="upload-info">Find the creator you messaged, paste their actual TikTok reply, and get help writing your answer. No screenshots required.</p>
+  </section>
+  <section id="screenshot-tools" aria-label="Legacy screenshots" hidden style="display:none!important">
     <button id="ss-open" type="button" class="good full">📸 Upload screenshot</button>
     <p class="upload-info">Upload a creator reply for an AI response, or proof of a DM you sent. Available to every approved DMer. No extra screenshot is required for every DM.</p>
   </section>
 
-  <section id="quality-screenshots" hidden aria-label="Requested screenshots" role="region" aria-live="polite"></section>
+  <section id="quality-screenshots" hidden style="display:none!important" aria-label="Legacy screenshot requests" role="region" aria-live="polite"></section>
 
-  <section id="message-audit" hidden aria-label="Account verification" role="region" aria-live="polite"></section>
+  <section id="message-audit" hidden style="display:none!important" aria-label="Legacy photo verification" role="region" aria-live="polite"></section>
 
   <div class="tabs" role="tablist">
     <button class="tab" id="tab-work" role="tab" aria-selected="true"
@@ -553,10 +557,13 @@
 </div></dialog>
 
 <dialog id="replydlg" aria-labelledby="reply-title"><div class="sheet">
-  <h2 id="reply-title" style="margin:0 0 4px;font-size:20px">Upload their reply</h2>
+  <h2 id="reply-title" style="margin:0 0 4px;font-size:20px">Paste their reply</h2>
   <p class="muted" style="margin-top:0" id="rp-who"></p>
-  <p class="muted">Choose one clear screenshot showing the creator's name and the latest messages. We read it and prepare your reply automatically.</p>
-  <label class="shot" id="rp-pick">Choose reply screenshot (required)
+  <p class="muted">Copy their actual reply from TikTok and paste it below. Only share the creator's message, not private or unrelated conversations.</p>
+  <label for="rp-text" class="muted">Creator's latest reply</label>
+  <textarea id="rp-text" rows="6" maxlength="4000" spellcheck="true" autocomplete="off" placeholder="Paste the creator's exact words here…" style="width:100%;min-height:136px;margin:8px 0 10px;resize:vertical"></textarea>
+  <p class="muted">Text reports are saved for follow-up, but are not independently verified and do not automatically increase your verified reply score.</p>
+  <label class="shot" id="rp-pick" hidden style="display:none!important">Choose reply screenshot (required)
     <input type="file" accept="image/*" id="rp-file" aria-label="Choose a screenshot of their reply">
   </label>
   <img id="rp-thumb" class="thumb" hidden alt="">
@@ -567,7 +574,7 @@
   <p class="muted" id="rp-reward"></p>
   <p id="rp-msg" class="muted"></p>
   <div class="acts" style="margin-top:10px">
-    <button id="rp-send" class="good full" disabled>Upload &amp; prepare my reply</button>
+    <button id="rp-send" class="good full" disabled>Save text &amp; prepare reply</button>
     <button id="rp-cancel" class="full">Cancel</button>
   </div>
 </div></dialog>
@@ -585,7 +592,7 @@
   <ol class="help-steps">
     <li><b>Set up once.</b> Create your DropHero account, confirm your email and add your TikTok profile using our bio, picture and video. The DropHero team reviews it before you can send.</li>
     <li><b>Send a DM.</b> In Work, tap COPY DM &amp; OPEN TIKTOK. Paste and send the message in TikTok. Return here and tap I SENT THE DM only after it really went through.</li>
-    <li><b>Follow up.</b> When a creator answers, find them in Chats and upload a screenshot of the latest messages. Replies prepares the next answer automatically. Copy it, send it in TikTok and upload their next reply.</li>
+    <li><b>Follow up.</b> When a creator answers, find them in Chats and paste their actual reply text. Replies prepares the next answer automatically. Copy it, send it in TikTok and paste their next reply.</li>
   </ol>
   <div class="acts" id="help-actions" hidden>
     <button type="button" data-help-go="work" class="good">Go to Work</button>
@@ -1314,8 +1321,9 @@ async function bootOrThrow() {
   const [accountsRes, moneyRes] = await Promise.all([loadAccounts(snapshot), loadMoney(snapshot)]);
   if (!seq.isCurrent('boot', token)) return;
   render();
-  void refreshMessageAudit();
-  void refreshQualityScreenshots();
+  // Screenshot audits discontinued for DMers; historic admin records remain.
+  $('message-audit').hidden = true;
+  $('quality-screenshots').hidden = true;
   void refreshCreatorFollowups();
   void refreshPriorityQA();
   return { accountsOk: accountsRes.ok, moneyOk: moneyRes.ok };
@@ -2942,9 +2950,9 @@ function redrawReplyViews() {
 }
 function drawReplyInbox() {
   const chats = view.chats || [];
-  const groups = [['ready','Your turn to reply'],['review','Reading or checking the screenshot'],['waiting','Waiting or finished']];
-  let html = '<h2>Replies</h2><p class="muted">New screenshots start reply suggestions automatically. '
-    + 'Copy the suggested reply and send it in TikTok. Upload their latest reply when it arrives.</p>'
+  const groups = [['ready','Your turn to reply'],['review','Preparing or reviewing the reply'],['waiting','Waiting or finished']];
+  let html = '<h2>Replies</h2><p class="muted">Pasted creator replies start suggestions automatically. '
+    + 'Copy the suggested reply and send it in TikTok. Paste their latest reply when it arrives.</p>'
     + '<p class="muted">A red dot means this reply needs a response or review.</p>'
     + '<p class="muted">' + esc(replyRewardHint()) + '</p>'
     + '<p id="chatmsg" class="fieldmsg" role="status" aria-live="polite">' + esc(chatStatus) + '</p>';
@@ -2953,9 +2961,9 @@ function drawReplyInbox() {
     if (!rows.length) continue;
     html += '<h3>' + label + ' · ' + rows.length + '</h3>' + rows.map(c => chatHtml(c)
       + '<button class="sm" style="margin-bottom:16px" data-latest-reply="' + esc(c.task_id)
-      + '">Upload latest reply</button>').join('');
+      + '">Paste latest reply</button>').join('');
   }
-  if (!chats.length) html += '<div class="card">No replies uploaded yet. Find the creator in Chats and upload their reply screenshot.</div>';
+  if (!chats.length) html += '<div class="card">No replies saved yet. Find the creator in Chats and paste their reply text.</div>';
   $('list').innerHTML = html;
   wireChats(chats);
   for (const button of $('list').querySelectorAll('[data-latest-reply]')) {
@@ -2990,7 +2998,7 @@ function drawConversations() {
       // naam hier op en zetten ze de foto erbij -- en alleen dan.
       + (search.results === null
           ? '<p class="muted" style="margin:-4px 0 12px">Saw an answer in TikTok? Find them here and '
-            + 'add the photo. No answer yet is nothing to report — they may still reply tomorrow.</p>'
+            + 'paste their message. No answer yet is nothing to report — they may still reply tomorrow.</p>'
           : '')
       + rows.map((t) => rowHtml(t, { due: false })).join('')
     : '<div class="card"><div class="who">'
@@ -3473,7 +3481,7 @@ async function beginReplyCapture(r) {
   if (!r?.send_id && !r?.reply_event_id) {
     const msg = $('reply-msg');
     if (msg) {
-      msg.textContent = 'This DM has no confirmed send record. Confirm the send first; no photo was uploaded.';
+      msg.textContent = 'This DM has no confirmed send record. Confirm the send first; nothing was saved.';
       msg.className = 'fieldmsg bad';
     }
     if (pending && pending.task_id === r?.task_id) setPending(null);
@@ -3491,9 +3499,13 @@ async function beginReplyCapture(r) {
 let replyCtx = null;    // { task_id, file, classification, report, uploaded }
 
 function updateReplyReady() {
-  const klaar = !!replyCtx?.file;
-  $('rp-send').disabled = !klaar;
+  const ready = !!replyCtx && $('rp-text').value.trim().length >= 2;
+  $('rp-send').disabled = !ready;
 }
+$('rp-text').addEventListener('input', updateReplyReady);
+$('text-reply-start').addEventListener('click', () => {
+  tab = 'conv'; render(); $('q')?.focus();
+});
 
 function openReply(taskId, who) {
   replyCtx = {
@@ -3504,6 +3516,7 @@ function openReply(taskId, who) {
     uploaded: false
   };
   $('rp-who').textContent = who ? ('Chat with ' + who) : '';
+  $('rp-text').value = '';
   resetReplySelection();
   $('rp-msg').textContent = '';
   $('rp-details').open = false;
@@ -3546,81 +3559,34 @@ $('rp-file').onchange = () => {
 };
 
 $('rp-send').onclick = async () => {
-  if (!replyCtx?.file) {
-    $('rp-msg').textContent = 'Choose a screenshot before uploading.';
-    updateReplyReady();
+  const text = $('rp-text').value.trim();
+  if (text.length < 2 || text.length > 4000 || !replyCtx?.task_id) {
+    $('rp-msg').textContent = 'Paste the creator’s reply (2–4000 characters).';
+    updateReplyReady(); return;
+  }
+  const taskId = replyCtx.task_id;
+  const classification = replyCtx.classification;
+  $('rp-send').disabled = true;
+  $('rp-msg').textContent = 'Saving the reply…';
+  let result;
+  try {
+    result = await sb.rpc('dh_va_submit_reply_text', {
+      p_task_id: taskId, p_text: text, p_classification: classification
+    });
+  } catch (error) { result = { error }; }
+  const response = normalizeRpc(result);
+  if (!response.ok) {
+    $('rp-msg').textContent = response.message || 'Could not save the reply. Try again.';
+    $('rp-msg').className = 'fieldmsg bad';
+    $('rp-send').disabled = false;
     return;
   }
-  $('rp-send').disabled = true; $('rp-msg').textContent = 'Saving…';
-
-  // Create the reply/proof pair once and persist its ids. A failed upload or reload reuses it rather
-  // than calling dh_reply_report again and creating a second reply event.
-  let data = replyCtx.report;
-  if (!data) {
-    let result;
-    try { result = await sb.rpc('dh_reply_report', { p_task_id: replyCtx.task_id }); }
-    catch (error) { result = { error }; }
-    const report = normalizeRpc(result);
-    if (!report.ok) {
-      $('rp-msg').textContent = report.message;
-      $('rp-send').disabled = false;
-      return;
-    }
-    data = rememberReplyReport(replyCtx.task_id, {
-      reply_event_id: result.data.reply_event_id,
-      proof_check_id: result.data.proof_check_id,
-      is_first: result.data.is_first === true
-    });
-    replyCtx.report = data;
-  }
-
-  if (!replyCtx.uploaded) {
-    const up = await uploadShot(data.proof_check_id, replyCtx.file, 'proofs');
-    if (!up.ok) {
-      $('rp-msg').textContent = 'The reply is saved. ' + (up.message || 'The photo did not upload.')
-        + ' Try again — no duplicate reply will be created.';
-      $('rp-send').disabled = false;
-      return;
-    }
-    if (up.reply_event_id) {
-      data = rememberReplyReport(replyCtx.task_id,{...data,reply_event_id:up.reply_event_id,
-        proof_check_id:up.proof_check_id});
-      replyCtx.report = data;
-    }
-    replyCtx.uploaded = true;
-  }
-
-  // The upload trigger reads the screenshot and classifies it. Only an explicit optional
-  // correction takes the human path; the default leaves classification to the AI.
-  if (replyCtx.classification) {
-    let classified;
-    try {
-      classified = await sb.rpc('dh_reply_classify', {
-        p_reply_event_id: data.reply_event_id,
-        p_classification: replyCtx.classification,
-        p_text: null
-      });
-    } catch (error) { classified = { error }; }
-    const classResult = normalizeRpc(classified);
-    if (!classResult.ok) {
-      $('rp-msg').textContent = 'The photo is saved, but the reply details did not save. '
-        + classResult.message;
-      $('rp-send').disabled = false;
-      return;
-    }
-  }
-
-  forgetReplyReport(replyCtx.task_id);
-  if (pending && pending.task_id === replyCtx.task_id) setPending(null);
+  if (pending?.task_id === taskId) setPending(null);
   $('replydlg').close();
-  say('Screenshot saved — your reply is being prepared. You can keep working.');
-  // De screenshot is binnen en het antwoord is geclassificeerd, dus nu pas kan er een zin geschreven
-  // worden. Hier gaan kijken in plaats van de DMer laten verversen -- begrensd op één minuut.
-  // Dit staat na close() en voor boot(): het vak toont de wachttoestand zodra de lijst opnieuw
-  // getekend wordt, en niet de zin die over de vórige stand van dit gesprek ging.
   tab = 'replies';
-  startSuggestionWatch(data.reply_event_id);
+  say('Reply text saved (not independently verified). Preparing a suggested answer.');
   await boot();
+  if (result.data?.reply_event_id) startSuggestionWatch(result.data.reply_event_id);
 };
 
 $('rp-cancel').onclick = () => $('replydlg').close();
@@ -3874,6 +3840,7 @@ window.addEventListener('pageshow', (e) => { if (e.persisted) resume(); });
 // Additional evidence check for selected participants. This does not touch ordinary send/proof/earning flows.
 let lastAuditLoad=0, auditLoading=false, auditUser=null;
 async function refreshMessageAudit(force=false){
+  return; // text-only operation; legacy photo checks no longer shown
   const el=$('message-audit');
   if(!el || $('app').hidden) return;
   if(auditUser!==pendingUserId){auditUser=pendingUserId;lastAuditLoad=0;el.hidden=true;el.innerHTML='';}
@@ -3950,6 +3917,7 @@ setInterval(()=>{if(!document.hidden&&!$('app').hidden) void refreshMessageAudit
 // FRIENDLY TWO-SCREENSHOT REQUESTS. No assignment block, fraud audit, automatic payout or creator send.
 let qsUser=null, qsLastLoad=0, qsLoading=false;
 async function refreshQualityScreenshots(force=false){
+  return; // text-only operation; photo requests disabled
   const el=$('quality-screenshots');
   if(!el || $('app').hidden) return;
   if(qsUser!==pendingUserId){qsUser=pendingUserId;qsLastLoad=0;el.hidden=true;el.innerHTML='';}
