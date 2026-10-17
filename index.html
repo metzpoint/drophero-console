@@ -189,7 +189,8 @@
 </section>
 <section id="section-conversations" data-admin-section="conversations" aria-labelledby="title-conversations" hidden>
 <header class="sectionhead"><h2 id="title-conversations">Conversations & evidence</h2><p>Follow up with interested creators and review screenshots.</p></header>
-  <h2>Interested creators <small class="muted">awaiting your follow-up</small></h2>
+  <h2>Interested creators <small class="muted">prioritize people ready for a next step</small></h2>
+  <div class="card" id="hot-leads-admin" role="region" aria-live="polite"><p class="muted">Loading hot leads pipeline…</p></div>
   <div class="card" id="interested"><div class="muted">loading…</div></div>
 
   <h2 id="proofs">Proof checks <small class="muted">send and reply screenshots</small></h2>
@@ -713,6 +714,7 @@ async function bootOnce() {
   renderProduction(full.data, full.error);
   renderAttention(attention.data || {}, attention.error);
   renderInterested(interested.data || [], interested.error);
+  void refreshHotLeadsAdmin();
   renderVas(vas.data || {}, vas.error);
   void refreshOwnerMessageAudits();
   void refreshOwnerCoachingAlerts();
@@ -1002,6 +1004,35 @@ function renderAttention(a, err) {
 // INTERESTED CREATORS. VAs have found creators who replied INTERESTED. Owner can open their
 // TikTok profile and mark them HANDLED to remove from the active queue.
 // ---------------------------------------------------------------------------------------------
+const ownerHotLeads={user:null,lastFetch:0,busy:false};
+async function refreshHotLeadsAdmin(force=false){
+ const root=$('hot-leads-admin');if(!root||$('app').hidden||ownerHotLeads.busy)return;
+ if(!force&&Date.now()-ownerHotLeads.lastFetch<60000)return;
+ const user=ownerUserId;ownerHotLeads.user=user;ownerHotLeads.lastFetch=Date.now();ownerHotLeads.busy=true;
+ try{
+  const {data,error}=await sb.rpc('dh_owner_hot_leads_summary');
+  if(user!==ownerUserId)return;
+  if(error||!data?.ok||!Array.isArray(data.rows))throw error||new Error('Unavailable');
+  root.innerHTML='<p><b>'+n(data.open_total)+' actionable/reviewable interested creators</b> · '+n(data.overdue24)+' waiting over 24h</p>'
+   +'<p class="muted">Last reply may already have been answered in TikTok. Workers must verify their original chat; this is not an automatic send queue.</p>'
+   +'<div class="quickgrid">'
+   +'<div class="quickcard"><span>Signup link requested</span><b>'+n(data.ready_link)+'</b><small>Verify intent, issue tracked link</small></div>'
+   +'<div class="quickcard"><span>Need an answer</span><b>'+n(data.questions)+'</b><small>AI explains and provides one clear next step</small></div>'
+   +'<div class="quickcard"><span>Link clicked</span><b>'+n(data.clicked)+'</b><small>Confirm registration; don’t resend automatically</small></div>'
+   +'<div class="quickcard"><span>Needs review</span><b>'+n(data.review)+'</b><small>No safe verified reply ready</small></div>'
+   +'</div><div class="scroll"><table><thead><tr><th>DMer</th><th>Open</th><th>Link</th><th>Questions</th><th>Clicked</th><th>Review</th><th>24h+</th></tr></thead><tbody>'
+   +data.rows.map(r=>'<tr><td>'+esc(r.dmer_name)+'</td><td>'+n(r.total)+'</td><td>'+n(r.ready_link)+'</td><td>'+n(r.questions)+'</td><td>'+n(r.clicked)+'</td><td>'+n(r.review)+'</td><td>'+n(r.overdue24)+'</td></tr>').join('')
+   +'</tbody></table></div><p class="muted">No automatic messages or signup attribution are created. Declined creators are excluded from these counts.</p>'
+   +'<button class="sm" id="hot-leads-admin-refresh">Refresh priority counts</button>';
+ }catch{
+  if(user===ownerUserId){ownerHotLeads.lastFetch=0;root.innerHTML='<p class="muted">Priority report unavailable; the original interested list below remains accessible.</p>';}
+ }finally{ownerHotLeads.busy=false;}
+}
+$('hot-leads-admin').addEventListener('click',event=>{
+ if(event.target.closest('#hot-leads-admin-refresh'))void refreshHotLeadsAdmin(true);
+});
+setInterval(()=>{if(!document.hidden&&!$('app').hidden)void refreshHotLeadsAdmin();},60000);
+
 function renderInterested(rows, err) {
   if (err) { $('interested').innerHTML = '<div class="muted">' + esc(err.message) + '</div>'; return; }
   if (!rows || !rows.length) {
@@ -1032,20 +1063,19 @@ function renderInterested(rows, err) {
       + esc(r.said) + '</div>' : '';
     const kind = r.classification
       ? '<span class="pill on" style="margin-left:6px">' + esc(r.classification) + '</span>' : '';
-    // Step one: creator information. Tracked FirstPromoter signup links must be issued separately.
-    const creatorOverview = "Here is our official DropHero creator partnership page:\nhttps://drophero.app/creators";
-    const response = r.suggestion
-      ? r.suggestion.trim() + "\n\n" + creatorOverview
-      : "Thanks for getting back to me! " + creatorOverview;
+    // Suggestions are reviewed against the live TikTok conversation; never auto-append
+    // a generic pitch or an unattributed public link. Use the unique tracked link from the DMer portal.
+    const response = r.suggestion ? r.suggestion.trim() : '';
     const proposal = '<div style="margin-top:10px">'
       + '<div class="muted" style="font-size:12px;margin-bottom:4px">'
-      + 'STEP 1 · SEND CREATORS PAGE FIRST'
+      + 'REVIEW ACTUAL CONVERSATION BEFORE REPLYING'
       + (r.suggestion_topic ? ' · ' + esc(r.suggestion_topic) : '')
-      + ' — use a personal tracked signup link later, after they agree to join</div>'
-      + '<textarea readonly class="dh-suggestion" style="width:100%;min-height:105px;font-size:13px" '
-      + 'onclick="this.select()">' + esc(response) + '</textarea>'
-      + '<button class="sm" data-copy-suggestion="' + esc(r.task_id) + '" '
-      + 'style="margin-top:6px">Copy creator information reply</button>'
+      + ' — if they explicitly ask to register, use their unique tracked invite from the DMer portal.</div>'
+      + (response ? '<textarea readonly class="dh-suggestion" style="width:100%;min-height:96px;font-size:13px" '
+        + 'onclick="this.select()">' + esc(response) + '</textarea>'
+        + '<button class="sm" data-copy-suggestion="' + esc(r.task_id) + '" '
+        + 'style="margin-top:6px">Copy draft for review</button>'
+        : '<p class="muted">No approved draft yet. Ask their assigned DMer to review the latest reply in TikTok.</p>')
       + '</div>';
 
     return '<div class="row" style="align-items:flex-start;min-height:100px">'
@@ -1084,7 +1114,7 @@ function renderInterested(rows, err) {
         try { box.select(); ok = document.execCommand('copy') === true; } catch { ok = false; }
       }
       btn.textContent = ok ? 'Copied' : 'Select the text above';
-      setTimeout(() => { btn.textContent = 'Copy creator information reply'; }, 2500);
+      setTimeout(() => { btn.textContent = 'Copy draft for review'; }, 2500);
     };
   }
 
