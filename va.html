@@ -419,6 +419,9 @@
   <section id="creator-followup-push" hidden aria-label="Assigned creator replies" role="status" aria-live="polite"></section>
 
   <section id="creator-followups" hidden aria-label="Creator follow-ups ready to review" aria-live="polite" role="region"></section>
+  <section id="hot-leads" aria-label="Interested creators conversion priorities" role="region" aria-live="polite">
+    <div class="card"><span class="muted">Loading interested creators…</span></div>
+  </section>
   <section id="reply-priority-queue" hidden aria-label="Prioritized creator reply quality queue" role="region" aria-live="polite"></section>
 
   <section id="text-reply-tools" aria-label="Paste a creator reply">
@@ -1341,6 +1344,7 @@ async function bootOrThrow() {
   $('quality-screenshots').hidden = true;
   void refreshCreatorFollowups();
   void refreshPriorityQA();
+  void refreshHotLeads(true);
   void refreshMyTrustScore();
   void refreshWorkhub(true);
   void refreshCoachingInbox(true);
@@ -4660,6 +4664,89 @@ async function refreshCreatorFollowups(force=false){
  }finally{creatorFollowups.loading=false;}
 }
 setInterval(()=>{if(!document.hidden&&!$('app').hidden&&!typing())void refreshCreatorFollowups();},60000);
+
+
+const hotLeads={user:null,lastFetch:0,loading:false,rows:[],counts:{},error:''};
+async function refreshHotLeads(force=false){
+  if(!pendingUserId||$('app').hidden)return;
+  const user=pendingUserId;
+  if(hotLeads.user!==user){hotLeads.user=user;hotLeads.lastFetch=0;hotLeads.rows=[];hotLeads.counts={};hotLeads.error='';}
+  if(hotLeads.loading||(!force&&Date.now()-hotLeads.lastFetch<60000))return;
+  hotLeads.loading=true;hotLeads.lastFetch=Date.now();
+  try{
+    const {data,error}=await sb.rpc('dh_va_hot_leads',{p_limit:100});
+    if(user!==pendingUserId)return;
+    if(error||!data?.ok||!Array.isArray(data.rows))throw error||new Error('Unable to load priorities');
+    hotLeads.rows=data.rows;hotLeads.counts=data.counts||{};hotLeads.error='';
+  }catch(e){if(user===pendingUserId){hotLeads.error='Could not load interested creators. Refresh to retry.';hotLeads.lastFetch=0;}}
+  finally{hotLeads.loading=false;}
+  if(user===pendingUserId)renderHotLeads();
+}
+function renderHotLeads(){
+ const root=$('hot-leads');if(!root || hotLeads.user!==pendingUserId)return;
+ const c=hotLeads.counts||{},rs=hotLeads.rows||[];
+ const labels={
+ LINK_REQUESTED:['Ready for signup link','The creator explicitly asked to join. Verify the latest TikTok chat, then use Replies to generate the unique tracked link.'],
+ ANSWER_QUESTION:['Answer their question','Use the AI draft if it matches the latest chat, then invite them only when they ask to join.'],
+ CHECK_SIGNUP:['Clicked invitation — check status','A click is not a signup. Check for a confirmed registration and the current chat; do not send repeated links.'],
+ REVIEW_FIRST:['Needs AI or manual review','No independently verified current suggestion. Check the conversation before any sales message.'],
+ WAIT_OR_REVIEW:['Wait or review','Check whether the creator is expecting any response. Do not send a new pitch unnecessarily.']
+ };
+ const visible=rs.filter(r=>r.lane!=='WAIT_OR_REVIEW');
+ const rowHtml=r=>{
+ const info=labels[r.lane]||labels.REVIEW_FIRST;
+ const url=safeTikTokProfileUrl(r.profile_url,r.handle);
+ const canCopy=r.lane==='ANSWER_QUESTION'&&typeof r.ai_draft==='string'&&r.ai_draft.trim();
+ return '<div data-hot-task="'+esc(r.task_id)+'" style="padding:12px 0;border-top:1px solid var(--line)">'
+  +'<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b>@'+esc(r.handle||'Creator')+'</b>'
+  +'<b>'+esc(info[0])+'</b></div>'
+  +'<p class="muted" style="margin:5px 0">'+esc(info[1])+'</p>'
+  +(r.creator_message?'<p class="quote" style="margin:7px 0">'+esc(r.creator_message)+'</p>':'')
+  +(canCopy?'<p style="margin:7px 0"><b>AI suggestion:</b> '+esc(r.ai_draft)+'</p>':'')
+  +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
+  +(url?'<a class="sm" href="'+esc(url)+'" rel="noopener noreferrer" target="_blank">Open TikTok ↗</a>':'')
+  +(canCopy?'<button class="sm" data-hot-copy="'+esc(r.task_id)+'">Copy AI reply</button>':'')
+  +'<button class="sm" data-hot-chat="'+esc(r.task_id)+'">Find in Chats</button>'
+  +'</div><p class="muted" role="status" data-hot-msg></p></div>';
+ };
+ root.innerHTML='<div class="card" style="padding:13px">'
+  +'<div style="display:flex;gap:8px;justify-content:space-between;align-items:center"><h2 style="margin:0">🔥 Interested creators</h2>'
+  +'<button class="sm" id="hot-leads-refresh">Refresh</button></div>'
+  +'<p class="muted" style="margin:7px 0">Work existing interest before cold outreach. Suggestions are not automatically sent. Check the real chat and stop if they decline.</p>'
+  +(hotLeads.error?'<p class="fieldmsg bad">'+esc(hotLeads.error)+'</p>':'')
+  +'<div class="counts two" style="margin:8px 0">'
+  +'<div><b>'+Number(c.ready_link||0)+'</b><span>Requested link</span></div>'
+  +'<div><b>'+Number(c.answer_first||0)+'</b><span>Answer a question</span></div>'
+  +'<div><b>'+Number(c.clicked_check_signup||0)+'</b><span>Clicked: check signup</span></div>'
+  +'<div><b>'+Number(c.review_first||0)+'</b><span>Needs review</span></div></div>'
+  +(!visible.length?'<p class="muted">No active interested conversations require an immediate action.</p>':
+    visible.slice(0,8).map(rowHtml).join('') +
+      (visible.length>8?'<details><summary style="cursor:pointer;padding:10px">Show '+(visible.length-8)+' more interested creators</summary>'+visible.slice(8).map(rowHtml).join('')+'</details>':''))
+  +'<p class="muted" style="margin-top:10px">Never claim someone has signed up solely because they clicked a link. Do not resend to declined creators. Send manually in TikTok only.</p>'
+  +'</div>';
+}
+$('hot-leads').addEventListener('click',async e=>{
+ const refresh=e.target.closest('#hot-leads-refresh');
+ if(refresh){void refreshHotLeads(true);return;}
+ const copy=e.target.closest('button[data-hot-copy]');
+ const chat=e.target.closest('button[data-hot-chat]');
+ if(!copy&&!chat)return;
+ const id=(copy||chat).dataset.hotCopy||(copy||chat).dataset.hotChat;
+ const row=hotLeads.rows.find(x=>x.task_id===id);if(!row)return;
+ if(chat){search.q=row.handle||'';search.results=null;
+   await selectTab('conv');
+   const field=$('q');if(field){field.value=search.q;field.dispatchEvent(new Event('input',{bubbles:true}));field.focus();}
+   return;
+ }
+ if(copy&&row.lane==='ANSWER_QUESTION'&&row.ai_draft){
+   const result=await copyNow(row.ai_draft);
+   const msg=copy.closest('[data-hot-task]')?.querySelector('[data-hot-msg]');
+   if(msg)msg.textContent=result?.ok
+    ?'Copied. Check the latest TikTok message and send it manually. Copying is not delivery.'
+    :'Could not copy. Select the text manually after checking the chat.';
+ }
+});
+setInterval(()=>{if(!document.hidden&&!$('app').hidden&&!typing())void refreshHotLeads();},60000);
 
 // Important, verified replies from the server-side QA queue.
 // These are suggestions only: there is no TikTok messaging API here and copying NEVER claims delivery.
