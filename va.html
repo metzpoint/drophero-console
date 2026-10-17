@@ -403,6 +403,7 @@
 
 
   <section id="my-trust-score" aria-label="Your Trust Score" role="region" aria-live="polite" hidden></section>
+  <section id="dmer-coaching" role="region" aria-label="Personalized training and reminders" aria-live="polite"></section>
   <section id="workhub-dashboard" role="region" aria-label="Daily DropHero dashboard" aria-live="polite">
     <div class="card"><span class="muted">Loading account stock and earnings…</span></div>
   </section>
@@ -1342,6 +1343,7 @@ async function bootOrThrow() {
   void refreshPriorityQA();
   void refreshMyTrustScore();
   void refreshWorkhub(true);
+  void refreshCoachingInbox(true);
   if ($('workhub-followups')?.open) void refreshWorkhubFollowups(true);
   if ($('workhub-leaderboard')?.open) void refreshWorkhubLeaderboard(true);
   return { accountsOk: accountsRes.ok, moneyOk: moneyRes.ok };
@@ -2132,6 +2134,37 @@ async function refreshWorkhubLeaderboard(force=false){
  }
 }
 $('workhub-leaderboard').addEventListener('toggle',()=>{if($('workhub-leaderboard').open)void refreshWorkhubLeaderboard(true);});
+
+const dmCoach={user:null,loading:false,lastFetch:0};
+async function refreshCoachingInbox(force=false) {
+ const box=$('dmer-coaching');if(!box||$('app').hidden||!pendingUserId)return;
+ const user=pendingUserId;
+ if(dmCoach.user!==user){dmCoach.user=user;dmCoach.lastFetch=0;box.innerHTML='';}
+ if(dmCoach.loading||(!force&&Date.now()-dmCoach.lastFetch<5*60*1000))return;
+ dmCoach.loading=true;dmCoach.lastFetch=Date.now();
+ try{
+  const {data,error}=await sb.rpc('dh_va_coaching_inbox');
+  if(user!==pendingUserId)return;
+  if(error||!data?.ok||!Array.isArray(data.rows))throw error||new Error('Unavailable');
+  const rows=data.rows;
+  const label=(r)=>r.code==='INACTIVE_WITH_STOCK'?'Welcome back':r.code==='LOW_REPLY_RATE'
+   ?'Improve your results':r.code==='NO_STOCK'?'No new assignments':r.code==='NO_ACTIVE_ACCOUNT'
+   ?'Account approval needed':r.title;
+  box.innerHTML='<details id="dm-coach-guide" style="margin:8px 0">'
+   +'<summary style="cursor:pointer;padding:12px;background:var(--card);border-radius:12px;font-weight:700">📘 Quick start: 3 simple steps</summary>'
+   +'<ol style="margin:12px 0;padding-left:23px"><li>Choose an approved TikTok account in Accounts.</li>'
+   +'<li>Open Work, copy the DM, send it in TikTok, then confirm only after sending.</li>'
+   +'<li>Paste actual creator replies in Chats. We help write a natural next answer.</li></ol>'
+   +'</details>'
+   +rows.map(r=>'<div class="card" style="margin:8px 0;padding:12px;border-left:3px solid '
+     +(r.severity==='ACTION'?'#dc6262':r.severity==='WATCH'?'#dfa73c':'#5484a5')+'">'
+     +'<b>'+esc(label(r))+'</b><p class="muted" style="margin:5px 0">'+esc(r.guidance)+'</p></div>').join('')
+   +(rows.length?'<p class="muted" style="margin:7px 0">These reminders are here to help. No automatic punishment or pay reductions.</p>':'');
+ }catch{
+  if(user===pendingUserId){dmCoach.lastFetch=0;box.innerHTML='<details><summary class="muted">Quick start help</summary><p>Use an approved TikTok account, work your next DM, and paste real replies into Chats.</p></details>';}
+ }finally{dmCoach.loading=false;}
+}
+setInterval(()=>{if(!$('app').hidden&&!document.hidden)void refreshCoachingInbox();},60000);
 
 function drawWork() {
   if (view.performance?.terms_required) {
