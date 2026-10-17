@@ -402,6 +402,14 @@
 
 
 
+  <section id="team-apology" hidden role="region" aria-label="Message from DropHero" style="margin:10px 0">
+    <div class="card" style="padding:16px;border:1px solid var(--line);border-radius:14px">
+      <h2 id="team-apology-title" style="font-size:18px;margin:0 0 10px"></h2>
+      <p id="team-apology-message" style="white-space:pre-line;font-size:14px;line-height:1.55;margin:0 0 12px"></p>
+      <button class="sm good" type="button" id="team-apology-confirm">I've read this</button>
+      <p class="fieldmsg" id="team-apology-status" role="status"></p>
+    </div>
+  </section>
   <section id="workhub-dashboard" role="region" aria-label="Daily DropHero dashboard" aria-live="polite">
     <div class="card"><span class="muted">Loading account stock and earnings…</span></div>
   </section>
@@ -1343,6 +1351,7 @@ async function bootOrThrow() {
   void refreshCreatorFollowups();
   void refreshPriorityQA();
   void refreshHotLeads(true);
+  void refreshTeamApology();
   void refreshWorkhub(true);
   if ($('workhub-followups')?.open) void refreshWorkhubFollowups(true);
   if ($('workhub-leaderboard')?.open) void refreshWorkhubLeaderboard(true);
@@ -1905,6 +1914,48 @@ function render() {
 // message that failed to send still minted a real send and a real $0.02 earning. Nothing here
 // advances the queue or touches money until the VA has said, after the fact, that it went out.
 // =====================================================================================================
+
+
+// One acknowledgement per DMer, persisted server-side; no recurring reminders.
+const teamNotice={user:null,loaded:false,loading:false,key:null};
+async function refreshTeamApology(){
+ if(!pendingUserId||$('app').hidden)return;
+ const user=pendingUserId,root=$('team-apology');
+ if(teamNotice.user!==user){
+   teamNotice.user=user;teamNotice.loaded=false;teamNotice.loading=false;teamNotice.key=null;
+   root.hidden=true;
+ }
+ if(teamNotice.loaded||teamNotice.loading)return;
+ teamNotice.loading=true;
+ try{
+  const {data,error}=await sb.rpc('dh_va_notice_pending');
+  if(user!==pendingUserId)return;
+  if(error||!data?.ok)throw error||new Error('No notice');
+  teamNotice.loaded=true;
+  const notice=data.notice;
+  if(!notice||!notice.notice_key){root.hidden=true;return;}
+  teamNotice.key=notice.notice_key;
+  $('team-apology-title').textContent=notice.title||'A message from DropHero';
+  $('team-apology-message').textContent=notice.body||'';
+  $('team-apology-status').textContent='';
+  root.hidden=false;
+ }catch(e){
+  if(user===pendingUserId){teamNotice.loaded=false;root.hidden=true;}
+ }finally{teamNotice.loading=false;}
+}
+$('team-apology-confirm').addEventListener('click',async()=>{
+ const key=teamNotice.key,user=pendingUserId;
+ if(!key||!user)return;
+ const button=$('team-apology-confirm');
+ button.disabled=true;$('team-apology-status').textContent='Saving…';
+ try{
+  const {data,error}=await sb.rpc('dh_va_notice_ack',{p_notice_key:key});
+  if(user!==pendingUserId)return;
+  if(error||!data?.ok)throw error||new Error('Try again');
+  teamNotice.loaded=true;teamNotice.key=null;$('team-apology').hidden=true;
+ }catch(e){if(user===pendingUserId)$('team-apology-status').textContent='Could not save. Please try again.';}
+ finally{button.disabled=false;}
+});
 
 const workhub = {
   user:null,lastLoad:0,loading:false,data:null,followups:[],followupTotal:0,
