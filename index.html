@@ -175,7 +175,7 @@
   <h2 id="performance">VA performance <small class="muted">volume and quality</small></h2>
   <div class="card" id="vaperf"><div class="muted">loading…</div></div>
 
-  <h2>VAs</h2>
+  <h2>VAs <small class="muted">Edit → display to set a verified real name for the leaderboard</small></h2>
   <div class="card" id="vas"></div>
 
   <h2 id="tiktok">TikTok accounts <small class="muted">per VA</small></h2>
@@ -1986,8 +1986,8 @@ function renderVas(d, err) {
 async function editVa(v) {
   if (!v) return;
   const what = prompt(v.has_account
-    ? 'Type: rename, capacity, on, off, or creators'
-    : 'Type: link (they have not signed up yet), rename, capacity, on, off, or creators',
+    ? 'Type: display, rename, capacity, on, off, or creators'
+    : 'Type: link (they have not signed up yet), display, rename, capacity, on, off, or creators',
     v.has_account ? 'creators' : 'link');
   if (!what) return;
   if (what === 'link') {
@@ -1999,6 +1999,14 @@ async function editVa(v) {
     const copied = await copyPlainText(url);
     prompt('New link for ' + data.email + '. The previous one no longer works. '
       + (copied ? 'The new link is copied.' : 'Copy the new link from the field below.'), url);
+    return;
+  }
+  if (what === 'display') {
+    const name = (prompt('Verified real name for the leaderboard', v.name) || '').trim();
+    if(name.length<2 || name.length>80)return;
+    const {data,error}=await sb.rpc('dh_owner_set_dmer_display_name',{p_va:v.va_id,p_name:name});
+    if(error||!data?.ok)alert('Could not save the display name.');
+    else alert('Leaderboard display name saved: '+data.name);
     return;
   }
   if (what === 'creators') {
