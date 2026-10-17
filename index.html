@@ -175,6 +175,9 @@
   <h2 id="performance">VA performance <small class="muted">volume and quality</small></h2>
   <div class="card" id="vaperf"><div class="muted">loading…</div></div>
 
+  <h2 id="trust-title">Trust Score · all active DMers</h2>
+  <div class="card" id="trust-board"><div class="muted">Loading team trust scores…</div></div>
+
   <h2>VAs</h2>
   <div class="card" id="vas"></div>
 
@@ -699,6 +702,7 @@ async function bootOnce() {
   renderApprovals(tiktok.data, tiktok.error);
   renderTikTok(tiktok.data, tiktok.error);
   renderPerformance(perf.data, perf.error);
+  void refreshTrustScores();
   void refreshTrustTeam();
   renderActivity(activity.data, activity.error);
   renderProofs(proofs.data, proofs.error);
@@ -1621,6 +1625,45 @@ async function refreshTrustTeam() {
   } catch (err) {
     if (viewer===ownerUserId) root.innerHTML='<p class="muted">Trust Score data could not be loaded. Refresh to retry.</p>';
   }
+}
+
+
+async function refreshTrustScores() {
+  const panel = $('trust-board');
+  if (!panel) return;
+  let response;
+  try { response = await sb.rpc('dh_va_trust_scores'); }
+  catch (error) { response = { error }; }
+  if (response.error || !response.data?.ok) {
+    panel.textContent = 'Trust scores could not be loaded. Other portal functions are unaffected.';
+    return;
+  }
+  const d = response.data;
+  const rows = Array.isArray(d.rows) ? d.rows : [];
+  const labels = {
+    ON_TRACK: 'On track', COACHING: 'Coaching', REVIEW_SUGGESTED: 'Check suggested',
+    COLLECTING_DATA: 'Collecting data', NO_BENCHMARK: 'Waiting for benchmark'
+  };
+  const tag = (status) => status === 'ON_TRACK' ? 'on'
+    : status === 'COACHING' || status === 'COLLECTING_DATA' ? 'warnp'
+    : status === 'REVIEW_SUGGESTED' ? 'off' : '';
+  const displayPct = (value) => Number(value || 0).toFixed(2) + '%';
+  panel.innerHTML =
+    '<p class="muted">Live benchmark: <b>' + esc(displayPct(d.benchmark_pct)) +
+    '</b> verified reply rate · average of the top ' + esc(d.benchmark_top3_count) +
+    ' active DMers with at least 100 DMs aged 24+ hours. Updated with each dashboard refresh.</p>' +
+    '<p class="muted">Performance signals only. Low replies alone never prove misconduct and do not automatically suspend an account or affect approved earnings. Pasted replies are tracked separately until independently verified.</p>' +
+    '<div class="scroll"><table><thead><tr>' +
+    ['DMer','Trust Score','Status','DMs aged 24h+','Verified replies','Reply rate','Unverified reports'].map(h=>'<th>'+h+'</th>').join('') +
+    '</tr></thead><tbody>' +
+    rows.map(r => '<tr><td><b>' + esc(r.name) + '</b>' + (r.top_three ? ' 🏆' : '') + '</td>' +
+      '<td><b>' + (r.trust_score == null ? '—' : esc(r.trust_score) + '/100') + '</b></td>' +
+      '<td><span class="pill ' + tag(r.signal) + '">' + esc(labels[r.signal] || r.signal) + '</span></td>' +
+      '<td>' + esc(r.matured_sends) + '</td>' +
+      '<td>' + esc(r.verified_replies) + '</td>' +
+      '<td>' + esc(displayPct(r.reply_rate_pct)) + '</td>' +
+      '<td>' + esc(r.unverified_replies) + '</td></tr>').join('') +
+    '</tbody></table></div>';
 }
 
 function renderPerformance(rows, err) {
