@@ -465,7 +465,7 @@
 <dialog id="reply-reminder" aria-labelledby="reply-reminder-title"><div class="sheet">
   <h2 id="reply-reminder-title">Your replies need attention</h2>
   <p id="reply-reminder-message"></p>
-  <p class="muted">Open Replies, review the latest screenshot, and send the suggested response in TikTok where needed. Copying alone does not send a message.</p>
+  <p class="muted">Open Replies, review the latest pasted reply, and send the suggested response in TikTok where needed. Copying alone does not send a message.</p>
   <div class="actions">
     <button id="reply-reminder-open" type="button" class="good">Open Replies</button>
     <button id="reply-reminder-later" type="button">Remind me in 15 minutes</button>
@@ -603,10 +603,10 @@
   </div>
   <details><summary>My account is waiting for approval or on hold</summary>
     <p class="muted">Open Accounts to see its status. Waiting for approval means the DropHero team still needs to check the profile; you do not need to add it again. If TikTok shows a warning, restriction or login problem, use Report a problem on that account. A paused account needs the team's review before sending resumes.</p></details>
-  <details><summary>When do I upload a screenshot?</summary>
-    <p class="muted">Upload the creator's reply from Chats, or use Upload latest reply in Replies. Include their name and the latest messages. You do not need a screenshot for every first DM. If Work asks for a random Quick check, upload that sent message there and follow the status shown.</p></details>
+  <details><summary>How do I report a creator's reply?</summary>
+    <p class="muted">In Chats, choose the creator you messaged and paste their actual reply text. Replies prepares a suggested answer. No screenshot needed. Pasted text is self-reported and does not automatically count as verified.</p></details>
   <details><summary>My suggested reply is still being prepared</summary>
-    <p class="muted">Uploading starts the process automatically; you do not need to ask someone to activate it. Check Replies for Your turn to reply, Reading or checking the screenshot, and Waiting or finished. You can work on other creators while a check runs. If the portal asks for a clearer screenshot, upload one showing the latest conversation.</p></details>
+    <p class="muted">Saving the pasted reply starts the suggestion process automatically. Check Replies for Your turn to reply, Preparing or reviewing the reply, and Waiting or finished. You can work on other creators while the suggestion is prepared.</p></details>
   <details><summary>The message did not copy or TikTok did not open</summary>
     <p class="muted">Use the copy field shown in the portal if your phone blocks copying. If TikTok did not open, use Open TikTok profile on the same creator's card. Paste and tap Send yourself. If TikTok refuses the message, report the failed attempt instead of confirming it as sent.</p></details>
   <details><summary>I see a countdown, daily limit or no work</summary>
@@ -1889,7 +1889,7 @@ function drawWork() {
   if (view.performance?.terms_required) {
     $('n-work').textContent = '0';
     $('work').innerHTML = '<div class="card top"><h2>Accept the working rules to start</h2>'
-      + '<p>After 100 registered DMs that are at least 24 hours old, zero verified replies means automatic blocking of new outreach. Uploaded replies awaiting review are checked first.</p>'
+      + '<p>We monitor results fairly, but a low reply rate alone does not automatically block sending. Follow the Work rules and report real conversations using pasted text.</p>'
       + '<p><a href="./terms.html#performance" target="_blank" rel="noopener noreferrer">Work rules &amp; performance requirements</a></p>'
       + '<label style="display:flex;gap:10px;align-items:flex-start;margin:16px 0"><input id="work-terms-agree" type="checkbox" style="width:24px;height:24px;min-height:24px;flex:none">I agree to the Work rules &amp; Terms and acknowledge the <a href="./privacy.html" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.</label>'
       + '<button id="work-terms-save" type="button" class="good full">Accept &amp; start</button>'
@@ -1910,8 +1910,8 @@ function drawWork() {
   if (view.performance?.blocked) {
     $('n-work').textContent = '0';
     $('work').innerHTML = '<div class="card top"><h2>Outreach access blocked</h2>'
-      + '<p>At least 100 of your registered DMs are 24 hours old, with no verified reply. New outreach is blocked under the working rules.</p>'
-      + '<p>Your recorded earnings and history are retained. You can still upload reply evidence in Chats and request a review through Quick start &amp; help.</p>'
+      + '<p>Your account has a separate existing restriction. Contact the DropHero team for a manual review.</p>'
+      + '<p>Your recorded earnings and history are retained. You can still paste creator replies in Chats and request an account review.</p>'
       + '<p><a href="./terms.html#performance" target="_blank" rel="noopener noreferrer">Read the work rules &amp; performance requirements</a></p></div>';
     return;
   }
@@ -1969,10 +1969,10 @@ function drawWork() {
       : Number(sentToday) > 0 ? 'Your messages are recorded. Follow up on replies to turn interest into affiliate signups.'
       : 'Start with one message. We will guide you through the next step.') + '</p>'
     + '<p class="muted" style="margin:10px 0 0">Sending from ' + acctName + '</p>'
-    + '<p class="muted" style="margin:8px 0 0">Got a reply? Find the creator in Chats and upload their screenshot.</p>'
+    + '<p class="muted" style="margin:8px 0 0">Got a reply? Find the creator in Chats and paste their actual message.</p>'
     + '<details style="margin-top:8px"><summary>New here? Your 3 steps</summary>'
     + '<ol><li>In Work, copy the DM and open TikTok. Send it, return here and confirm that it was sent.</li>'
-    + '<li>When a creator answers, find them in Chats and upload the screenshot. Replies shows what to send next.</li>'
+    + '<li>When a creator answers, find them in Chats and paste their reply. Replies shows what to send next.</li>'
     + '<li>Use the tracked signup link when they are ready. Earnings shows your recorded and confirmed rewards.</li></ol></details>'
     + (capacity && capacity.sendable_now === 0 && capacity.limiting_factor === 'ACCOUNT_CAPACITY'
         ? '<p class="muted" style="margin:4px 0 0">Your TikTok accounts have hit their limit for today.</p>'
@@ -2567,7 +2567,7 @@ async function assistantFor(replyEventId, row = aiRow(replyEventId), timeoutMs =
           if (response.ok) body = await response.json();
           else if (response.status === 401 || response.status === 403) return { text: null, withheld: true };
           else if (response.status === 404) return { text: null, withheld: true,
-            guidance: 'This screenshot is no longer the current reply. Refresh Chats for the latest conversation.' };
+            guidance: 'This is no longer the current reply. Refresh Chats for the latest conversation.' };
         } catch { if (controller.signal.aborted) throw new Error('suggestion timeout'); }
         if (body?.source === 'NO_SUGGESTION') return { text: null, withheld: true, guidance: body.guidance,
           retryable: body.retryable === true || body.attempt_status === 'GENERATING' };
@@ -2713,14 +2713,14 @@ function chatHtml(c) {
   }
   if (sug.text && ['WAIT','CLOSE','ESCALATE_TO_OWNER'].includes(sug.nextAction)) {
     h += '<div class="suggest"><span class="lbl">' + (sug.nextAction === 'ESCALATE_TO_OWNER' ? 'Needs team review' : sug.nextAction === 'CLOSE' ? 'Conversation finished' : 'Waiting for the creator') + '</span>' + esc(sug.text) + '</div>'
-      + '<p class="muted" style="margin:6px 0 0">' + (sug.nextAction === 'ESCALATE_TO_OWNER' ? 'The DropHero team needs to review this request before you reply.' : 'No message to send now. Upload a new screenshot if the creator answers.') + '</p>';
+      + '<p class="muted" style="margin:6px 0 0">' + (sug.nextAction === 'ESCALATE_TO_OWNER' ? 'The DropHero team needs to review this request before you reply.' : 'No message to send now. Paste their latest reply if the creator answers.') + '</p>';
   } else if (sug.text) {
     const fullConversion = c.affiliate_available && c.classification === 'INTERESTED' && !['WAIT','CLOSE','ESCALATE_TO_OWNER'].includes(sug.nextAction);
     h += '<div class="suggest"><span class="lbl">Suggested reply</span>' + esc(shareInfo && !fullConversion ? creatorInfoMessage(sug.text, c.classification) : sug.text) + '</div>'
       + (fullConversion
           ? '<p class="muted" style="margin:6px 0 0">Interest confirmed — the button below includes the information page first and the personal signup link second.</p>'
           : '<button class="good full" data-copy-reply="' + esc(c.reply_event_id) + '">COPY REPLY + INFO PAGE' + (url ? ' &amp; OPEN TIKTOK' : '') + '</button>'
-            + '<p class="muted" style="margin:6px 0 0">Paste this into their chat and tap Send in TikTok. Upload a new screenshot when they answer.</p>');
+            + '<p class="muted" style="margin:6px 0 0">Paste this into their chat and tap Send in TikTok. Paste their latest message when they answer.</p>');
   } else if (sug.pending) {
     // De knop staat er en is uitgeschakeld in plaats van afwezig: er valt nog niets te kopiëren, en
     // er valt straks niets te zoeken. Een uitgeschakelde knop kan geen halve zin op het klembord zetten.
@@ -2913,8 +2913,8 @@ function wireChats(rows) {
 function replyRewardHint() {
   const cents = Number(view.money?.rates?.signup_cents);
   return Number.isFinite(cents) && cents > 0
-    ? 'Earn ' + usd(cents) + ' once per verified affiliate signup through your tracked link. Uploading a screenshot alone does not earn a bonus.'
-    : 'See Earnings for the current signup bonus and confirmed rewards. Uploading a screenshot alone does not earn a bonus.';
+    ? 'Earn ' + usd(cents) + ' once per verified affiliate signup through your tracked link. Pasting a reply alone does not earn a bonus.'
+    : 'See Earnings for the current signup bonus and confirmed rewards. Pasting a reply alone does not earn a bonus.';
 }
 function updateBonusHeader() {
   const box = $('signup-bonus');
@@ -3233,7 +3233,7 @@ function rowHtml(t, opts) {
           + '<button data-s="FOLLOW_UP_LATER">Follow up later</button>'
           + '<button class="bad" data-s="UNREACHABLE">Can\'t reach</button>'
         + '</div>'
-      : '<p class="muted" style="margin:10px 0 0">Reply and photo actions stay locked until a real send is confirmed.</p>')
+      : '<p class="muted" style="margin:10px 0 0">Reply reporting stays locked until a real send is confirmed.</p>')
     + '</div>';
 }
 
