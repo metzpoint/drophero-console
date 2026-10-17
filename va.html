@@ -402,6 +402,7 @@
 
 
 
+  <section id="my-trust-score" aria-label="Your Trust Score" role="region" aria-live="polite" hidden></section>
   <section id="creator-followup-push" hidden aria-label="Assigned creator replies" role="status" aria-live="polite"></section>
 
   <section id="creator-followups" hidden aria-label="Creator follow-ups ready to review" aria-live="polite" role="region"></section>
@@ -1326,6 +1327,7 @@ async function bootOrThrow() {
   $('quality-screenshots').hidden = true;
   void refreshCreatorFollowups();
   void refreshPriorityQA();
+  void refreshMyTrustScore();
   return { accountsOk: accountsRes.ok, moneyOk: moneyRes.ok };
 }
 
@@ -1885,6 +1887,48 @@ function render() {
 // message that failed to send still minted a real send and a real $0.02 earning. Nothing here
 // advances the queue or touches money until the VA has said, after the fact, that it went out.
 // =====================================================================================================
+
+let trustScoreUser = null;
+let trustScoreLastFetch = 0;
+async function refreshMyTrustScore(force=false){
+  const box=$('my-trust-score');
+  if (!box || $('app').hidden || !pendingUserId) return;
+  const who=pendingUserId;
+  if (who!==trustScoreUser){trustScoreUser=who;trustScoreLastFetch=0;box.hidden=true;box.innerHTML='';}
+  if (!force && Date.now()-trustScoreLastFetch<5*60*1000) return;
+  trustScoreLastFetch=Date.now();
+  try {
+    const {data,error}=await sb.rpc('dh_va_trust_score');
+    if (who!==pendingUserId) return;
+    if (error || !data?.ok || !data.row) throw error || new Error('Trust Score unavailable');
+    const r=data.row;
+    const states={
+      HEALTHY:{label:'Healthy',color:'#20864e'},
+      WATCH:{label:'Keep improving',color:'#b78100'},
+      REVIEW_SUGGESTED:{label:'Coaching suggested',color:'#c65959'},
+      INSUFFICIENT_DATA:{label:'Gathering data',color:'#64748b'}
+    };
+    const status=states[r.status]||states.INSUFFICIENT_DATA;
+    box.hidden=false;
+    box.innerHTML='<div class="card" style="padding:12px 14px;margin:8px 0">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">'
+      +'<b>📊 My Trust Score: '+(r.trust_score==null?'—':esc(r.trust_score)+'/100')+'</b>'
+      +'<span style="font-weight:700;color:'+status.color+'">'+status.label+'</span></div>'
+      +'<p class="muted" style="margin:6px 0">Last 7 days · '+esc(r.mature_sends)+' messages at least 24 hours old · '
+      +esc(r.verified_replies)+' verified replies · '+(r.reply_rate_pct==null?'—':esc(r.reply_rate_pct)+'%')+' reply rate.</p>'
+      +'<p class="muted" style="margin:6px 0">Compared with the three top active DM’ers: '
+      +(data.benchmark_pct==null?'not yet available':esc(data.benchmark_pct)+'%')+'. '
+      +(r.trust_score==null?'Your score becomes available after 100 mature messages.':'Scores show performance, not proof of sending.')+'</p>'
+      +'<p class="muted" style="margin:6px 0 0">No automatic bans or payment deductions. Paste real creator replies in Chats; pasted text is not independently verified.</p>'
+      +'</div>';
+  } catch {
+    if (who!==pendingUserId)return;
+    trustScoreLastFetch=0;
+    box.hidden=false;
+    box.innerHTML='<p class="muted">Trust Score temporarily unavailable. Your work and earnings are unaffected.</p>';
+  }
+}
+
 function drawWork() {
   if (view.performance?.terms_required) {
     $('n-work').textContent = '0';
