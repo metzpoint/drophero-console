@@ -624,8 +624,8 @@
     <button type="button" data-help-go="tt">Set up my accounts</button>
     <button type="button" data-help-go="earn" class="full">See my earnings</button>
   </div>
-  <details><summary>My account is waiting for approval or on hold</summary>
-    <p class="muted">Open Accounts to see its status. Waiting for approval means the DropHero team still needs to check the profile; you do not need to add it again. If TikTok shows a warning, restriction or login problem, use Report a problem on that account. A paused account needs the team's review before sending resumes.</p></details>
+  <details><summary>My new TikTok account cannot send yet</summary>
+    <p class="muted">Open Accounts to see its status. Setup pending means approval is still required. Approved accounts may also have a first-day safety warm-up; the exact release time is shown in Accounts. If TikTok shows a warning, restriction or login problem, use Report a problem on that account. A paused account needs the team's review before sending resumes.</p></details>
   <details><summary>How do I report a creator's reply?</summary>
     <p class="muted">In Chats, choose the creator you messaged and paste their actual reply text. Replies prepares a suggested answer. No screenshot needed. Pasted text is self-reported and does not automatically count as verified.</p></details>
   <details><summary>My suggested reply is still being prepared</summary>
@@ -1530,7 +1530,7 @@ function tickClocks() {
 
 const STATE_WORDS = {
   READY: 'Ready', COOLDOWN: 'Waiting', PAUSED: 'Paused',
-  DAILY_LIMIT_REACHED: 'Done for today', WAITING_APPROVAL: 'Waiting for approval',
+  DAILY_LIMIT_REACHED: 'Done for today', WAITING_APPROVAL: 'Setup pending', DAY_1_WARMUP: 'Approved · Warm-up',
   // Not "blocked" and not "banned": TikTok has not restricted this account, our own messages were
   // turned away. A VA who reads it as a ban on their account panics about the wrong thing.
   REVIEW_REQUIRED: 'On hold — being checked'
@@ -1547,6 +1547,8 @@ function whenNext(iso) {
 }
 
 function acctCard(a) {
+  const awaiting = a.display_state === 'WAITING_APPROVAL';
+  const warmup = a.display_state === 'DAY_1_WARMUP';
   const until = Date.now() + (a.cooldown_seconds_left || 0) * 1000;
   const pct = a.daily_limit ? Math.min(100, Math.round(a.sent_today / a.daily_limit * 100)) : 0;
   return '<div class="acct-card">'
@@ -1555,18 +1557,24 @@ function acctCard(a) {
       + esc(STATE_WORDS[a.display_state] || a.display_state) + '</span></div>'
     + '<div class="bar' + (pct >= 100 ? ' full' : '') + '"><i style="width:' + pct + '%"></i></div>'
     + '<div class="chips">'
-      + '<span class="chip">' + a.sent_today + ' of ' + a.daily_limit + ' sent today</span>'
-      + '<span class="chip">' + esc(a.level_name || ('Level ' + a.level)) + '</span>'
+      + '<span class="chip">' + (awaiting ? 'Profile saved' : warmup ? 'Safety warm-up in progress' : a.sent_today + ' of ' + a.daily_limit + ' sent today') + '</span>'
+      + (!awaiting && !warmup ? '<span class="chip">' + esc(a.level_name || ('Level ' + a.level)) + '</span>' : '')
       + (a.country ? '<span class="chip">' + esc(a.country) + '</span>' : '')
     + '</div>'
     // WHERE THIS SENDER IS ON THE RAMP, AND WHAT MOVES IT. A warm-up that only shows a number
     // tells a VA nothing about why today's ceiling is 20 and tomorrow's might be 30.
-    + (a.next_level_name
-        ? '<p class="muted" style="margin:11px 0 0">Next: <b>' + esc(a.next_level_name) + '</b> — '
-          + a.next_daily_limit + '/day, if today stays clean. Checked ' + whenNext(a.next_evaluation_at)
-          + '.</p>'
-        : '<p class="muted" style="margin:11px 0 0">Full speed — this account is at '
-          + a.daily_limit + ' a day.</p>')
+    + (awaiting
+        ? '<p class="muted" style="margin:11px 0 0">Your profile details are saved. This account has not been approved yet, so it cannot send messages. Your other approved TikTok accounts can still be used.</p>'
+        : warmup
+          ? '<p class="muted" style="margin:11px 0 0">This account is approved. Its first-day safety warm-up ends '
+            + (a.warmup_until ? new Date(a.warmup_until).toLocaleString([], {dateStyle:'medium',timeStyle:'short'}) : 'after the required safety period')
+            + '. New messages from this account are available after that time.</p>'
+          : a.next_level_name
+            ? '<p class="muted" style="margin:11px 0 0">Next: <b>' + esc(a.next_level_name) + '</b> — '
+              + a.next_daily_limit + '/day, if today stays clean. Checked ' + whenNext(a.next_evaluation_at)
+              + '.</p>'
+            : '<p class="muted" style="margin:11px 0 0">This account is at '
+              + a.daily_limit + ' messages per day.</p>')
     + (a.blocked_today
         ? '<div class="warn" style="margin-top:9px">' + a.blocked_today + ' message'
           + (a.blocked_today === 1 ? '' : 's') + ' refused by TikTok today, so this account stays '
@@ -1583,8 +1591,7 @@ function acctCard(a) {
           + '. The DropHero team reviews it before sending can resume.</div>'
         : '')
     + (a.display_state === 'WAITING_APPROVAL'
-        ? '<p class="muted" style="margin:11px 0 0">The DropHero team is checking this profile before you can '
-          + 'send from it. You do not need to add it again.</p>'
+        ? '<p class="muted" style="margin:11px 0 0">You do not need to register this account again. Contact DropHero support if its approval is taking too long.</p>'
         : '')
     + '<button class="sm" data-problem="' + esc(a.account_id) + '" data-user="' + esc(a.username)
       + '" style="margin-top:12px">Report a problem</button>'
