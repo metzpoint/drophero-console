@@ -1339,7 +1339,7 @@ async function bootOrThrow() {
     $('remaining').textContent = '—';
   } else {
     capacity = cap;
-    $('remaining').textContent = cap.sendable_now;
+    $('remaining').textContent = leftTodayWithFollowups();
   }
 
   const [accountsRes, moneyRes] = await Promise.all([loadAccounts(snapshot), loadMoney(snapshot)]);
@@ -1978,7 +1978,19 @@ const FOLLOWUP_NODE = document.getElementById('workhub-followups');
 function followupCountForBadge(){
  return Math.max(Number(workhub.followupTotal||0),Number(workhub.ownFollowups||0));
 }
+// "LEFT TODAY" COUNTS FOLLOW-UPS TOO (owner, 2026-10-21: a DMer with 721 follow-ups saw "0 left").
+// First DMs are what dh_va_capacity says can go out now; follow-ups only use account room (they are
+// not bound by the VA cap -- dh_va_followup_action checks the account's combined daily limit), so
+// they fill whatever account room the first DMs leave, never more.
+function leftTodayWithFollowups(){
+ if(!capacity)return '—';
+ const first=Number(capacity.sendable_now||0);
+ const room=Math.max(Number(capacity.account_capacity_remaining||0)-first,0);
+ return first+Math.min(followupCountForBadge(),room);
+}
 function updateWorkBadge(){
+ const r=$('remaining');if(r&&capacity)r.textContent=leftTodayWithFollowups();
+ const w=$('work-left-today');if(w&&capacity)w.textContent=leftTodayWithFollowups();
  const n=$('n-work');if(!n||view.performance?.terms_required||view.performance?.blocked)return;
  n.textContent=String(Number(workhub.queueLen||0)+followupCountForBadge());
 }
@@ -2249,13 +2261,13 @@ function drawWork() {
   // guess, and never the account-blind number dh_va_queue used to return.
   const acctName = sendFrom && sendFrom.username ? '@' + esc(sendFrom.username) : '—';
   const sentToday = capacity ? capacity.va_sent_today : (tt.va_sent_today ?? '—');
-  const leftToday = capacity ? capacity.sendable_now : '—';
+  const leftToday = leftTodayWithFollowups();
   const earnedToday = view.money?.today_total_cents ?? 0;
   const signupsToday = Number(view.money?.today?.AFFILIATE_SIGNUP?.n) || 0;
   let html = '<div class="card top" style="margin-bottom:14px">'
     + '<div class="counts" style="margin:0">'
     + '<div><b>' + sentToday + '</b><span>Sent today</span></div>'
-    + '<div><b>' + leftToday + '</b><span>Left today</span></div>'
+    + '<div><b id="work-left-today">' + leftToday + '</b><span>Left today</span></div>'
     + '<div><b>' + usd(earnedToday) + '</b><span>Recorded today</span></div>'
     + '</div>'
     + '<p class="progress-note">' + (signupsToday > 0
