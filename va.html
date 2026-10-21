@@ -1966,12 +1966,38 @@ $('team-apology-confirm').addEventListener('click',async()=>{
 
 const workhub = {
   user:null,lastLoad:0,loading:false,data:null,followups:[],followupTotal:0,
-  followupOffset:0,followupLastLoad:0,leaderboardLastLoad:0,copied:new Set(),pending:new Set()
+  followupOffset:0,followupLastLoad:0,leaderboardLastLoad:0,copied:new Set(),pending:new Set(),
+  ownFollowups:0,queueLen:0,autoOpened:false
 };
+// FOLLOW-UPS LIVE UNDER THE NEW WORK (owner, 2026-10-21: "Opvolgingen horen onder het nieuwe werk").
+// The <details> block used to sit above the tabs, collapsed, so a DMer with an empty Work tab saw
+// "2 Work" and no sign of a thousand follow-ups waiting. drawWork() rebuilds #work with innerHTML on
+// every render, so the node is kept here and re-appended after each draw; it keeps its listeners and
+// its open state. The Work badge counts new DMs plus follow-ups.
+const FOLLOWUP_NODE = document.getElementById('workhub-followups');
+function followupCountForBadge(){
+ return Math.max(Number(workhub.followupTotal||0),Number(workhub.ownFollowups||0));
+}
+function updateWorkBadge(){
+ const n=$('n-work');if(!n||view.performance?.terms_required||view.performance?.blocked)return;
+ n.textContent=String(Number(workhub.queueLen||0)+followupCountForBadge());
+}
+function attachFollowupsToWork(){
+ const work=$('work');if(!work||!FOLLOWUP_NODE)return;
+ if(view.performance?.terms_required||view.performance?.blocked)return;
+ work.appendChild(FOLLOWUP_NODE);
+ // With no new DM to send, the follow-ups ARE the work: open them once per session.
+ if(!workhub.autoOpened && Number(workhub.queueLen||0)===0 && followupCountForBadge()>0){
+  workhub.autoOpened=true;
+  if(!FOLLOWUP_NODE.open)FOLLOWUP_NODE.open=true; // the toggle listener loads the list
+ }
+ updateWorkBadge();
+}
 function clearWorkhub(){
  workhub.user=null;workhub.lastLoad=0;workhub.loading=false;workhub.data=null;
  workhub.followups=[];workhub.followupTotal=0;workhub.followupOffset=0;
  workhub.followupLastLoad=0;workhub.leaderboardLastLoad=0;
+ workhub.ownFollowups=0;workhub.autoOpened=false;
  workhub.copied.clear();workhub.pending.clear();
  for (const id of ['workhub-dashboard','workhub-followup-list','workhub-leaderboard-list']) {
    const el=$(id);if(el)el.innerHTML='';
@@ -1987,7 +2013,7 @@ async function refreshWorkhub(force=false){
   const {data,error}=await sb.rpc('dh_va_workhub');
   if(user!==pendingUserId)return;
   if(error||!data?.ok||!Array.isArray(data.accounts))throw error||new Error('Unavailable');
-  workhub.data=data;renderWorkhub();
+  workhub.data=data;renderWorkhub();attachFollowupsToWork();
  }catch(e){
   workhub.lastLoad=0;
   const el=$('workhub-dashboard');
@@ -2001,6 +2027,7 @@ function renderWorkhub(){
  const limit=accts.filter(a=>a.usable).reduce((v,a)=>v+Number(a.daily_limit||0),0);
  const unused=accts.reduce((v,a)=>v+Number(a.first_touch_stock||0),0);
  const own=accts.reduce((v,a)=>v+Number(a.own_followups||0),0);
+ workhub.ownFollowups=own;
  const money=v=>usd(Number(v)||0);
  root.innerHTML='<div class="card" style="padding:14px">'
   +'<div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><strong>My DropHero dashboard</strong><button class="sm" id="workhub-refresh" type="button">Refresh</button></div>'
@@ -2071,7 +2098,7 @@ async function refreshWorkhubFollowups(force=false){
   if(user!==pendingUserId)return;
   if(error||!data?.ok||!Array.isArray(data.rows))throw error||new Error('Unavailable');
   workhub.followups=data.rows;workhub.followupTotal=Number(data.total||0);
-  renderWorkhubFollowups();
+  renderWorkhubFollowups();updateWorkBadge();
  }catch{
   if(user!==pendingUserId)return;
   workhub.followupLastLoad=0;
@@ -2208,7 +2235,8 @@ function drawWork() {
   // Sinds 22 september 2026 telt hij alleen nog DM's. De reply-check zit niet meer in het werk, dus
   // een reply meetellen zou een getal opleveren waar op dit tabblad niets bij te doen valt -- en de
   // rode "urgent"-rand beloofde spoed voor een handeling die hier niet meer bestaat.
-  if ($('n-work')) $('n-work').textContent = queue.length > 0 ? String(queue.length) : '0';
+  workhub.queueLen = queue.length;
+  if ($('n-work')) $('n-work').textContent = String(queue.length + followupCountForBadge());
   const tabEl = $('tab-work');
   if (tabEl) {
     const existing = tabEl.querySelector('.reply-badge');
@@ -2403,6 +2431,7 @@ function drawWork() {
     if (ok) ok.onclick = () => { orphanedSend = null; render(); };
   }
   wireWorkButtons();
+  attachFollowupsToWork();
 }
 
 /**
