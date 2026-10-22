@@ -1353,7 +1353,7 @@ async function bootOrThrow() {
   void refreshHotLeads(true);
   void refreshTeamApology();
   void refreshWorkhub(true);
-  if ($('workhub-followups')?.open) void refreshWorkhubFollowups(true);
+  void refreshWorkhubFollowups(true);
   if ($('workhub-leaderboard')?.open) void refreshWorkhubLeaderboard(true);
   return { accountsOk: accountsRes.ok, moneyOk: moneyRes.ok };
 }
@@ -1998,11 +1998,9 @@ function attachFollowupsToWork(){
  const work=$('work');if(!work||!FOLLOWUP_NODE)return;
  if(view.performance?.terms_required||view.performance?.blocked)return;
  work.appendChild(FOLLOWUP_NODE);
- // With no new DM to send, the follow-ups ARE the work: open them once per session.
- if(!workhub.autoOpened && Number(workhub.queueLen||0)===0 && followupCountForBadge()>0){
-  workhub.autoOpened=true;
-  if(!FOLLOWUP_NODE.open)FOLLOWUP_NODE.open=true; // the toggle listener loads the list
- }
+ // FOLLOW-UPS ARE WORK LIKE NEW DMs (owner, 2026-10-22: "Follow ups zijn hetzelfde als nieuw"):
+ // the list is always shown open under the DM card, not only once and not only with an empty queue.
+ if(followupCountForBadge()>0 && !FOLLOWUP_NODE.open)FOLLOWUP_NODE.open=true; // toggle loads the list
  updateWorkBadge();
 }
 function clearWorkhub(){
@@ -2050,7 +2048,7 @@ function renderWorkhub(){
   +'<p class="muted" style="margin:10px 0 4px">Payments: '+money(pay.pending_cents)+' pending · '
      +money(pay.approved_cents)+' ready to pay · '+money(pay.paid_cents)+' paid.</p>'
   +'<p class="muted" style="margin:4px 0">Per-account stock is a plan, not an automatic send. '
-    +'Use Work for first DMs and Follow-ups for existing chats.</p>'
+    +'Work shows your first DMs and then your follow-ups.</p>'
   +'<h3 style="margin:14px 0 8px">TikTok account stock</h3>'
   +(accts.length?accts.map(a=>'<div style="padding:8px 0;border-top:1px solid var(--line)">'
     +'<b>@'+esc(a.username)+'</b> <small class="muted">'+(a.usable?'Active':'Not sendable')+'</small>'
@@ -2111,6 +2109,7 @@ async function refreshWorkhubFollowups(force=false){
   if(error||!data?.ok||!Array.isArray(data.rows))throw error||new Error('Unavailable');
   workhub.followups=data.rows;workhub.followupTotal=Number(data.total||0);
   renderWorkhubFollowups();updateWorkBadge();
+  if(tab==='work')drawWork(); // the empty-state line depends on the follow-up count
  }catch{
   if(user!==pendingUserId)return;
   workhub.followupLastLoad=0;
@@ -2391,9 +2390,12 @@ function drawWork() {
   } else {
     // GENUINELY EMPTY: no creator queued, no reply due, no proof outstanding, nothing half-done.
     html += '<div class="card top" style="margin-bottom:14px">'
-      + '<div class="who" style="font-size:18px">No tasks right now</div>'
-      + '<p class="muted" style="margin:8px 0 0">No new creators to message and no replies to check. '
-      + 'Check back later.</p></div>';
+      + (followupCountForBadge() > 0
+        ? '<div class="who" style="font-size:18px">Continue with your follow-ups</div>'
+          + '<p class="muted" style="margin:8px 0 0">No new creators right now. Your follow-ups are below.</p></div>'
+        : '<div class="who" style="font-size:18px">No tasks right now</div>'
+          + '<p class="muted" style="margin:8px 0 0">No new creators to message and no replies to check. '
+          + 'Check back later.</p></div>');
   }
 
   // RETRY COULDN'T-SEND. Creators marked UNREACHABLE before a send stay available here until the
