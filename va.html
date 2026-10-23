@@ -414,7 +414,7 @@
     <div class="card"><span class="muted">Loading account stock and earnings…</span></div>
   </section>
   <details id="workhub-followups" style="margin:10px 0">
-    <summary style="cursor:pointer;padding:14px;background:var(--card);border-radius:12px;font-weight:700">📬 Follow-ups <span id="workhub-followup-count">—</span></summary>
+    <summary style="cursor:pointer;padding:14px;background:var(--card);border-radius:12px;font-weight:700">✉️ <span id="workhub-followup-title">New DMs &amp; follow-ups</span> <span id="workhub-followup-count">—</span></summary>
     <div id="workhub-followup-list" class="card" aria-live="polite"><p class="muted">Open to review assigned follow-ups.</p></div>
   </details>
   <details id="workhub-leaderboard" style="margin:10px 0">
@@ -2007,7 +2007,7 @@ function clearWorkhub(){
  workhub.user=null;workhub.lastLoad=0;workhub.loading=false;workhub.data=null;
  workhub.followups=[];workhub.followupTotal=0;workhub.followupOffset=0;
  workhub.followupLastLoad=0;workhub.leaderboardLastLoad=0;
- workhub.ownFollowups=0;workhub.autoOpened=false;
+ workhub.ownFollowups=0;workhub.autoOpened=false;workhub.newDmTotal=0;
  workhub.copied.clear();workhub.pending.clear();
  for (const id of ['workhub-dashboard','workhub-followup-list','workhub-leaderboard-list']) {
    const el=$(id);if(el)el.innerHTML='';
@@ -2043,12 +2043,12 @@ function renderWorkhub(){
   +'<div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><strong>My DropHero dashboard</strong><button class="sm" id="workhub-refresh" type="button">Refresh</button></div>'
   +'<div class="counts two" style="margin-top:12px"><div><b>'+today+'/'+limit+'</b><span>Account DM use today / daily limits</span></div>'
   +'<div><b>'+money(pay.earned_total_cents)+'</b><span>Total recorded earnings</span></div></div>'
-  +'<div class="counts two" style="margin-top:8px"><div><b>'+unused+'</b><span>New DMs planned</span></div>'
+  +'<div class="counts two" style="margin-top:8px"><div><b>'+unused+'</b><span>New DMs to send</span></div>'
   +'<div><b>'+own+'</b><span>Own follow-ups to check</span></div></div>'
   +'<p class="muted" style="margin:10px 0 4px">Payments: '+money(pay.pending_cents)+' pending · '
      +money(pay.approved_cents)+' ready to pay · '+money(pay.paid_cents)+' paid.</p>'
   +'<p class="muted" style="margin:4px 0">Per-account stock is a plan, not an automatic send. '
-    +'Work shows your first DMs and then your follow-ups.</p>'
+    +'Work shows all your new DMs, then your follow-ups. Every DM you mark sent pays the DM rate.</p>'
   +'<h3 style="margin:14px 0 8px">TikTok account stock</h3>'
   +(accts.length?accts.map(a=>'<div style="padding:8px 0;border-top:1px solid var(--line)">'
     +'<b>@'+esc(a.username)+'</b> <small class="muted">'+(a.usable?'Active':'Not sendable')+'</small>'
@@ -2057,25 +2057,42 @@ function renderWorkhub(){
     +' · '+esc(a.first_touch_stock)+' new planned · '+esc(a.own_followups)+' own follow-ups</p></div>').join('')
     :'<p class="muted">No TikTok accounts yet. Add one in Accounts.</p>')
   +'</div>';
- const count=$('workhub-followup-count');
- if(count)count.textContent='· '+own+' own / '+Number(data.handoffs_pending||0)+' handoffs';
+ updateFollowupSummary();
  const refresh=$('workhub-refresh');if(refresh)refresh.onclick=()=>{void refreshWorkhub(true);};
 }
 function safeWorkhubTikTok(url,handle){return safeTikTokProfileUrl(url,handle);}
+// REISSUED DMs ARE NEW DMs (owner, 2026-10-22: unanswered creators go to ANOTHER DMer as a new
+// opening message). dh_va_followup_queue marks them new_dm and lists them first. They go out from an
+// account that never wrote to this creator, so there is no inbox to check: the card is a plain new DM
+// (copy, send, confirm) and every confirmed send pays the DM rate, like a first DM.
+function updateFollowupSummary(){
+ const count=$('workhub-followup-count');if(!count)return;
+ const total=Number(workhub.followupTotal||0),fresh=Number(workhub.newDmTotal||0);
+ const title=$('workhub-followup-title');
+ if(title)title.textContent=fresh>0&&fresh===total?'New DMs to send':'New DMs & follow-ups';
+ count.textContent='· '+fresh+' new DMs'+(total>fresh?' / '+(total-fresh)+' follow-ups':'');
+}
 function renderWorkhubFollowups(){
  const el=$('workhub-followup-list');if(!el)return;
  const total=workhub.followupTotal,rows=workhub.followups||[];
  const actionable=rows.filter(x=>x.actionable);
  const handoff=rows.filter(x=>!x.actionable);
- el.innerHTML='<p class="muted">Check your original TikTok inbox before sending. '
-  +'If someone replied or declined, do not send a follow-up. '
-  +'Cross-account handoffs require original-account access. '
-  +'Copied messages do not count as sent and no follow-up payment is automatically added.</p>'
-  +'<p><b>'+esc(total)+'</b> assigned follow-ups · '+actionable.length+' actionable on this page · '
-  +handoff.length+' require attention</p>'
+ const fresh=Number(workhub.newDmTotal||0);
+ el.innerHTML=(fresh?'<p class="muted"><b>'+esc(fresh)+' new DMs to send.</b> Copy the message, send it from the account shown, then tap "I SENT this DM". '
+   +'Each confirmed DM pays the DM rate.</p>':'')
+  +(total>fresh?'<p class="muted">Follow-ups: check your original TikTok inbox before sending. '
+  +'If someone replied or declined, do not send a follow-up. Each confirmed follow-up pays the DM rate.</p>':'')
   +rows.map(row=>{
    const safe=safeWorkhubTikTok(row.profile_url,row.handle);
    const ready=row.followup_status==='READY_TO_SEND';
+   if(row.new_dm&&row.actionable&&ready)return '<div class="card" style="padding:11px;margin:9px 0;border:1px solid var(--line)" data-fu="'+esc(row.followup_id)+'">'
+    +'<small class="muted">New DM</small><br><strong>@'+esc(row.handle||row.display_name||'Creator')+'</strong>'
+    +'<p class="muted" style="margin:5px 0">Send from: @'+esc(row.original_account||'your account')+'</p>'
+    +(safe?'<a class="open" href="'+esc(safe)+'" target="_blank" rel="noopener noreferrer">Open creator on TikTok ↗</a>':'')
+    +'<div class="script" style="margin:9px 0">'+esc(row.followup_message)+'</div>'
+    +'<button class="good full" data-fu-action="COPY_AND_OPEN">Copy message &amp; open TikTok</button>'
+    +'<button class="full" data-fu-action="MARK_SENT" '+(!workhub.copied.has(row.followup_id)?'disabled':'')+' style="margin-top:7px">I SENT this DM</button>'
+    +'<p class="fieldmsg" data-fu-feedback role="status"></p></div>';
    return '<div class="card" style="padding:11px;margin:9px 0;border:1px solid var(--line)" data-fu="'+esc(row.followup_id)+'">'
     +'<strong>@'+esc(row.handle||row.display_name||'Creator')+'</strong>'
     +'<p class="muted" style="margin:5px 0">Original account: @'+esc(row.original_account||'Unknown')+' · '
@@ -2108,7 +2125,8 @@ async function refreshWorkhubFollowups(force=false){
   if(user!==pendingUserId)return;
   if(error||!data?.ok||!Array.isArray(data.rows))throw error||new Error('Unavailable');
   workhub.followups=data.rows;workhub.followupTotal=Number(data.total||0);
-  renderWorkhubFollowups();updateWorkBadge();
+  workhub.newDmTotal=Number(data.new_dm_total||0);
+  renderWorkhubFollowups();updateWorkBadge();updateFollowupSummary();
   if(tab==='work')drawWork(); // the empty-state line depends on the follow-up count
  }catch{
   if(user!==pendingUserId)return;
@@ -2133,7 +2151,8 @@ async function workhubFollowupAction(event){
   workhub.copied.add(id);
   const link=safeWorkhubTikTok(row.profile_url,row.handle);
   if(link)window.open(link,'_blank','noopener,noreferrer');
-  msg.textContent='Copied. Send manually in the original conversation, then confirm below.';
+  msg.textContent=row.new_dm?'Copied. Send it on TikTok from @'+(row.original_account||'your account')+', then confirm below.'
+    :'Copied. Send manually in the original conversation, then confirm below.';
   const send=card.querySelector('[data-fu-action="MARK_SENT"]');if(send)send.disabled=false;
   return;
  }
@@ -2152,7 +2171,7 @@ async function workhubFollowupAction(event){
   if(error||!data?.ok)throw error||new Error(data?.reason||'Could not save');
   if(action==='MARK_SENT')workhub.copied.delete(id);
   if(action==='CHECK_NO_REPLY')msg.textContent='Inbox checked. Copy your follow-up next.';
-  else msg.textContent='Saved.';
+  else msg.textContent=action==='MARK_SENT'&&data.paid?'Saved. +'+usd(Number(data.amount_cents)||2)+' earned.':'Saved.';
   await refreshWorkhubFollowups(true);void refreshWorkhub(true);
  }catch(e){
   msg.textContent='Could not save: '+String(e?.message||'Try again.').slice(0,160);
@@ -2391,8 +2410,10 @@ function drawWork() {
     // GENUINELY EMPTY: no creator queued, no reply due, no proof outstanding, nothing half-done.
     html += '<div class="card top" style="margin-bottom:14px">'
       + (followupCountForBadge() > 0
-        ? '<div class="who" style="font-size:18px">Continue with your follow-ups</div>'
-          + '<p class="muted" style="margin:8px 0 0">No new creators right now. Your follow-ups are below.</p></div>'
+        ? '<div class="who" style="font-size:18px">'+(Number(workhub.newDmTotal||0)>0?'Your new DMs are below':'Continue with your follow-ups')+'</div>'
+          + '<p class="muted" style="margin:8px 0 0">'+(Number(workhub.newDmTotal||0)>0
+            ?esc(workhub.newDmTotal)+' new DMs are ready to send. Each one pays the DM rate.'
+            :'No new creators right now. Your follow-ups are below.')+'</p></div>'
         : '<div class="who" style="font-size:18px">No tasks right now</div>'
           + '<p class="muted" style="margin:8px 0 0">No new creators to message and no replies to check. '
           + 'Check back later.</p></div>');
