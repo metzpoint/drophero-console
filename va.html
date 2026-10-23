@@ -1319,7 +1319,7 @@ async function bootOrThrow() {
   $('sub').textContent = queue.length
     ? queue.length + ' creators waiting for a first DM'
       + (tierReady ? ' · Priority creators ready: ' + tierReady : '')
-    : 'no new creators right now';
+    : (Number(workhub.newDmTotal||0) > 0 ? workhub.newDmTotal + ' new DMs to send · open Work' : 'no new creators right now');
   $('done').textContent = data.completed_today ?? 0;
   if ($('n-earn') && !view.money) $('n-earn').textContent = (data.va ? '→' : '–');
 
@@ -2071,6 +2071,10 @@ function updateFollowupSummary(){
  const title=$('workhub-followup-title');
  if(title)title.textContent=fresh>0&&fresh===total?'New DMs to send':'New DMs & follow-ups';
  count.textContent='· '+fresh+' new DMs'+(total>fresh?' / '+(total-fresh)+' follow-ups':'');
+ // The header line under "Hi …" only knew first DMs and said "no new creators right now" above a
+ // list of 208 new DMs (owner, 2026-10-23: "niemand heeft voorraad"). Reissued DMs count here too.
+ const sub=$('sub');
+ if(sub&&!queue.length&&fresh>0)sub.textContent=fresh+' new DMs to send · open Work';
 }
 function renderWorkhubFollowups(){
  const el=$('workhub-followup-list');if(!el)return;
