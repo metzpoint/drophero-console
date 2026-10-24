@@ -624,6 +624,7 @@ function resetOwnerSnapshot() {
   }
 }
 
+let ownerAccessReady = false;
 async function boot() {
   if (bootPromise) {
     bootRequested = true;
@@ -635,7 +636,7 @@ async function boot() {
       try { await bootOnce(); }
       catch (error) {
         const message = 'The admin portal could not refresh. Check the connection and try again.';
-        if (hasOwnerSnapshot) {
+        if (hasOwnerSnapshot || ownerAccessReady) {
           show('app');
           showRefreshFailure(message);
         } else {
@@ -655,36 +656,38 @@ async function bootOnce() {
   if (!session) {
     resetOwnerSnapshot();
     ownerUserId = null;
+    ownerAccessReady = false;
     show('login');
     return;
   }
   const nextUserId = session.user?.id || null;
-  if (ownerUserId && ownerUserId !== nextUserId) resetOwnerSnapshot();
+  if (ownerUserId && ownerUserId !== nextUserId) { resetOwnerSnapshot(); ownerAccessReady = false; }
   ownerUserId = nextUserId;
-  const { data: overview, error } = await sb.rpc('dh_owner_overview', { p_period: period });
-  if (error) {
-    const { data: vaq, error: vaError } = await sb.rpc('dh_va_queue');
-    if (!vaError && vaq) {
-      show('login');
-      $('loginmsg').innerHTML = 'This account is a VA. <a href="./va.html">Open the VA portal</a>.';
-    } else if (hasOwnerSnapshot) {
-      show('app');
-      showRefreshFailure('The last confirmed dashboard data is still shown.');
-    } else {
-      show('login');
-      const denied = /owner only|permission|not authorized/i.test(error.message || '')
-        && /no va is linked|permission|not authorized/i.test(vaError?.message || '');
-      $('loginmsg').textContent = denied
-        ? 'This account has no owner or VA access.'
-        : 'Signed in, but the portal could not load. This is a server or connection error.';
-    }
+  // Account access and dashboard data are separate. A slow metrics query must never
+  // turn an authenticated owner back into an apparent login failure.
+  const { data: isOwner, error: roleError } = await sb.rpc('dh_is_owner');
+  if (roleError) {
+    show('login');
+    $('loginmsg').textContent = 'Your session is active, but we could not verify admin access. Try refreshing.';
     return;
   }
-  const firstOwnerView=!hasOwnerSnapshot;
+  if (isOwner !== true) {
+    ownerAccessReady = false;
+    show('login');
+    $('loginmsg').innerHTML = 'This account is not an owner account. <a href="./va.html">Go to the DM’er portal</a> if you are a team member.';
+    return;
+  }
+  ownerAccessReady = true;
+  const firstOwnerView = !hasOwnerSnapshot;
   show('app');
-  $('banners').innerHTML = '';
   $('whoami').textContent = 'Signed in as ' + (session.user.email || '');
-  renderOverview(overview);
+  const { data: overview, error } = await sb.rpc('dh_owner_overview', { p_period: period });
+  if (error) {
+    showRefreshFailure('You are signed in. Overview statistics are taking too long; other admin sections will still load.');
+  } else {
+    $('banners').innerHTML = '';
+    renderOverview(overview);
+  }
 
   const [funnel, full, attention, interested, vas, sourcing, integrations, tiktok,
          perf, proofs, payouts, templates, modblock, supply, activity] = await Promise.all([
