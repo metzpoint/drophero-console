@@ -385,6 +385,7 @@
 </div>
 
 <main id="app" hidden>
+  <div id="portal-load-status" role="status" aria-live="polite" hidden style="padding:12px;margin-bottom:12px;border:1px solid var(--line);border-radius:12px;background:var(--card)"></div>
   <div class="portal-heading"><div><span class="workspace-label">DropHero · Partners</span>
     <h1 id="hello">DropHero</h1>
     <p class="sub" id="sub">loading…</p>
@@ -1221,11 +1222,19 @@ async function bootOrThrow() {
     loadReplyReports();
   }
   $('claim').hidden = true;
-  // One authenticated read snapshot replaces nine HTTP requests on every regular refresh.
-  const snapshotResponse = await sb.rpc('dh_va_portal_snapshot');
-  const snapshot = snapshotResponse.data;
-  const { data, error } = snapshotResponse.error ? snapshotResponse
-    : (snapshot?.dh_va_queue || { data: null, error: { message: 'Portal snapshot is incomplete.' } });
+  // A successful sign-in is visible immediately. Loading nine independent account and money
+  // resources synchronously used to time out and falsely return people to the login screen.
+  $('login').hidden = true;
+  $('app').hidden = false;
+  const bootStatus = $('portal-load-status');
+  bootStatus.hidden = false;
+  bootStatus.textContent = 'Signed in. Loading your assigned work…';
+  const [queueResponse, capacityResponse] = await Promise.all([
+    sb.rpc('dh_va_queue'),
+    sb.rpc('dh_va_capacity')
+  ]);
+  const snapshot = { dh_va_capacity: capacityResponse };
+  const { data, error } = queueResponse;
   if (!seq.isCurrent('boot', token)) return;
   if (error) {
     // TWO VERY DIFFERENT FAILURES USED TO SHOW THE SAME SENTENCE. Any error here was reported as
@@ -1233,8 +1242,8 @@ async function bootOrThrow() {
     // correct password was told their account was wrong. Sign-in had worked perfectly; the message
     // sent them to look in the one place that was fine. Only the specific "no VA is linked"
     // exception means the wrong door; anything else is a fault and says so.
-    $('login').hidden = false; $('app').hidden = true;
     if (/no va is linked/i.test(error.message || '')) {
+      $('login').hidden = false; $('app').hidden = true; bootStatus.hidden = true;
       // An applicant has a session but no VA row yet. Do not auto-forward: signup.html does not
       // persist this portal session, so they must sign in again there.
       try {
@@ -1263,14 +1272,17 @@ async function bootOrThrow() {
       $('applicant-continue').hidden = true;
       $('wrongacct').hidden = false;
     } else {
-      $('loginmsg').textContent =
-        'Signed in, but the queue could not be loaded — this is a fault on our side, not your '
-        + 'account. Reload the page. If this keeps happening, contact the DropHero team.';
+      // Never pretend that authentication failed because a task query timed out.
+      $('login').hidden = true; $('app').hidden = false;
+      bootStatus.hidden = false;
+      bootStatus.innerHTML = '<strong>You are signed in.</strong><p class="muted">The task list could not load. Your account and earnings are safe.</p><button type="button" class="sm" id="retry-portal-load">Retry loading</button>';
+      $('retry-portal-load').onclick = () => { void boot(); };
       $('applicant-continue').hidden = true;
-      $('wrongacct').hidden = false;
+      $('wrongacct').hidden = true;
     }
     return;
   }
+  bootStatus.hidden = true;
   $('wrongacct').hidden = true;
   $('applicant-continue').hidden = true;
   $('login').hidden = true; $('app').hidden = false;
@@ -1342,9 +1354,15 @@ async function bootOrThrow() {
     $('remaining').textContent = leftTodayWithFollowups();
   }
 
-  const [accountsRes, moneyRes] = await Promise.all([loadAccounts(snapshot), loadMoney(snapshot)]);
-  if (!seq.isCurrent('boot', token)) return;
+  // Sender accounts are needed to choose the next DM. Earnings and history may be slow,
+  // so load them after the work UI has rendered rather than block sign-in on financial scans.
   render();
+  void loadAccounts().then(() => {
+    if (seq.isCurrent('boot', token) && !$('app').hidden && (tab === 'work' || tab === 'tt')) render();
+  }).catch(() => {});
+  void loadMoney().then(() => {
+    if (seq.isCurrent('boot', token) && !$('app').hidden && ['earn','conv','replies'].includes(tab)) render();
+  }).catch(() => {});
   // Screenshot audits discontinued for DMers; historic admin records remain.
   $('message-audit').hidden = true;
   $('quality-screenshots').hidden = true;
@@ -1355,7 +1373,7 @@ async function bootOrThrow() {
   void refreshWorkhub(true);
   void refreshWorkhubFollowups(true);
   if ($('workhub-leaderboard')?.open) void refreshWorkhubLeaderboard(true);
-  return { accountsOk: accountsRes.ok, moneyOk: moneyRes.ok };
+  return { accountsOk: null, moneyOk: null };
 }
 
 /**
