@@ -142,4 +142,3 @@ export function initOwnerSimulation({client,baseUrl,apiKey,root=document}){
  if(location.hash==='#simulation')queueMicrotask(()=>act(list));
  return {call,stop};
 }
-

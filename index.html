@@ -136,6 +136,8 @@
   <h1 class="adminbrand">DropHero <span>Admin</span></h1>
   <p class="sub" id="asof">loading…</p>
   <div id="banners"></div>
+  <!-- TEMPORARY_COUNTER_NOTE: remove seven calendar days after the accounting migration deploy. -->
+  <div class="banner" role="status">Sent totals now include reissued DMs. This corrects an earlier counting issue.</div>
   <section id="audit-banner" hidden aria-live="polite"></section>
 
 
@@ -300,14 +302,18 @@
   <h2>Config required</h2>
   <div class="card" id="config"></div>
 
-  <h2>Telegram</h2><div class="card" id="telegram-bridge">
-<p class="muted">Connect @DropHeroTeamBot. Messages are captured only after owner group approval.</p>
-<p id="tg-bridge-status" role="status" aria-live="polite">Checking configuration…</p>
-<button id="tg-bridge-activate" type="button">Connect bot webhook</button>
-<button id="tg-bridge-refresh" class="ghost" type="button">Refresh groups</button>
-<p class="muted">After connecting, send a message to your Telegram group, refresh, and approve the correct group. Inform members about monitoring.</p>
-<div id="tg-bridge-groups"></div><div id="tg-bridge-messages"></div></div>
-<h2>Integrations</h2>
+  <h2>Telegram</h2>
+  <div class="card" id="telegram-bridge">
+    <p class="muted">Connect @DropHeroTeamBot. Group messages are saved only after you approve that group.</p>
+    <p id="tg-bridge-status" role="status" aria-live="polite">Checking configuration…</p>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin:12px 0">
+      <button id="tg-bridge-activate" type="button">Connect bot webhook</button>
+      <button id="tg-bridge-refresh" type="button" class="ghost">Refresh groups</button>
+    </div>
+    <p class="muted">Connect webhook → send a new Telegram group message → Refresh groups → Approve group. Inform group members about monitoring.</p>
+    <div id="tg-bridge-groups"></div><div id="tg-bridge-messages"></div>
+  </div>
+  <h2>Integrations</h2>
   <div class="card" id="integrations"></div>
 
 </section>
@@ -1628,7 +1634,7 @@ function renderActivity(rows, err) {
 }
 
 
-async const coachAlertView={busy:false,lastFetch:0};
+const coachAlertView={busy:false,lastFetch:0};
 async function refreshOwnerCoachingAlerts(force=false) {
  const root=$('dmer-coaching-alerts');
  if(!root||$('app').hidden||coachAlertView.busy)return;
@@ -1674,7 +1680,7 @@ $('dmer-coaching-alerts').addEventListener('click',async(e)=>{
 });
 setInterval(()=>{if(!$('app').hidden&&!document.hidden)void refreshOwnerCoachingAlerts();},60000);
 
-function refreshTrustTeam() {
+async function refreshTrustTeam() {
   const root = $('trust-team');
   if (!root || $('app').hidden) return;
   const viewer=ownerUserId;
@@ -1704,7 +1710,6 @@ function refreshTrustTeam() {
     if (viewer===ownerUserId) root.innerHTML='<p class="muted">Trust Score data could not be loaded. Refresh to retry.</p>';
   }
 }
-
 
 function renderPerformance(rows, err) {
   if (err) { $('vaperf').innerHTML = '<div class="muted">could not load — ' + esc(err.message) + '</div>'; return; }

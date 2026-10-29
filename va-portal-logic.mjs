@@ -840,4 +840,3 @@ export function payoutView(status) {
         detail: 'Payout available from ' + minimum + '.' };
   }
 }
-
