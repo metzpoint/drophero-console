@@ -2971,7 +2971,7 @@ async function assistantFor(replyEventId, row = aiRow(replyEventId), timeoutMs =
         const { data, error } = await lookup;
         if (!error && data?.stale) return { text: null, withheld: true };
         if (!error && data?.stored && typeof data.reply_text === 'string') {
-          return { text: data.reply_text, source: 'STORED', stage: data.stage, nextAction: data.next_action };
+          return { text: data.reply_text, source: data.source || 'STORED', stage: data.stage, nextAction: data.next_action };
         }
         return { text: null, withheld: false, retryable: body?.attempt_status === 'GENERATING' };
       })()]);
@@ -3107,12 +3107,12 @@ function chatHtml(c) {
     h += '<div class="suggest"><span class="lbl">' + (sug.nextAction === 'ESCALATE_TO_OWNER' ? 'Needs team review' : sug.nextAction === 'CLOSE' ? 'Conversation finished' : 'Waiting for the creator') + '</span>' + esc(sug.text) + '</div>'
       + '<p class="muted" style="margin:6px 0 0">' + (sug.nextAction === 'ESCALATE_TO_OWNER' ? 'The DropHero team needs to review this request before you reply.' : 'No message to send now. Paste their latest reply if the creator answers.') + '</p>';
   } else if (sug.text) {
-    const fullConversion = c.affiliate_available && c.classification === 'INTERESTED'
-      && sug.nextAction === 'SEND_AFFILIATE_LINK'
-      && creatorExplicitlyRequestsSignup(c.extracted_text);
-    h += '<div class="suggest"><span class="lbl">Suggested reply</span>' + esc(gentleCreatorReply(sug.text, c.extracted_text)) + '</div>'
+    const fullConversion = signupLinkReady(c, sug);
+    h += '<div class="suggest"><span class="lbl">Suggested reply</span>' + esc(displayedReply(sug, c.extracted_text)) + '</div>'
       + (fullConversion
-          ? '<p class="muted" style="margin:6px 0 0">Signup link requested — check the live chat before sharing the unique link.</p>'
+          ? '<p class="muted" style="margin:6px 0 0">' + (isAuditedReply(sug)
+              ? 'Tap the button below: it copies this reply together with their personal signup link.'
+              : 'Signup link requested — check the live chat before sharing the unique link.') + '</p>'
           : '<button class="good full" data-copy-reply="' + esc(c.reply_event_id) + '">COPY REPLY' + (url ? ' &amp; OPEN TIKTOK' : '') + '</button>'
             + '<p class="muted" style="margin:6px 0 0">Paste this into their chat and tap Send in TikTok. Paste their latest message when they answer.</p>');
   } else if (sug.pending) {
@@ -3146,12 +3146,10 @@ function chatHtml(c) {
   // SECTION M, ON SCREEN. Not shown merely because a reply exists -- only once the creator has said
   // they are interested or asked for details. A link that appears the moment anyone answers turns
   // every conversation into a pitch, and the question they actually asked goes unanswered.
-  if (c.affiliate_available && c.classification === 'INTERESTED'
-      && sug.nextAction === 'SEND_AFFILIATE_LINK'
-      && creatorExplicitlyRequestsSignup(c.extracted_text)) {
+  if (signupLinkReady(c, sug)) {
     h += '<button class="good" style="margin-top:8px" data-invite="' + esc(c.task_id) + '">'
       + (c.affiliate_state === 'REGISTERED' ? 'They joined — copy link again'
-                                            : 'COPY REQUESTED SIGNUP LINK') + '</button>';
+         : isAuditedReply(sug) ? 'COPY REPLY + SIGNUP LINK' : 'COPY REQUESTED SIGNUP LINK') + '</button>';
   } else if (!['WAIT','CLOSE','ESCALATE_TO_OWNER'].includes(sug.nextAction) && (c.classification === 'QUESTION' || c.classification === 'SEND_DETAILS')) {
     h += '<p class="muted" style="margin:8px 0 0">Share the creator information page first. The tracked FirstPromoter signup link comes after they confirm they want to join.</p>';
   }
@@ -3184,6 +3182,19 @@ function gentleCreatorReply(suggested = '', latestMessage = '') {
   if (!lead || lead.length>320 || /https?:\/\/|firstpromoter|strong fit|perfect —|30% recurring.{0,140}sign.?up/i.test(lead))
     return 'Thanks for getting back to me! What would you like to know about the DropHero creator partnership?';
   return lead;
+}
+
+// A reviewed (audited) reply was checked for this exact conversation: show and copy it unchanged.
+function isAuditedReply(sug) { return sug?.from === 'AUDITED' || sug?.source === 'AUDITED'; }
+function displayedReply(sug, latestMessage = '') {
+  return isAuditedReply(sug) ? String(sug.text || '').trim() : gentleCreatorReply(sug?.text, latestMessage);
+}
+// The link button: a reviewed reply that says "send the link" for an eligible creator, or the
+// creator literally asked for it. The database still decides whether a link may be issued.
+function signupLinkReady(c, sug) {
+  if (!c?.affiliate_available || sug?.nextAction !== 'SEND_AFFILIATE_LINK') return false;
+  if (isAuditedReply(sug)) return ['INTERESTED', 'SEND_DETAILS'].includes(c.classification);
+  return c.classification === 'INTERESTED' && creatorExplicitlyRequestsSignup(c.extracted_text);
 }
 
 // Info pages are shared only on request. Never combine creator page and signup URL.
@@ -3263,7 +3274,7 @@ function wireChats(rows) {
       const row = rows.find((r) => r.reply_event_id === b.dataset.copyReply);
       const suggested = row ? suggestedFor(row) : null;
       if (['WAIT','CLOSE','ESCALATE_TO_OWNER'].includes(suggested?.nextAction)) return;
-      const text = row ? (['NOT_INTERESTED','FOLLOW_UP_LATER'].includes(row.classification)
+      const text = row ? (isAuditedReply(suggested) || ['NOT_INTERESTED','FOLLOW_UP_LATER'].includes(row.classification)
         ? suggested.text : creatorInfoMessage(suggested.text, row.classification, row.extracted_text)) : null;
       if (!text) return;
       b.disabled = true;
@@ -3284,8 +3295,7 @@ function wireChats(rows) {
   for (const b of list.querySelectorAll('[data-invite]')) {
     b.onclick = async () => {
       const current = rows.find((r) => r.task_id === b.dataset.invite);
-      if (!current || suggestedFor(current).nextAction !== 'SEND_AFFILIATE_LINK'
-        || !creatorExplicitlyRequestsSignup(current.extracted_text)) {
+      if (!current || !signupLinkReady(current, suggestedFor(current))) {
         notice('The creator must explicitly ask to join before a signup link is shared.');
         return;
       }
@@ -3302,8 +3312,8 @@ function wireChats(rows) {
         return;
       }
       const row = rows.find((r) => r.task_id === b.dataset.invite);
-      const suggested = row ? suggestedFor(row).text : '';
-      const message = signupMessage(data.url);
+      const sugRow = row ? suggestedFor(row) : null;
+      const message = isAuditedReply(sugRow) ? sugRow.text.trim() + '\n' + data.url : signupMessage(data.url);
       const cr = await copyNow(message);
       if (cr.ok) notice('Requested tracked signup link copied — check the chat before sending.');
       else {
