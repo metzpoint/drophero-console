@@ -2153,6 +2153,10 @@ function renderWorkhubFollowups(){
     +'<div class="script" style="margin:9px 0">'+esc(row.followup_message)+'</div>'
     +'<button class="good full" data-fu-action="COPY_AND_OPEN">Copy message &amp; open TikTok</button>'
     +'<button class="full" data-fu-action="MARK_SENT" '+(!workhub.copied.has(row.followup_id)?'disabled':'')+' style="margin-top:7px">I SENT this DM</button>'
+    // CAN'T MESSAGE (owner, 2026-10-31): some creators cannot be messaged at all (DMs closed, account
+    // gone). This card only offered I SENT, so the DMer was stuck. CANT_MESSAGE parks the creator as
+    // UNREACHABLE: no send, no pay, nothing deleted, and it is counted per DMer for the owner.
+    +'<button class="full" data-fu-action="CANT_MESSAGE" style="margin-top:7px;background:#3a1d1d;border-color:#5e2020;color:#ffc9c9">Can\'t message this creator</button>'
     +'<p class="fieldmsg" data-fu-feedback role="status"></p></div>';
    return '<div class="card" style="padding:11px;margin:9px 0;border:1px solid var(--line)" data-fu="'+esc(row.followup_id)+'">'
     +'<strong>@'+esc(row.handle||row.display_name||'Creator')+'</strong>'
@@ -2218,6 +2222,10 @@ async function workhubFollowupAction(event){
   return;
  }
  if(action==='MARK_SENT'&&!workhub.copied.has(id)){msg.textContent='Copy and send the message first.';return;}
+ if(action==='CANT_MESSAGE'){
+  const ok=window.confirm('Remove @'+(row.handle||'this creator')+' from your list because TikTok does not let you message them?\n\nOnly use this if you really cannot send a DM. It does not count as a sent DM and is not paid.');
+  if(!ok)return;
+ }
  if(action==='DECLINED'||action==='ALREADY_REPLIED'){
   const ok=window.confirm(action==='DECLINED'
     ?'Confirm the creator declined. Do not send another message to them.'
@@ -2232,6 +2240,7 @@ async function workhubFollowupAction(event){
   if(error||!data?.ok)throw error||new Error(data?.reason||'Could not save');
   if(action==='MARK_SENT')workhub.copied.delete(id);
   if(action==='CHECK_NO_REPLY')msg.textContent='Inbox checked. Copy your follow-up next.';
+  else if(action==='CANT_MESSAGE')msg.textContent='Removed from your list. Not counted as sent.';
   else msg.textContent=action==='MARK_SENT'&&data.paid?'Saved. +'+usd(Number(data.amount_cents)||2)+' earned.':'Saved.';
   await refreshWorkhubFollowups(true);void refreshWorkhub(true);
  }catch(e){
