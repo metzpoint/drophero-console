@@ -3115,6 +3115,8 @@ function chatHtml(c) {
   if (sug.text && ['WAIT','CLOSE','ESCALATE_TO_OWNER'].includes(sug.nextAction)) {
     h += '<div class="suggest"><span class="lbl">' + (sug.nextAction === 'ESCALATE_TO_OWNER' ? 'Needs team review' : sug.nextAction === 'CLOSE' ? 'Conversation finished' : 'Waiting for the creator') + '</span>' + esc(sug.text) + '</div>'
       + '<p class="muted" style="margin:6px 0 0">' + (sug.nextAction === 'ESCALATE_TO_OWNER' ? 'The DropHero team needs to review this request before you reply.' : 'No message to send now. Paste their latest reply if the creator answers.') + '</p>';
+  } else if (sug.text && !displayedReply(sug, c.extracted_text)) {
+    h += '<div class="suggest none"><span class="lbl">Answer this one yourself</span>' + esc(ANSWER_YOURSELF) + '</div>';
   } else if (sug.text) {
     const fullConversion = signupLinkReady(c, sug);
     h += '<div class="suggest"><span class="lbl">Suggested reply</span>' + esc(displayedReply(sug, c.extracted_text)) + '</div>'
@@ -3183,15 +3185,16 @@ function creatorAsksForDetails(latestMessage = '') {
 function isBriefAcknowledgement(latestMessage=''){
   return /^(?:(?:yes|yeah|yep|sure|okay|ok|i am|yes i am|yeah i am|i do|indeed|correct|right|true)[.!\s]*){1,3}$/i.test(String(latestMessage||'').trim());
 }
-// Old stored replies and generic templates must never become a surprise sales essay.
+// Old stored replies and generic templates must never become a surprise sales essay. An unsuitable
+// text is withheld (empty), never swapped for a stock question: "What would you like to know?" in
+// answer to a creator's concrete questions told them nothing (reported 2026-11-01).
 function gentleCreatorReply(suggested = '', latestMessage = '') {
-  if (isBriefAcknowledgement(latestMessage))
-    return 'Thanks for confirming! Would you like a quick overview of our creator partnership?';
   const lead=String(suggested||'').trim();
   if (!lead || lead.length>320 || /https?:\/\/|firstpromoter|strong fit|perfect —|30% recurring.{0,140}sign.?up/i.test(lead))
-    return 'Thanks for getting back to me! What would you like to know about the DropHero creator partnership?';
+    return '';
   return lead;
 }
+const ANSWER_YOURSELF = 'No suitable suggestion for this message. Read their latest message and answer their questions yourself.';
 
 // A reviewed (audited) reply was checked for this exact conversation: show and copy it unchanged.
 function isAuditedReply(sug) { return sug?.from === 'AUDITED' || sug?.source === 'AUDITED'; }
@@ -3265,7 +3268,7 @@ function wireChats(rows) {
       const row = rows.find((r) => r.reply_event_id === b.dataset.copyCreators);
       if (!row || ['NOT_INTERESTED', 'FOLLOW_UP_LATER'].includes(row.classification)
         || ['WAIT','CLOSE','ESCALATE_TO_OWNER'].includes(suggestedFor(row).nextAction)) return;
-      const text = creatorInfoMessage('', row.classification, row.extracted_text);
+      const text = CREATOR_INFO_URL;
       b.disabled = true;
       const result = await copyNow(text);
       b.disabled = false;
@@ -4595,7 +4598,9 @@ async function prepareCreatorFollowupCopy(selected, taskId, issueInvite, latestC
      throw new Error('SIGNUP_LINK_UNAVAILABLE');
    return signupMessage(data.url,text);
  }
- return gentleCreatorReply(text, latestCreatorMessage);
+ const shown=gentleCreatorReply(text, latestCreatorMessage);
+ if(!shown)throw new Error('REPLY_NOT_SUITABLE');
+ return shown;
 }
 
 function renderCreatorFollowups(){
