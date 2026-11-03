@@ -3102,6 +3102,29 @@ function chatHtml(c) {
   // WAT DE DMER LEEST. Eén zin, of één gewone regel dat er nog geen is. Het label is in alle drie de
   // gevallen hetzelfde: waar de zin vandaan komt, is niet hun probleem.
   const sug = suggestedFor(c);
+  // THE LINK GOES OUT BY ITSELF (owner, 2026-10-29). Once the creator is interested or asks for
+  // details, the server writes the whole reply with their personal signup link in it; the DMer only
+  // copies it into TikTok and sends. Nobody has to judge whether the creator "asked for the link".
+  // The assistant still wins when it says to wait, close or ask the team, or when the reply could
+  // not be read: the link never jumps ahead of those.
+  // 2026-11-03 (owner): the link goes with EVERY reply, unless the creator said no. Sending it is
+  // paid once per creator (pay.signup_link_sent_cents); the server issues the link and the pay.
+  if (autoLinkFor(c, sug)) {
+    const replyText = linkReplyText(c, sug);
+    const sentBefore = c.affiliate_state === 'ISSUED' || c.affiliate_state === 'CLICKED';
+    h += '<div class="suggest"><span class="lbl">' + (sentBefore ? 'Reply with their signup link' : 'Send their signup link · paid') + '</span>'
+      + (replyText ? esc(replyText) + '<br><span class="muted">+ their personal signup link is added automatically.</span>'
+                   : 'Tap the button: a short message with their personal signup link is copied for you.')
+      + '</div>'
+      + '<button class="good full" data-autolink="' + esc(c.reply_event_id) + '">COPY REPLY + SIGNUP LINK'
+      + (url ? ' &amp; OPEN TIKTOK' : '') + '</button>'
+      + '<p class="muted" style="margin:6px 0 0">Paste it into their chat and tap Send. Paste their next message when they answer.</p>';
+    h += url
+      ? '<div style="margin-top:9px"><a class="open" href="' + esc(url)
+        + '" target="_blank" rel="noopener noreferrer">Open TikTok profile</a></div></div>'
+      : '<p class="muted">The TikTok profile link is invalid. Contact the DropHero team with the creator\'s name.</p></div>';
+    return h;
+  }
   const shareInfo = creatorAsksForDetails(c.extracted_text)
     && !['NOT_INTERESTED', 'FOLLOW_UP_LATER'].includes(c.classification)
     && !['WAIT', 'CLOSE', 'ESCALATE_TO_OWNER'].includes(sug.nextAction);
@@ -3174,6 +3197,25 @@ function chatHtml(c) {
 
 const CREATOR_INFO_URL = 'https://drophero.app/creators';
 
+// Every creator who replied gets their signup link with our reply (owner, 2026-11-03), except when
+// they said no, already joined, or the team must answer first.
+function autoLinkFor(c, sug = suggestedFor(c)) {
+  return !!c.affiliate_available && c.affiliate_state !== 'REGISTERED'
+    && c.classification !== 'NOT_INTERESTED'
+    && !['CLOSE', 'ESCALATE_TO_OWNER'].includes(sug?.nextAction)
+    // Waiting for the creator: only when they never got their link do we still send it.
+    && (sug?.nextAction !== 'WAIT' || c.affiliate_state === 'NONE');
+}
+// The suggested reply that goes in front of the link. A WAIT text is an instruction for the DMer,
+// not a message, so it is never copied; the server then uses its short standard message.
+function linkReplyText(c, sug = suggestedFor(c)) {
+  if (!sug?.text || sug.pending || sug.nextAction === 'WAIT') return '';
+  return displayedReply(sug, c.extracted_text) || '';
+}
+// Still owes this creator their link: shown first in Replies.
+function needsSignupLink(c) {
+  return autoLinkFor(c) && c.affiliate_state === 'NONE';
+}
 // A positive acknowledgement is not consent to receive signup links or long pitches.
 function creatorExplicitlyRequestsSignup(latestMessage = '') {
   const text=String(latestMessage||'').trim();
@@ -3292,6 +3334,7 @@ function wireChats(rows) {
       b.disabled = true;
       const r = await copyNow(text, true);
       b.disabled = false;
+      sb.rpc('dh_va_log_outgoing', { p_reply_event_id: row.reply_event_id, p_text: text }).then(() => {}, () => {});
       if (r.ok) {
         const url = safeTikTokProfileUrl(row.profile_url, row.handle);
         const opened = url && leaveForTikTok(url, row.handle);
@@ -3302,6 +3345,40 @@ function wireChats(rows) {
         prompt('Automatic copy was blocked. Copy this reply from the field below.', text);
         notice('Use the reply shown in the copy field.');
       }
+    };
+  }
+  for (const b of list.querySelectorAll('[data-autolink]')) {
+    b.onclick = async () => {
+      const row = rows.find((r) => r.reply_event_id === b.dataset.autolink);
+      if (!row) return;
+      b.disabled = true;
+      let result;
+      try {
+        result = await sb.rpc('dh_va_reply_with_link', {
+          p_reply_event_id: row.reply_event_id, p_reply_text: linkReplyText(row) || null });
+      } catch (error) { result = { error }; }
+      b.disabled = false;
+      const data = result?.data;
+      if (result?.error || !data?.ok || !data.text) {
+        notice(data?.reason === 'ALREADY_ATTRIBUTED'
+          ? 'This creator has already joined through someone else. Leave this one.'
+          : data?.reason === 'NOT_INTERESTED' ? 'This creator said no. No link needed.'
+          : 'Could not make the link — try again.');
+        return;
+      }
+      row.affiliate_state = row.affiliate_state === 'NONE' ? 'ISSUED' : row.affiliate_state;
+      const cr = await copyNow(data.text, true);
+      if (cr.ok) {
+        const url = safeTikTokProfileUrl(row.profile_url, row.handle);
+        const opened = url && leaveForTikTok(url, row.handle);
+        notice(opened ? 'Reply with signup link copied — paste it in their TikTok chat and tap Send.'
+          : 'Reply with signup link copied. Open the TikTok profile below, paste it and tap Send.');
+      } else {
+        prompt('Automatic copy was blocked. Copy this reply from the field below.', data.text);
+        notice('Use the reply shown in the copy field.');
+      }
+      try { await loadMoney(); } catch { /* the copy already worked; totals refresh later */ }
+      redrawReplyViews();
     };
   }
   for (const b of list.querySelectorAll('[data-invite]')) {
@@ -3339,6 +3416,12 @@ function wireChats(rows) {
 
 // Replies is the action inbox; Chats keeps the complete sent-message history.
 function replyRewardHint() {
+  const link = Number(view.money?.rates?.link_cents);
+  const linkPart = Number.isFinite(link) && link > 0
+    ? 'Earn ' + usd(link) + ' for every creator you send their signup link (once per creator). ' : '';
+  return linkPart + replyRewardHintSignup();
+}
+function replyRewardHintSignup() {
   const cents = Number(view.money?.rates?.signup_cents);
   return Number.isFinite(cents) && cents > 0
     ? 'Earn ' + usd(cents) + ' once per verified affiliate signup through your tracked link. Pasting a reply alone does not earn a bonus.'
@@ -3355,6 +3438,7 @@ function updateBonusHeader() {
 }
 function replyBucket(c) {
   const suggestion = suggestedFor(c);
+  if (needsSignupLink(c)) return 'link';
   if (c.affiliate_state === 'REGISTERED' || c.classification === 'NOT_INTERESTED'
       || ['WAIT','CLOSE'].includes(suggestion.nextAction)) return 'waiting';
   return suggestion.text ? 'ready' : 'review';
@@ -3378,7 +3462,7 @@ function redrawReplyViews() {
 }
 function drawReplyInbox() {
   const chats = view.chats || [];
-  const groups = [['ready','Your turn to reply'],['review','Preparing or reviewing the reply'],['waiting','Waiting or finished']];
+  const groups = [['link','Send their signup link (paid per creator)'],['ready','Your turn to reply'],['review','Preparing or reviewing the reply'],['waiting','Waiting or finished']];
   let html = '<h2>Replies</h2><p class="muted">Pasted creator replies start suggestions automatically. '
     + 'Copy the suggested reply and send it in TikTok. Paste their latest reply when it arrives.</p>'
     + '<p class="muted">A red dot means this reply needs a response or review.</p>'
@@ -3489,6 +3573,7 @@ function drawEarnings() {
     '<div class="card"><p class="earnhead">Today</p>'
     + line('Messages sent', t.DM_SENT, r.dm_cents)
     + line('Replies', t.FIRST_VERIFIED_REPLY, r.reply_cents)
+    + line('Signup links sent', t.SIGNUP_LINK_SENT, r.link_cents)
     + line('New affiliates', t.AFFILIATE_SIGNUP, r.signup_cents)
     + '<div class="money total"><span>Total today</span><span class="amt">'
     + usd(m.today_total_cents) + '</span></div></div>'
@@ -3496,6 +3581,7 @@ function drawEarnings() {
     + '<div class="card"><p class="earnhead">Not paid out yet</p>'
     + line('Messages sent', p.DM_SENT, r.dm_cents)
     + line('Replies', p.FIRST_VERIFIED_REPLY, r.reply_cents)
+    + line('Signup links sent', p.SIGNUP_LINK_SENT, r.link_cents)
     + line('New affiliates', p.AFFILIATE_SIGNUP, r.signup_cents)
     + '<div class="money total"><span>Total</span><span class="amt">'
     + usd(m.period_total_cents) + '</span></div>'
