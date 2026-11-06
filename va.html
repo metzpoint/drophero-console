@@ -4973,6 +4973,7 @@ function renderConversionOwner(){
  let h='<h2>Creator conversion · owner review</h2>'
   +'<p class="muted">Every proposed reply needs your approval before the DMer sees it. Approved messages appear only in the original DMer\'s portal; the personal signup link is added when they copy it.</p>'
   +'<div class="cv-funnel"><span>Creators '+esc(f.creators??0)+'</span><span>Approved '+esc(f.approved_or_later??0)+'</span><span>Copied '+esc(f.copied??0)+'</span><span>Sent (confirmed) '+esc(f.sent_confirmed??0)+'</span><span>Clicked after send '+esc(f.clicked_after_send??0)+'</span><span>Registered '+esc(f.registered??0)+'</span><span>Video verified '+esc(f.video_published_verified??0)+'</span><span>Paid conversions '+esc(f.paid_conversions??0)+'</span></div>'
+  +((c.READY_FOR_REVIEW||0)>0?'<div class="cv-actions"><button class="good" type="button" id="cv-approve-all">Approve all '+esc(c.READY_FOR_REVIEW)+' ready messages as written</button></div>':'')
   +'<div class="cv-filters" role="group" aria-label="Filter by status">'
   +['READY_FOR_REVIEW','NEEDS_INVESTIGATION','APPROVED','ALREADY_HANDLED','SENT','REGISTERED','DECLINED','ALL'].map(s=>
      '<button class="sm" type="button" data-cv-filter="'+s+'" aria-pressed="'+(cv.filter===s)+'">'+esc(s==='ALL'?'All':CV_LABEL[s])+' '+esc(s==='ALL'?cv.ownerRows.length:(c[s]||0))+'</button>').join('')
@@ -5008,6 +5009,24 @@ function renderConversionOwner(){
  for(const b of box.querySelectorAll('[data-cv-filter]'))b.onclick=()=>{cv.filter=b.dataset.cvFilter;renderConversionOwner();};
  const s=$('cv-search');s.oninput=()=>{cv.search=s.value;clearTimeout(cv.st);cv.st=setTimeout(()=>{renderConversionOwner();const n=$('cv-search');if(n){n.focus();n.setSelectionRange(n.value.length,n.value.length);}},250);};
  for(const b of box.querySelectorAll('[data-cv-act]'))b.onclick=()=>void cvOwnerAct(b.closest('[data-cv-id]').dataset.cvId,b.dataset.cvAct);
+ const all=$('cv-approve-all');if(all)all.onclick=()=>void cvApproveAll();
+}
+
+// Owner: approve every READY_FOR_REVIEW draft with its proposed text, one RPC per draft, so the
+// server's text policy and audit log apply to each one exactly as a single Approve would.
+async function cvApproveAll(){
+ const ready=cv.ownerRows.filter(r=>r.status==='READY_FOR_REVIEW'&&r.draft_text&&!cv.busy.has(r.draft_id));
+ if(!ready.length||!confirm('Approve all '+ready.length+' ready messages exactly as written? The DMers can then send them.'))return;
+ const btn=$('cv-approve-all');if(btn)btn.disabled=true;
+ let ok=0,fail=0;
+ for(const r of ready){
+   cv.busy.add(r.draft_id);
+   try{const {data,error}=await sb.rpc('dh_owner_conversion_review',{p_draft_id:r.draft_id,p_action:'APPROVE',p_text:r.draft_text,p_note:'Approve all'});
+     if(error||!data?.ok)fail++;else{ok++;r.status=data.status;r.approved_text=r.draft_text;}}
+   catch(e){fail++;}finally{cv.busy.delete(r.draft_id);}
+ }
+ cv.msg=ok+' approved'+(fail?', '+fail+' not approved (open them one by one)':'')+'.';
+ cv.lastLoad=0;renderConversionOwner();void refreshConversion(true);
 }
 
 async function cvOwnerAct(id,action){
@@ -5033,7 +5052,7 @@ function renderConversionVa(){
  const todo=rows.filter(r=>r.lane==='APPROVED').length, verify=rows.filter(r=>r.lane==='VERIFY_EXISTING_MESSAGE').length;
  cvGate(todo+verify);
  let h='<h2>Priority: approved creator messages first</h2>'
-  +'<p>DropHero has approved personal replies for creators who answered you. Send these first: new DMs stay locked until every approved message below is sent or checked.</p>'
+  +'<p>DropHero has approved personal replies for creators who answered you. Sending them is required today: new DMs, and the pay that comes with them, stay locked until every approved message below is sent or checked. Each creator you send a signup link to also counts toward your link payment.</p>'
   +'<p class="muted">'+esc(todo)+' to send · '+esc(verify)+' to check. Send each one from the TikTok account shown, in the existing chat. Copying is not sending: tap "I sent it in TikTok" only after you really pressed Send.</p>'
   +'<p role="status" class="muted" id="cv-va-msg">'+esc(cv.vaMsg||'')+'</p>';
  for(const r of rows){
