@@ -48,6 +48,22 @@
 
   /* Verified, owner-approved creator partnership follow-ups; advisory and manual only. */
   #creator-followups{padding:14px;margin:12px 0;border:1px solid #b17c3c;border-radius:14px;background:#242018}
+  .cv-box{padding:14px;margin:12px 0;border:1px solid #3c7bb1;border-radius:14px;background:#18212b}
+  .cv-box h2{font-size:18px;margin:0 0 5px;color:#9cd3ff}
+  .cv-item{border:1px solid #35506b;padding:12px;border-radius:11px;background:#141a21;margin:10px 0}
+  .cv-in{white-space:pre-wrap;overflow-wrap:anywhere;background:#252a32;padding:9px;border-radius:8px;font-size:13px}
+  .cv-msg{white-space:pre-wrap;overflow-wrap:anywhere;background:#0f1924;border:1px solid #355574;border-radius:9px;padding:10px;font-size:13px;line-height:1.5}
+  .cv-box textarea{width:100%;min-height:170px;box-sizing:border-box;font:13px/1.5 inherit;background:#0f1924;color:inherit;border:1px solid #355574;border-radius:9px;padding:10px}
+  .cv-actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px}
+  .cv-actions button{flex:1;min-width:120px;min-height:44px;font-size:13px}
+  .cv-pill{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700;background:#2d3c4c;margin-right:4px}
+  .cv-filters{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+  .cv-filters button{min-height:36px;font-size:12px}
+  .cv-filters [aria-pressed="true"]{border-color:#70c6ff;background:#204d62;color:#fff}
+  .cv-funnel{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+  .cv-funnel span{background:#202b37;border-radius:8px;padding:5px 8px;font-size:12px}
+  body.cv-gate #work>*{display:none!important}
+  body.cv-gate #work::before{content:'New DMs are locked. Finish your approved creator messages first: they are at the top of this page.';display:block;padding:14px;border:1px solid #b17c3c;background:#2a2116;border-radius:12px;font-weight:700}
   #creator-followups h2{font-size:18px;margin:0 0 5px;color:#ffda9c}
   #creator-followups .cf-item{border:1px solid #5a4a37;padding:12px;border-radius:11px;background:#171c23;margin:10px 0}
   #creator-followups .cf-count{background:#a85629;padding:3px 9px;color:white;border-radius:99px;font-size:12px;font-weight:700}
@@ -428,6 +444,8 @@
 
   <section id="creator-followup-push" hidden aria-label="Assigned creator replies" role="status" aria-live="polite"></section>
 
+  <section id="conversion-owner" class="cv-box" hidden aria-label="Creator conversion review" role="region" aria-live="polite"></section>
+  <section id="conversion-va" class="cv-box" hidden aria-label="Approved creator messages" role="region" aria-live="polite"></section>
   <section id="creator-followups" hidden aria-label="Creator follow-ups ready to review" aria-live="polite" role="region"></section>
   <section id="hot-leads" aria-label="Interested creators conversion priorities" role="region" aria-live="polite">
     <div class="card"><span class="muted">Loading interested creators…</span></div>
@@ -1370,6 +1388,7 @@ async function bootOrThrow() {
   $('message-audit').hidden = true;
   $('quality-screenshots').hidden = true;
   void refreshCreatorFollowups();
+  void refreshConversion(true);
   void refreshPriorityQA();
   void refreshHotLeads(true);
   void refreshTeamApology();
@@ -4897,6 +4916,194 @@ async function refreshCreatorFollowups(force=false){
  }finally{creatorFollowups.loading=false;}
 }
 setInterval(()=>{if(!document.hidden&&!$('app').hidden&&!typing())void refreshCreatorFollowups();},60000);
+
+// CREATOR CONVERSION CAMPAIGN (owner P0, 2026-11-06). The owner reviews every proposed reply here and
+// approves or rejects it; a DMer only ever sees owner-approved messages for creators in their own
+// TikTok chats. Copying issues (once) the creator's personal tracked signup link; it is not a send.
+// "I sent it" records the send only after the DMer pressed Send in TikTok. Registration comes from
+// FirstPromoter, never from a click. The server enforces all of this; the UI only reflects it.
+const CV_CAMPAIGN='CREATOR_CONVERSION_20261106';
+const CV_LABEL={READY_FOR_REVIEW:'Ready for review',APPROVED:'Approved',ALREADY_HANDLED:'Already handled',
+ NEEDS_INVESTIGATION:'Needs investigation',DECLINED:'Declined',SENT:'Sent',REGISTERED:'Registered'};
+const CV_REASON={TEXT_POLICY:'This text makes a claim we cannot promise (trial, payout method, guaranteed results or a placeholder). Edit it and approve again.',
+ VERIFY_OR_REOPEN_FIRST:'This conversation was already handled before. The DMer must first check the existing TikTok message.',
+ ALREADY_COPIED_BY_DMER:'The DMer already copied this message; it can no longer be changed.',
+ FINAL_OR_REGISTERED:'This creator is already sent or registered.',CREATOR_REPLIED_AGAIN:'The creator replied again. The DropHero team will review the new reply first; nothing was copied.',
+ NOT_APPROVED:'This message is not approved (anymore). Refresh.',SIGNUP_LINK_UNAVAILABLE:'The personal signup link could not be created. Nothing was copied or sent.',
+ ALREADY_REGISTERED:'This creator already registered. Do not send a signup link.',COPY_FIRST:'Copy the message first, send it in TikTok, then confirm.',
+ NOT_YOUR_DRAFT:'This conversation belongs to another DMer.',NOTHING_TO_VERIFY:'Already checked.'};
+const cv={user:null,owner:null,ownerRows:[],ownerCounts:{},funnel:{},filter:'READY_FOR_REVIEW',search:'',vaRows:[],busy:new Set(),msg:'',lastLoad:0,loading:false};
+function cvReason(r){return CV_REASON[r?.reason]||('Could not save'+(r?.reason?' ('+r.reason+')':'')+'. Refresh and try again.');}
+function cvWhen(t){if(!t)return '';const d=new Date(t);return isNaN(d)?'':d.toISOString().slice(0,16).replace('T',' ');}
+
+async function refreshConversion(force=false){
+ if($('app').hidden||!pendingUserId)return;
+ const user=pendingUserId;
+ if(cv.user!==user){Object.assign(cv,{user,owner:null,ownerRows:[],vaRows:[],msg:'',lastLoad:0});
+   $('conversion-owner').hidden=true;$('conversion-va').hidden=true;}
+ if(cv.loading||(!force&&Date.now()-cv.lastLoad<60000))return;
+ cv.loading=true;cv.lastLoad=Date.now();
+ try{
+   if(cv.owner!==false){
+     const o=await sb.rpc('dh_owner_conversion_queue',{p_campaign:CV_CAMPAIGN,p_status:null,p_search:null,p_limit:1000});
+     if(user!==pendingUserId)return;
+     if(!o.error&&o.data?.ok){cv.owner=true;cv.ownerRows=o.data.rows||[];cv.ownerCounts=o.data.counts||{};cv.funnel=o.data.funnel||{};}
+     else cv.owner=false;
+   }
+   const v=await sb.rpc('dh_va_conversion_queue',{p_campaign:CV_CAMPAIGN});
+   if(user!==pendingUserId)return;
+   cv.vaRows=(!v.error&&v.data?.ok&&Array.isArray(v.data.rows))?v.data.rows:[];
+   renderConversion();
+ }catch(e){/* keep the rest of the portal working */}
+ finally{cv.loading=false;}
+}
+setInterval(()=>{if(!document.hidden&&!$('app').hidden&&!typing())void refreshConversion();},90000);
+
+function renderConversion(){renderConversionOwner();renderConversionVa();}
+
+function renderConversionOwner(){
+ const box=$('conversion-owner');
+ if(!cv.owner){box.hidden=true;box.innerHTML='';return;}
+ box.hidden=false;
+ const keep=document.activeElement&&box.contains(document.activeElement)&&document.activeElement.tagName==='TEXTAREA';
+ if(keep)return; // never wipe a text the owner is editing
+ const c=cv.ownerCounts,f=cv.funnel||{},q=cv.search.toLowerCase();
+ const rows=cv.ownerRows.filter(r=>(cv.filter==='ALL'||r.status===cv.filter)
+   &&(!q||[r.handle,r.latest_reply,r.sender_account,r.creator_name,r.dmer].some(x=>String(x||'').toLowerCase().includes(q))));
+ let h='<h2>Creator conversion · owner review</h2>'
+  +'<p class="muted">Every proposed reply needs your approval before the DMer sees it. Approved messages appear only in the original DMer\'s portal; the personal signup link is added when they copy it.</p>'
+  +'<div class="cv-funnel"><span>Creators '+esc(f.creators??0)+'</span><span>Approved '+esc(f.approved_or_later??0)+'</span><span>Copied '+esc(f.copied??0)+'</span><span>Sent (confirmed) '+esc(f.sent_confirmed??0)+'</span><span>Clicked after send '+esc(f.clicked_after_send??0)+'</span><span>Registered '+esc(f.registered??0)+'</span><span>Video verified '+esc(f.video_published_verified??0)+'</span><span>Paid conversions '+esc(f.paid_conversions??0)+'</span></div>'
+  +'<div class="cv-filters" role="group" aria-label="Filter by status">'
+  +['READY_FOR_REVIEW','NEEDS_INVESTIGATION','APPROVED','ALREADY_HANDLED','SENT','REGISTERED','DECLINED','ALL'].map(s=>
+     '<button class="sm" type="button" data-cv-filter="'+s+'" aria-pressed="'+(cv.filter===s)+'">'+esc(s==='ALL'?'All':CV_LABEL[s])+' '+esc(s==='ALL'?cv.ownerRows.length:(c[s]||0))+'</button>').join('')
+  +'</div><input type="search" id="cv-search" placeholder="Search @username, reply text, account or DMer" value="'+esc(cv.search)+'" maxlength="80">'
+  +'<p role="status" class="muted" id="cv-owner-msg">'+esc(cv.msg)+'</p>';
+ if(!rows.length)h+='<p class="muted">No conversations in this view.</p>';
+ for(const r of rows.slice(0,60)){
+   const editable=['READY_FOR_REVIEW','NEEDS_INVESTIGATION','APPROVED'].includes(r.status)&&!r.copied_at;
+   const text=r.approved_text||r.draft_text||'';
+   h+='<div class="cv-item" data-cv-id="'+esc(r.draft_id)+'">'
+    +'<div><span class="cv-pill">'+esc(CV_LABEL[r.status]||r.status)+'</span>'
+    +(r.new_reply_since_draft?'<span class="cv-pill" style="background:#7a4b16">New reply since draft</span>':'')
+    +(r.invite_status?'<span class="cv-pill">Link '+esc(String(r.invite_status).toLowerCase())+'</span>':'')
+    +'<strong>'+esc(r.handle)+'</strong> <span class="muted">via '+esc(r.sender_account||'?')+' · '+esc(r.dmer||'')+' · '+esc(cvWhen(r.latest_reply_at))+'</span></div>'
+    +'<p class="muted" style="margin:6px 0 2px">Latest creator reply'+(r.classification?' ('+esc(r.classification)+')':'')+'</p>'
+    +'<div class="cv-in">'+esc(r.latest_reply||'(no text saved: only a screenshot)')+'</div>'
+    +(r.import_reason?'<p class="muted" style="margin:6px 0">'+esc(r.import_reason)+(r.historical_disposition?' · earlier report: '+esc(r.historical_disposition):'')+(r.review_note?' · '+esc(r.review_note):'')+'</p>':'')
+    +(r.verify_result?'<p class="muted">DMer check: '+esc(r.verify_result==='NOT_SENT'?'existing message was not sent':'correct message already sent')+'</p>':'')
+    +(editable
+      ?'<label class="muted" for="cv-t-'+esc(r.draft_id)+'">Proposed English reply'+(r.needs_link?' (their personal signup link is added below it when the DMer copies)':' (no signup link)')+'</label>'
+        +'<textarea id="cv-t-'+esc(r.draft_id)+'">'+esc(text)+'</textarea>'
+        +'<div class="cv-actions"><button class="good" type="button" data-cv-act="APPROVE">Approve</button>'
+        +'<button type="button" data-cv-act="REJECT">Reject (needs investigation)</button>'
+        +'<button type="button" data-cv-act="DECLINE">No message</button></div>'
+      :(text?'<p class="muted" style="margin:6px 0 2px">'+(r.status==='SENT'?'Sent message':'Message')+'</p><div class="cv-msg">'+esc(text)+'</div>':'')
+        +(['DECLINED','NEEDS_INVESTIGATION'].includes(r.status)||(r.status==='ALREADY_HANDLED'&&r.verify_result==='NOT_SENT')
+          ?'<div class="cv-actions"><button type="button" data-cv-act="REOPEN">Reopen for review</button></div>':'')
+        +(r.status==='SENT'?'<p class="muted">Confirmed sent '+esc(cvWhen(r.sent_confirmed_at))+(r.clicked_at?' · link clicked '+esc(cvWhen(r.clicked_at)):'')+'</p>':''))
+    +'</div>';
+ }
+ if(rows.length>60)h+='<p class="muted">Showing 60 of '+esc(rows.length)+'. Use search to find a creator.</p>';
+ box.innerHTML=h;
+ for(const b of box.querySelectorAll('[data-cv-filter]'))b.onclick=()=>{cv.filter=b.dataset.cvFilter;renderConversionOwner();};
+ const s=$('cv-search');s.oninput=()=>{cv.search=s.value;clearTimeout(cv.st);cv.st=setTimeout(()=>{renderConversionOwner();const n=$('cv-search');if(n){n.focus();n.setSelectionRange(n.value.length,n.value.length);}},250);};
+ for(const b of box.querySelectorAll('[data-cv-act]'))b.onclick=()=>void cvOwnerAct(b.closest('[data-cv-id]').dataset.cvId,b.dataset.cvAct);
+}
+
+async function cvOwnerAct(id,action){
+ if(cv.busy.has(id))return;
+ const ta=$('cv-t-'+id);const text=ta?ta.value.trim():null;
+ if(action==='APPROVE'&&!text){cv.msg='Write a message before approving.';renderConversionOwner();return;}
+ cv.busy.add(id);
+ for(const b of document.querySelectorAll('[data-cv-id="'+id+'"] button'))b.disabled=true;
+ try{
+   const {data,error}=await sb.rpc('dh_owner_conversion_review',{p_draft_id:id,p_action:action,p_text:text,p_note:null});
+   if(error||!data?.ok){cv.msg=cvReason(data||{reason:error?.message});}
+   else{cv.msg=(CV_LABEL[data.status]||data.status)+' saved.';
+     const r=cv.ownerRows.find(x=>x.draft_id===id);if(r){r.status=data.status;if(action==='APPROVE')r.approved_text=text;if(action==='REJECT'||action==='DECLINE')r.approved_text=null;}
+     cv.lastLoad=0;}
+ }finally{cv.busy.delete(id);if(document.activeElement)document.activeElement.blur();renderConversionOwner();void refreshConversion(true);}
+}
+
+function renderConversionVa(){
+ const box=$('conversion-va');
+ const rows=cv.vaRows;
+ if(!rows.length){cvGate(0);box.hidden=true;box.innerHTML='';return;}
+ box.hidden=false;
+ const todo=rows.filter(r=>r.lane==='APPROVED').length, verify=rows.filter(r=>r.lane==='VERIFY_EXISTING_MESSAGE').length;
+ cvGate(todo+verify);
+ let h='<h2>Priority: approved creator messages first</h2>'
+  +'<p>DropHero has approved personal replies for creators who answered you. Send these first: new DMs stay locked until every approved message below is sent or checked.</p>'
+  +'<p class="muted">'+esc(todo)+' to send · '+esc(verify)+' to check. Send each one from the TikTok account shown, in the existing chat. Copying is not sending: tap "I sent it in TikTok" only after you really pressed Send.</p>'
+  +'<p role="status" class="muted" id="cv-va-msg">'+esc(cv.vaMsg||'')+'</p>';
+ for(const r of rows){
+   h+='<div class="cv-item" data-cv-va="'+esc(r.draft_id)+'"><div><strong>'+esc(r.handle)+'</strong> <span class="muted">· send from <b>'+esc(r.sender_account||'?')+'</b></span></div>'
+    +'<p class="muted" style="margin:6px 0 2px">Their reply</p><div class="cv-in">'+esc(r.latest_reply||'')+'</div>';
+   if(r.lane==='APPROVED'){
+     h+='<p class="muted" style="margin:6px 0 2px">Message to send'+(r.needs_link?' (+ their personal signup link)':'')+'</p><div class="cv-msg">'+esc(r.message||'')+'</div>'
+      +'<div class="cv-actions"><button class="good" type="button" data-cv-copy>'+(r.copied_at?'COPY AGAIN &amp; OPEN TIKTOK':'COPY MESSAGE &amp; OPEN TIKTOK')+'</button>'
+      +'<button type="button" data-cv-sent '+(r.copied_at?'':'disabled')+'>I sent it in TikTok</button></div>';
+   }else if(r.lane==='VERIFY_EXISTING_MESSAGE'){
+     h+='<p>You already handled this conversation before. Open the chat in TikTok and check: did you already send the correct reply <b>with</b> a DropHero signup link?</p>'
+      +'<div class="cv-actions"><a class="open" href="'+esc(safeTikTokProfileUrl(r.profile_url,r.handle)||'#')+'" target="_blank" rel="noopener noreferrer">Open TikTok profile</a></div>'
+      +'<div class="cv-actions"><button type="button" data-cv-verify="ALREADY_SENT_CORRECT">Yes, already sent with link</button>'
+      +'<button type="button" data-cv-verify="NOT_SENT">No, not sent / no link</button></div>';
+   }else if(r.lane==='CREATOR_REPLIED_AGAIN'){
+     h+='<p class="muted">The creator replied again. Paste their new reply in Replies; DropHero reviews it before you send anything.</p>';
+   }else if(r.lane==='REGISTERED'){
+     h+='<p class="muted">This creator already registered. Do not send a signup link.</p>';
+   }else if(r.lane==='SENT'){
+     h+='<p class="muted">Sent ✓ '+esc(cvWhen(r.sent_confirmed_at))+'</p>';
+   }
+   h+='</div>';
+ }
+ box.innerHTML=h;
+ for(const el of box.querySelectorAll('[data-cv-va]')){
+   const id=el.dataset.cvVa;
+   const cp=el.querySelector('[data-cv-copy]');if(cp)cp.onclick=()=>void cvCopy(id);
+   const st=el.querySelector('[data-cv-sent]');if(st)st.onclick=()=>void cvSent(id);
+   for(const b of el.querySelectorAll('[data-cv-verify]'))b.onclick=()=>void cvVerify(id,b.dataset.cvVerify);
+ }
+}
+
+// Owner rule 2026-11-06: approved creator messages go first; the Work tab's new DMs stay hidden
+// until every approved message is sent or every previously handled chat is checked.
+function cvGate(n){document.body.classList.toggle('cv-gate',n>0);}
+function cvVaMsg(t){cv.vaMsg=t;const m=$('cv-va-msg');if(m)m.textContent=t;}
+async function cvCopy(id){
+ if(cv.busy.has(id))return;cv.busy.add(id);
+ try{
+   const {data,error}=await sb.rpc('dh_va_conversion_copy',{p_draft_id:id});
+   if(error||!data?.ok){cvVaMsg(cvReason(data||{reason:error?.message}));cv.lastLoad=0;void refreshConversion(true);return;}
+   const r=cv.vaRows.find(x=>x.draft_id===id);
+   const copied=await copyNow(data.text,true);
+   if(r)r.copied_at=r.copied_at||new Date().toISOString();
+   if(!copied.ok)prompt('Copy the message below, then paste it into TikTok.',data.text);
+   renderConversionVa();
+   const opened=r&&leaveForTikTok(r.profile_url,r.handle);
+   cvVaMsg(opened?'Copied. Send it in TikTok from '+(r.sender_account||'the right account')+', then come back and tap "I sent it".'
+                 :'Copied. Open the creator in TikTok, send it, then tap "I sent it".');
+ }finally{cv.busy.delete(id);}
+}
+async function cvSent(id){
+ const r=cv.vaRows.find(x=>x.draft_id===id);if(!r||cv.busy.has(id))return;
+ if(!confirm('Confirm only if you actually pressed Send in TikTok for '+r.handle+'. Copying alone does NOT count.'))return;
+ cv.busy.add(id);
+ try{
+   const {data,error}=await sb.rpc('dh_va_conversion_confirm_sent',{p_draft_id:id});
+   cvVaMsg(error||!data?.ok?cvReason(data||{reason:error?.message}):'Recorded as sent'+(data.paid?' (+2 cents)':'')+'.');
+ }finally{cv.busy.delete(id);cv.lastLoad=0;void refreshConversion(true);}
+}
+async function cvVerify(id,result){
+ if(cv.busy.has(id))return;
+ if(!confirm(result==='NOT_SENT'?'No correct reply with a link was sent yet? DropHero will review a message for you.':'You checked TikTok and the correct reply with a signup link is already in the chat?'))return;
+ cv.busy.add(id);
+ try{
+   const {data,error}=await sb.rpc('dh_va_conversion_verify_existing',{p_draft_id:id,p_result:result});
+   cvVaMsg(error||!data?.ok?cvReason(data||{reason:error?.message}):'Saved. Thank you.');
+ }finally{cv.busy.delete(id);cv.lastLoad=0;void refreshConversion(true);}
+}
+
 
 
 const hotLeads={user:null,lastFetch:0,loading:false,rows:[],counts:{},error:''};
