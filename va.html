@@ -4992,7 +4992,7 @@ function renderConversionOwner(){
     +(r.import_reason?'<p class="muted" style="margin:6px 0">'+esc(r.import_reason)+(r.historical_disposition?' · earlier report: '+esc(r.historical_disposition):'')+(r.review_note?' · '+esc(r.review_note):'')+'</p>':'')
     +(r.verify_result?'<p class="muted">DMer check: '+esc(r.verify_result==='NOT_SENT'?'existing message was not sent':'correct message already sent')+'</p>':'')
     +(editable
-      ?'<label class="muted" for="cv-t-'+esc(r.draft_id)+'">Proposed English reply'+(r.needs_link?' (their personal signup link is added below it when the DMer copies)':' (no signup link)')+'</label>'
+      ?'<label class="muted" for="cv-t-'+esc(r.draft_id)+'">Proposed English reply'+(r.needs_link?' (write {SIGNUP_LINK} where their personal link goes; without it the link is added at the end)':' (no signup link)')+'</label>'
         +'<textarea id="cv-t-'+esc(r.draft_id)+'">'+esc(text)+'</textarea>'
         +'<div class="cv-actions"><button class="good" type="button" data-cv-act="APPROVE">Approve</button>'
         +'<button type="button" data-cv-act="REJECT">Reject (needs investigation)</button>'
@@ -5040,7 +5040,7 @@ function renderConversionVa(){
    h+='<div class="cv-item" data-cv-va="'+esc(r.draft_id)+'"><div><strong>'+esc(r.handle)+'</strong> <span class="muted">· send from <b>'+esc(r.sender_account||'?')+'</b></span></div>'
     +'<p class="muted" style="margin:6px 0 2px">Their reply</p><div class="cv-in">'+esc(r.latest_reply||'')+'</div>';
    if(r.lane==='APPROVED'){
-     h+='<p class="muted" style="margin:6px 0 2px">Message to send'+(r.needs_link?' (+ their personal signup link)':'')+'</p><div class="cv-msg">'+esc(r.message||'')+'</div>'
+     h+='<p class="muted" style="margin:6px 0 2px">Message to send'+(r.needs_link?' (+ their personal signup link)':'')+'</p><div class="cv-msg">'+esc(String(r.message||'').replace(/\{SIGNUP_LINK\}/g,'[their personal signup link]'))+'</div>'
       +'<div class="cv-actions"><button class="good" type="button" data-cv-copy>'+(r.copied_at?'COPY AGAIN &amp; OPEN TIKTOK':'COPY MESSAGE &amp; OPEN TIKTOK')+'</button>'
       +'<button type="button" data-cv-sent '+(r.copied_at?'':'disabled')+'>I sent it in TikTok</button></div>';
    }else if(r.lane==='VERIFY_EXISTING_MESSAGE'){
