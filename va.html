@@ -3132,11 +3132,14 @@ function chatHtml(c) {
   if (autoLinkFor(c, sug)) {
     const replyText = linkReplyText(c, sug);
     const sentBefore = c.affiliate_state === 'ISSUED' || c.affiliate_state === 'CLICKED';
-    h += '<div class="suggest"><span class="lbl">' + (sentBefore ? 'Reply with their signup link' : 'Send their signup link · paid') + '</span>'
-      + (replyText ? esc(replyText) + '<br><span class="muted">+ their personal signup link is added automatically.</span>'
-                   : 'Tap the button: a short message with their personal signup link is copied for you.')
+    const prepared = replyOnlyConversion ? conversionCopyCache.get(c.reply_event_id) : null;
+    h += '<div class="suggest"><span class="lbl">' + (replyOnlyConversion ? 'Question-specific answer + personal signup link' : (sentBefore ? 'Reply with their signup link' : 'Send their signup link · paid')) + '</span>'
+      + (prepared?.text
+          ? '<div class="cf-draft" style="white-space:pre-wrap;overflow-wrap:anywhere">' + esc(prepared.text) + '</div>'
+          : replyText ? esc(replyText) + '<br><span class="muted">The personal tracked signup link is securely added when you copy.</span>'
+            : 'Open this creator\'s actual TikTok inbox first. The approved answer and personal link will be prepared when you copy.')
       + '</div>'
-      + '<button class="good full" data-autolink="' + esc(c.reply_event_id) + '">COPY REPLY + SIGNUP LINK'
+      + '<button class="good full" data-autolink="' + esc(c.reply_event_id) + '">' + (replyOnlyConversion ? 'CHECK CHAT · COPY APPROVED ANSWER + PERSONAL LINK' : 'COPY REPLY + SIGNUP LINK')
       + (url ? ' &amp; OPEN TIKTOK' : '') + '</button>'
       + '<p class="muted" style="margin:6px 0 0">Paste it into their chat and tap Send. Paste their next message when they answer.</p>';
     h += url
