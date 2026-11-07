@@ -816,6 +816,12 @@ function resetVaMemory() {
   search.results = null;
   search.focused = false;
   chatStatus = '';
+  // Erase prior VA's private tracked-link previews on account switch / sign-out.
+  if(typeof conversionPrepared!=='undefined'){
+    conversionPrepared.user=null;conversionPrepared.byReply.clear();
+    conversionPrepared.lastLoad=0;conversionPrepared.message='';
+  }
+  if(typeof replyOnlyConversion!=='undefined')replyOnlyConversion=false;
   clearTimeout(search.timer);
   search.timer = 0;
   if (typeof tt !== 'undefined') tt = { accounts: [], va_sent_today: 0, va_daily_cap: 0, va_remaining: 0 };
@@ -3111,6 +3117,20 @@ function chatHtml(c) {
     return h + '<div class="suggest"><span class="lbl">Finished</span>They have signed up as an affiliate. No new signup link is needed.</div></div>';
   }
 
+  const prepared=replyOnlyConversion ? conversionPrepared.byReply.get(c.reply_event_id) : null;
+  if(prepared && c.verified_status==='VERIFIED' && ['INTERESTED','SEND_DETAILS','QUESTION'].includes(c.classification)){
+    const previouslyHandled=!!prepared.historical_disposition;
+    h += '<div class="suggest"><span class="lbl">APPROVED ANSWER + AUTOMATIC PERSONAL SIGNUP LINK</span>'
+      +'<div class="cf-draft" style="white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0">'+esc(prepared.text)+'</div></div>'
+      +(previouslyHandled
+         ?'<p class="muted" style="margin:5px 0">Previously marked '+esc(prepared.historical_disposition)+'. Check your actual TikTok chat first. If this reply was already sent, DO NOT send it again.</p>'
+         :'<p class="muted" style="margin:5px 0">The personal tracked link is already in the message. Check the latest TikTok chat before sending.</p>')
+      +'<button class="good full" type="button" data-conversion-ready="'+esc(c.reply_event_id)+'">COPY COMPLETE REPLY + OPEN TIKTOK</button>'
+      +(url?'<a class="open" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">Open original TikTok conversation</a>':'')
+      +'</div>';
+    return h;
+  }
+
   // The six buckets, always visible and always changeable: a VA who mis-taps must be able to fix it
   // without hunting, and the affiliate link appears or disappears from this choice alone.
   h += '<details style="margin:8px 0"><summary>Correct reply type (optional)</summary><div class="cls" data-cls="' + esc(c.reply_event_id) + '">'
@@ -3236,6 +3256,31 @@ const CREATOR_INFO_URL = 'https://drophero.app/creators';
 let replyOnlyConversion = false;
 let replyOnlyUser = null;
 const conversionCopyCache = new Map();
+const conversionPrepared = {user:null,byReply:new Map(),loading:false,lastLoad:0,message:''};
+async function refreshConversionPrepared(force=false) {
+  if(!replyOnlyConversion || !pendingUserId || $('app').hidden)return;
+  const user=pendingUserId;
+  if(conversionPrepared.user!==user){
+    conversionPrepared.user=user;conversionPrepared.byReply.clear();
+    conversionPrepared.lastLoad=0;conversionPrepared.message='';
+  }
+  if(conversionPrepared.loading || (!force && Date.now()-conversionPrepared.lastLoad<60000))return;
+  conversionPrepared.loading=true;
+  try{
+    const {data,error}=await sb.rpc('dh_va_conversion_previews');
+    if(user!==pendingUserId || !replyOnlyConversion)return;
+    if(error || !data?.ok || !Array.isArray(data.rows))throw error||new Error('Preview unavailable');
+    conversionPrepared.byReply=new Map(data.rows.filter(x=>x?.reply_event_id&&x?.text&&x?.url).map(x=>[x.reply_event_id,x]));
+    conversionPrepared.lastLoad=Date.now();
+    conversionPrepared.message='';
+    redrawReplyViews();
+  }catch(e){
+    if(user===pendingUserId){
+      conversionPrepared.message='Personal signup links are temporarily unavailable. Refresh, do not send a linkless reply.';
+      conversionPrepared.lastLoad=0;redrawReplyViews();
+    }
+  }finally{conversionPrepared.loading=false;}
+}
 async function refreshReplyOnlyConversion() {
   if (!pendingUserId || $('app').hidden) return;
   const who = pendingUserId;
@@ -3249,6 +3294,7 @@ async function refreshReplyOnlyConversion() {
     // Server cap independently blocks first-touch send confirmation.
     const workButton = document.querySelector('.tab[data-tab="work"]');
     if (workButton) workButton.style.display = replyOnlyConversion ? 'none' : '';
+    if (replyOnlyConversion) void refreshConversionPrepared();
     if (replyOnlyConversion && tab === 'work') {
       void selectTab('replies');
     } else {
@@ -3261,16 +3307,9 @@ async function refreshReplyOnlyConversion() {
 // Every creator who replied gets their signup link with our reply (owner, 2026-11-03), except when
 // they said no, already joined, or the team must answer first.
 function autoLinkFor(c, sug = suggestedFor(c)) {
-  if (replyOnlyConversion) {
-    // Only the newest verified, audited positive reply can offer a personal link.
-    // A clicked invitation needs registration reconciliation, not another signup pitch.
-    return c.verified_status === 'VERIFIED'
-      && ['INTERESTED','SEND_DETAILS','QUESTION'].includes(c.classification)
-      && !!c.affiliate_available && ['NONE','ISSUED'].includes(c.affiliate_state)
-      && isAuditedReply(sug) && !sug?.pending
-      && ['SEND_REPLY','SEND_AFFILIATE_LINK'].includes(sug?.nextAction)
-      && !!String(sug?.text||'').trim();
-  }
+  // Top-five workers use the server-prepared and retained personal link only.
+  // Never issue/rotate a second token from this legacy button.
+  if (replyOnlyConversion) return false;
   return !!c.affiliate_available && c.affiliate_state !== 'REGISTERED'
     && c.classification !== 'NOT_INTERESTED'
     && !['CLOSE', 'ESCALATE_TO_OWNER'].includes(sug?.nextAction)
@@ -3356,6 +3395,29 @@ function wireChats(rows) {
     const status = $('chatmsg');
     if (status) status.textContent = text;
   };
+  // One tap: all tracked links and audited answers are already in the copy text.
+  // Copying never constitutes a TikTok send or a paid conversion.
+  for(const b of list.querySelectorAll('[data-conversion-ready]')){
+    b.onclick=async()=>{
+      const id=b.dataset.conversionReady;
+      const item=conversionPrepared.byReply.get(id);
+      const reply=rows.find(x=>x.reply_event_id===id);
+      if(!item||!reply||replyOnlyConversion!==true)return;
+      b.disabled=true;
+      const result=await copyNow(item.text,true);
+      b.disabled=false;
+      if(result.ok){
+        const profile=safeTikTokProfileUrl(reply.profile_url,reply.handle);
+        const opened=profile&&leaveForTikTok(profile,reply.handle);
+        notice(opened
+          ?'Complete reply + unique personal link copied. Check the real chat and send ONLY if not already handled.'
+          :'Complete reply + unique personal link copied. Open TikTok; send ONLY if not already handled.');
+      }else{
+        prompt('Copy the full reply, including its personal signup link.',item.text);
+        notice('Clipboard unavailable. Copy the complete message manually.');
+      }
+    };
+  }
   for (const box of list.querySelectorAll('[data-cls]')) {
     for (const b of box.querySelectorAll('button')) {
       b.onclick = async () => {
@@ -3531,7 +3593,7 @@ function updateBonusHeader() {
 function replyBucket(c) {
   const suggestion = suggestedFor(c);
   if (replyOnlyConversion) {
-    if (autoLinkFor(c, suggestion)) return 'link';
+    if (conversionPrepared.byReply.has(c.reply_event_id)) return 'link';
     if (c.affiliate_state === 'REGISTERED' || c.classification === 'NOT_INTERESTED') return 'waiting';
     return 'review';
   }
@@ -3559,7 +3621,9 @@ function redrawReplyViews() {
 }
 function drawReplyInbox() {
   const chats = view.chats || [];
-  const groups = [['link','Send their signup link (paid per creator)'],['ready','Your turn to reply'],['review','Preparing or reviewing the reply'],['waiting','Waiting or finished']];
+  const groups = replyOnlyConversion
+    ? [['link','Complete replies with personal links — check inbox before sending'],['review','Needs verification or a current answer'],['waiting','Waiting, declined, or already registered']]
+    : [['link','Send their signup link (paid per creator)'],['ready','Your turn to reply'],['review','Preparing or reviewing the reply'],['waiting','Waiting or finished']];
   let html = replyOnlyConversion
     ? '<h2>P0 · Convert existing creator replies</h2><p class="muted">ONLY replies. Review every existing TikTok conversation. Where the last verified reply has an approved answer, copy the EXACT contextual answer + the creator\'s personal tracked signup link. Check the original inbox to avoid duplicates. No new cold DMs, automatic TikTok sending, claims of paid conversion or unverified offers.</p><p id="chatmsg" class="fieldmsg" role="status" aria-live="polite">' + esc(chatStatus) + '</p>'
     : '<h2>Replies</h2><p class="muted">Pasted creator replies start suggestions automatically. '
@@ -3569,11 +3633,18 @@ function drawReplyInbox() {
     + '<p id="chatmsg" class="fieldmsg" role="status" aria-live="polite">' + esc(chatStatus) + '</p>';
   for (const [bucket,label] of groups) {
     const rows = chats.filter(c => replyBucket(c) === bucket);
+    if(replyOnlyConversion && bucket==='link') rows.sort((a,b)=>{
+      const x=conversionPrepared.byReply.get(a.reply_event_id)?.historical_disposition;
+      const y=conversionPrepared.byReply.get(b.reply_event_id)?.historical_disposition;
+      return Number(!!x)-Number(!!y);
+    });
     if (!rows.length) continue;
     html += '<h3>' + label + ' · ' + rows.length + '</h3>' + rows.map(c => chatHtml(c)
       + '<button class="sm" style="margin-bottom:16px" data-latest-reply="' + esc(c.task_id)
       + '">Paste latest reply</button>').join('');
   }
+  if(replyOnlyConversion && conversionPrepared.message)
+    html += '<p class="fieldmsg bad">'+esc(conversionPrepared.message)+'</p>';
   if (!chats.length) html += '<div class="card">No replies saved yet. Find the creator in Chats and paste their reply text.</div>';
   $('list').innerHTML = html;
   wireChats(chats);
