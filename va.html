@@ -3408,7 +3408,9 @@ function wireChats(rows) {
       const id=b.dataset.conversionReady;
       const item=conversionPrepared.byReply.get(id);
       const reply=rows.find(x=>x.reply_event_id===id);
-      if(!item||!reply||replyOnlyConversion!==true)return;
+      // Every VA who is shown a prepared card (preview cohort, not only the reply-only five) must be
+      // able to copy it; a visible button that silently does nothing loses the reply.
+      if(!item||!reply||conversionPreviewEnabled!==true)return;
       b.disabled=true;
       const result=await copyNow(item.text,true);
       b.disabled=false;
