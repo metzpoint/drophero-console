@@ -3118,7 +3118,7 @@ function chatHtml(c) {
   }
 
   const prepared=replyOnlyConversion ? conversionPrepared.byReply.get(c.reply_event_id) : null;
-  if(prepared && c.verified_status==='VERIFIED' && ['INTERESTED','SEND_DETAILS','QUESTION'].includes(c.classification)){
+  if(prepared && c.verified_status==='VERIFIED' && ['INTERESTED','SEND_DETAILS','QUESTION','OTHER'].includes(c.classification)){
     const previouslyHandled=!!prepared.historical_disposition;
     h += '<div class="suggest"><span class="lbl">APPROVED ANSWER + AUTOMATIC PERSONAL SIGNUP LINK</span>'
       +'<div class="cf-draft" style="white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0">'+esc(prepared.text)+'</div></div>'
@@ -3622,10 +3622,10 @@ function redrawReplyViews() {
 function drawReplyInbox() {
   const chats = view.chats || [];
   const groups = replyOnlyConversion
-    ? [['link','Complete replies with personal links — check inbox before sending'],['review','Needs verification or a current answer'],['waiting','Waiting, declined, or already registered']]
+    ? [['link','PERSONALIZED replies + unique creator signup links'],['review','Other replies — read and classify before sending'],['waiting','Declined, waiting, or already registered']]
     : [['link','Send their signup link (paid per creator)'],['ready','Your turn to reply'],['review','Preparing or reviewing the reply'],['waiting','Waiting or finished']];
   let html = replyOnlyConversion
-    ? '<h2>P0 · Convert existing creator replies</h2><p class="muted">ONLY replies. Review every existing TikTok conversation. Where the last verified reply has an approved answer, copy the EXACT contextual answer + the creator\'s personal tracked signup link. Check the original inbox to avoid duplicates. No new cold DMs, automatic TikTok sending, claims of paid conversion or unverified offers.</p><p id="chatmsg" class="fieldmsg" role="status" aria-live="polite">' + esc(chatStatus) + '</p>'
+    ? '<h2>P0 · Convert existing creator replies</h2><p class="muted">ONLY replies. Review every existing TikTok conversation. Where the last verified reply has an approved answer, copy the EXACT contextual answer + the creator\'s personal tracked signup link. Check the original inbox to avoid duplicates. No new cold DMs, automatic TikTok sending, claims of paid conversion or unverified offers. Every reply is listed; no promotional follow-up after an explicit refusal.</p><p id="chatmsg" class="fieldmsg" role="status" aria-live="polite">' + esc(chatStatus) + '</p>'
     : '<h2>Replies</h2><p class="muted">Pasted creator replies start suggestions automatically. '
     + 'Copy the suggested reply and send it in TikTok. Paste their latest reply when it arrives.</p>'
     + '<p class="muted">A red dot means this reply needs a response or review.</p>'
