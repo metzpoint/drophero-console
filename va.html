@@ -1387,6 +1387,7 @@ async function bootOrThrow() {
   // Screenshot audits discontinued for DMers; historic admin records remain.
   $('message-audit').hidden = true;
   $('quality-screenshots').hidden = true;
+  void refreshReplyOnlyConversion();
   void refreshCreatorFollowups();
   void refreshConversion(true);
   void refreshPriorityQA();
@@ -3144,6 +3145,18 @@ function chatHtml(c) {
       : '<p class="muted">The TikTok profile link is invalid. Contact the DropHero team with the creator\'s name.</p></div>';
     return h;
   }
+  // Conversion-only VAs see ALL of their replies, but no send button when evidence,
+  // context or tracking is incomplete. A missing link must not turn into a generic DM.
+  if (replyOnlyConversion) {
+    const label = c.classification === 'NOT_INTERESTED' ? 'Closed — do not contact'
+      : c.affiliate_state === 'CLICKED' ? 'Invite clicked — check registration first'
+      : c.verified_status !== 'VERIFIED' ? 'Verify the original creator reply first'
+      : ['WAIT','CLOSE','ESCALATE_TO_OWNER'].includes(sug?.nextAction) ? 'Wait or team review'
+      : 'Needs a current approved, question-specific answer';
+    h += '<div class="suggest none"><span class="lbl">' + esc(label) + '</span>'
+      + '<p class="muted">Check the real TikTok conversation. Do not send a generic message or a duplicate signup link.</p></div>';
+    return h + '</div>';
+  }
   const shareInfo = creatorAsksForDetails(c.extracted_text)
     && !['NOT_INTERESTED', 'FOLLOW_UP_LATER'].includes(c.classification)
     && !['WAIT', 'CLOSE', 'ESCALATE_TO_OWNER'].includes(sug.nextAction);
@@ -3215,14 +3228,47 @@ function chatHtml(c) {
 }
 
 const CREATOR_INFO_URL = 'https://drophero.app/creators';
+// Owner P0: top-five warm reply-only conversion campaign. Actual membership comes from
+// authenticated Supabase; never infer access or exposure from the browser.
+let replyOnlyConversion = false;
+let replyOnlyUser = null;
+async function refreshReplyOnlyConversion() {
+  if (!pendingUserId || $('app').hidden) return;
+  const who = pendingUserId;
+  try {
+    const {data,error} = await sb.rpc('dh_va_reply_only_mode');
+    if (who !== pendingUserId || error || !data?.ok) return;
+    replyOnlyUser = who;
+    replyOnlyConversion = data.reply_only === true;
+    // Work carries cold DMs and reissued first-touch stock; hide it for the 5 reply-only workers.
+    // Server cap independently blocks first-touch send confirmation.
+    const workButton = document.querySelector('.tab[data-tab="work"]');
+    if (workButton) workButton.style.display = replyOnlyConversion ? 'none' : '';
+    if (replyOnlyConversion && tab === 'work') {
+      void selectTab('replies');
+    } else {
+      redrawReplyViews();
+    }
+  } catch (_) { /* fail closed: server still protects the top-five send cap */ }
+}
+
 
 // Every creator who replied gets their signup link with our reply (owner, 2026-11-03), except when
 // they said no, already joined, or the team must answer first.
 function autoLinkFor(c, sug = suggestedFor(c)) {
+  if (replyOnlyConversion) {
+    // Only the newest verified, audited positive reply can offer a personal link.
+    // A clicked invitation needs registration reconciliation, not another signup pitch.
+    return c.verified_status === 'VERIFIED'
+      && ['INTERESTED','SEND_DETAILS','QUESTION'].includes(c.classification)
+      && !!c.affiliate_available && ['NONE','ISSUED'].includes(c.affiliate_state)
+      && isAuditedReply(sug) && !sug?.pending
+      && ['SEND_REPLY','SEND_AFFILIATE_LINK'].includes(sug?.nextAction)
+      && !!String(sug?.text||'').trim();
+  }
   return !!c.affiliate_available && c.affiliate_state !== 'REGISTERED'
     && c.classification !== 'NOT_INTERESTED'
     && !['CLOSE', 'ESCALATE_TO_OWNER'].includes(sug?.nextAction)
-    // Waiting for the creator: only when they never got their link do we still send it.
     && (sug?.nextAction !== 'WAIT' || c.affiliate_state === 'NONE');
 }
 // The suggested reply that goes in front of the link. A WAIT text is an instruction for the DMer,
@@ -3383,11 +3429,17 @@ function wireChats(rows) {
     b.onclick = async () => {
       const row = rows.find((r) => r.reply_event_id === b.dataset.autolink);
       if (!row) return;
+      // A worker must inspect the ACTUAL TikTok thread before preparing a new
+      // reply; previously marked handled does not prove the original inbox message.
+      if (replyOnlyConversion && !confirm('Check this creator\'s latest TikTok chat first. Only continue if a reply with the tracked signup link is still needed. Have you checked?')) return;
       b.disabled = true;
       let result;
       try {
-        result = await sb.rpc('dh_va_reply_with_link', {
-          p_reply_event_id: row.reply_event_id, p_reply_text: linkReplyText(row) || null });
+        result = replyOnlyConversion
+          ? await sb.rpc('dh_va_conversion_copy', {
+              p_reply_event_id: row.reply_event_id, p_inbox_checked: true })
+          : await sb.rpc('dh_va_reply_with_link', {
+              p_reply_event_id: row.reply_event_id, p_reply_text: linkReplyText(row) || null });
       } catch (error) { result = { error }; }
       b.disabled = false;
       const data = result?.data;
@@ -3395,7 +3447,7 @@ function wireChats(rows) {
         notice(data?.reason === 'ALREADY_ATTRIBUTED'
           ? 'This creator has already joined through someone else. Leave this one.'
           : data?.reason === 'NOT_INTERESTED' ? 'This creator said no. No link needed.'
-          : 'Could not make the link — try again.');
+          : replyOnlyConversion ? ('Not ready to send (' + String(data?.reason||'review required') + '). Review this creator or ask the team.') : 'Could not make the link — try again.');
         return;
       }
       row.affiliate_state = row.affiliate_state === 'NONE' ? 'ISSUED' : row.affiliate_state;
@@ -3470,6 +3522,11 @@ function updateBonusHeader() {
 }
 function replyBucket(c) {
   const suggestion = suggestedFor(c);
+  if (replyOnlyConversion) {
+    if (autoLinkFor(c, suggestion)) return 'link';
+    if (c.affiliate_state === 'REGISTERED' || c.classification === 'NOT_INTERESTED') return 'waiting';
+    return 'review';
+  }
   if (needsSignupLink(c)) return 'link';
   if (c.affiliate_state === 'REGISTERED' || c.classification === 'NOT_INTERESTED'
       || ['WAIT','CLOSE'].includes(suggestion.nextAction)) return 'waiting';
@@ -3495,7 +3552,9 @@ function redrawReplyViews() {
 function drawReplyInbox() {
   const chats = view.chats || [];
   const groups = [['link','Send their signup link (paid per creator)'],['ready','Your turn to reply'],['review','Preparing or reviewing the reply'],['waiting','Waiting or finished']];
-  let html = '<h2>Replies</h2><p class="muted">Pasted creator replies start suggestions automatically. '
+  let html = replyOnlyConversion
+    ? '<h2>P0 · Convert existing creator replies</h2><p class="muted">ONLY replies. Review every existing TikTok conversation. Where the last verified reply has an approved answer, copy the EXACT contextual answer + the creator\'s personal tracked signup link. Check the original inbox to avoid duplicates. No new cold DMs, automatic TikTok sending, claims of paid conversion or unverified offers.</p>'
+    : '<h2>Replies</h2><p class="muted">Pasted creator replies start suggestions automatically. '
     + 'Copy the suggested reply and send it in TikTok. Paste their latest reply when it arrives.</p>'
     + '<p class="muted">A red dot means this reply needs a response or review.</p>'
     + '<p class="muted">' + esc(replyRewardHint()) + '</p>'
@@ -4222,6 +4281,7 @@ let tabLoading = null;
  * a capacity figure that were minutes stale.
  */
 async function selectTab(name) {
+  if (replyOnlyConversion && name === 'work') name = 'replies';
   tab = name;
   seq.begin('search'); // invalidate a search response that may still be in flight
   search.q = ''; search.results = null; search.focused = false;
