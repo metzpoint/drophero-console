@@ -3232,12 +3232,14 @@ const CREATOR_INFO_URL = 'https://drophero.app/creators';
 // authenticated Supabase; never infer access or exposure from the browser.
 let replyOnlyConversion = false;
 let replyOnlyUser = null;
+const conversionCopyCache = new Map();
 async function refreshReplyOnlyConversion() {
   if (!pendingUserId || $('app').hidden) return;
   const who = pendingUserId;
   try {
     const {data,error} = await sb.rpc('dh_va_reply_only_mode');
     if (who !== pendingUserId || error || !data?.ok) return;
+    if (replyOnlyUser !== who) conversionCopyCache.clear();
     replyOnlyUser = who;
     replyOnlyConversion = data.reply_only === true;
     // Work carries cold DMs and reissued first-touch stock; hide it for the 5 reply-only workers.
@@ -3436,8 +3438,10 @@ function wireChats(rows) {
       let result;
       try {
         result = replyOnlyConversion
-          ? await sb.rpc('dh_va_conversion_copy', {
-              p_reply_event_id: row.reply_event_id, p_inbox_checked: true })
+          ? (conversionCopyCache.has(row.reply_event_id)
+              ? {data:conversionCopyCache.get(row.reply_event_id)}
+              : await sb.rpc('dh_va_conversion_copy', {
+                  p_reply_event_id: row.reply_event_id, p_inbox_checked: true }))
           : await sb.rpc('dh_va_reply_with_link', {
               p_reply_event_id: row.reply_event_id, p_reply_text: linkReplyText(row) || null });
       } catch (error) { result = { error }; }
@@ -3450,6 +3454,7 @@ function wireChats(rows) {
           : replyOnlyConversion ? ('Not ready to send (' + String(data?.reason||'review required') + '). Review this creator or ask the team.') : 'Could not make the link — try again.');
         return;
       }
+      if (replyOnlyConversion) conversionCopyCache.set(row.reply_event_id,data);
       row.affiliate_state = row.affiliate_state === 'NONE' ? 'ISSUED' : row.affiliate_state;
       const cr = await copyNow(data.text, true);
       if (cr.ok) {
@@ -3553,7 +3558,7 @@ function drawReplyInbox() {
   const chats = view.chats || [];
   const groups = [['link','Send their signup link (paid per creator)'],['ready','Your turn to reply'],['review','Preparing or reviewing the reply'],['waiting','Waiting or finished']];
   let html = replyOnlyConversion
-    ? '<h2>P0 · Convert existing creator replies</h2><p class="muted">ONLY replies. Review every existing TikTok conversation. Where the last verified reply has an approved answer, copy the EXACT contextual answer + the creator\'s personal tracked signup link. Check the original inbox to avoid duplicates. No new cold DMs, automatic TikTok sending, claims of paid conversion or unverified offers.</p>'
+    ? '<h2>P0 · Convert existing creator replies</h2><p class="muted">ONLY replies. Review every existing TikTok conversation. Where the last verified reply has an approved answer, copy the EXACT contextual answer + the creator\'s personal tracked signup link. Check the original inbox to avoid duplicates. No new cold DMs, automatic TikTok sending, claims of paid conversion or unverified offers.</p><p id="chatmsg" class="fieldmsg" role="status" aria-live="polite">' + esc(chatStatus) + '</p>'
     : '<h2>Replies</h2><p class="muted">Pasted creator replies start suggestions automatically. '
     + 'Copy the suggested reply and send it in TikTok. Paste their latest reply when it arrives.</p>'
     + '<p class="muted">A red dot means this reply needs a response or review.</p>'
