@@ -3272,7 +3272,17 @@ function signupLinkReady(c, sug) {
 
 // Info pages are shared only on request. Never combine creator page and signup URL.
 function creatorInfoMessage(suggestedReply = '', classification = '', latestReply = '') {
-  return gentleCreatorReply(suggestedReply, latestReply);
+  const answer = gentleCreatorReply(suggestedReply, latestReply);
+  if (['NOT_INTERESTED', 'FOLLOW_UP_LATER'].includes(classification)
+      || !creatorAsksForDetails(latestReply)) return answer;
+  return (answer ? answer + '\n\n' : '') + CREATOR_INFO_URL;
+}
+// Reviewed answers are preserved word-for-word. Add only the public creator information URL
+// when the creator actually requested details; tracked signup URLs still come from the server.
+function reviewedReplyWithInfo(text = '', latestReply = '') {
+  const answer = String(text || '').trim();
+  if (!answer || !creatorAsksForDetails(latestReply)) return answer;
+  return answer + '\n\n' + CREATOR_INFO_URL;
 }
 
 const CLASSES = [
@@ -3347,8 +3357,11 @@ function wireChats(rows) {
       const row = rows.find((r) => r.reply_event_id === b.dataset.copyReply);
       const suggested = row ? suggestedFor(row) : null;
       if (['WAIT','CLOSE','ESCALATE_TO_OWNER'].includes(suggested?.nextAction)) return;
-      const text = row ? (isAuditedReply(suggested) || ['NOT_INTERESTED','FOLLOW_UP_LATER'].includes(row.classification)
-        ? suggested.text : creatorInfoMessage(suggested.text, row.classification, row.extracted_text)) : null;
+      const text = row ? (['NOT_INTERESTED','FOLLOW_UP_LATER'].includes(row.classification)
+        ? suggested.text
+        : isAuditedReply(suggested)
+          ? reviewedReplyWithInfo(suggested.text, row.extracted_text)
+          : creatorInfoMessage(suggested.text, row.classification, row.extracted_text)) : null;
       if (!text) return;
       b.disabled = true;
       const r = await copyNow(text, true);
