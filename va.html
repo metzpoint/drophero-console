@@ -822,6 +822,7 @@ function resetVaMemory() {
     conversionPrepared.lastLoad=0;conversionPrepared.message='';
   }
   if(typeof replyOnlyConversion!=='undefined')replyOnlyConversion=false;
+  if(typeof conversionPreviewEnabled!=='undefined')conversionPreviewEnabled=false;
   clearTimeout(search.timer);
   search.timer = 0;
   if (typeof tt !== 'undefined') tt = { accounts: [], va_sent_today: 0, va_daily_cap: 0, va_remaining: 0 };
@@ -3117,14 +3118,17 @@ function chatHtml(c) {
     return h + '<div class="suggest"><span class="lbl">Finished</span>They have signed up as an affiliate. No new signup link is needed.</div></div>';
   }
 
-  const prepared=replyOnlyConversion ? conversionPrepared.byReply.get(c.reply_event_id) : null;
-  if(prepared && c.verified_status==='VERIFIED' && ['INTERESTED','SEND_DETAILS','QUESTION','OTHER'].includes(c.classification)){
+  const prepared=conversionPreviewEnabled ? conversionPrepared.byReply.get(c.reply_event_id) : null;
+  if(prepared && ['VERIFIED','PENDING'].includes(c.verified_status) && ['INTERESTED','SEND_DETAILS','QUESTION','OTHER'].includes(c.classification)){
     const previouslyHandled=!!prepared.historical_disposition;
-    h += '<div class="suggest"><span class="lbl">APPROVED ANSWER + AUTOMATIC PERSONAL SIGNUP LINK</span>'
+    const notVerified=prepared.verified_status!=='VERIFIED';
+    h += '<div class="suggest"><span class="lbl">PERSONALIZED ANSWER + YOUR TRACKED SIGNUP LINK' + (notVerified ? ' · CHECK ACTUAL TIKTOK REPLY' : '') + '</span>'
       +'<div class="cf-draft" style="white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0">'+esc(prepared.text)+'</div></div>'
       +(previouslyHandled
          ?'<p class="muted" style="margin:5px 0">Previously marked '+esc(prepared.historical_disposition)+'. Check your actual TikTok chat first. If this reply was already sent, DO NOT send it again.</p>'
-         :'<p class="muted" style="margin:5px 0">The personal tracked link is already in the message. Check the latest TikTok chat before sending.</p>')
+         :notVerified
+            ?'<p class="muted" style="margin:5px 0">Unverified pasted reply: verify their actual latest TikTok message matches this drafted answer before sending.</p>'
+            :'<p class="muted" style="margin:5px 0">The personal tracked link is already in the message. Check the latest TikTok chat before sending.</p>')
       +'<button class="good full" type="button" data-conversion-ready="'+esc(c.reply_event_id)+'">COPY COMPLETE REPLY + OPEN TIKTOK</button>'
       +(url?'<a class="open" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">Open original TikTok conversation</a>':'')
       +'</div>';
@@ -3170,7 +3174,7 @@ function chatHtml(c) {
   }
   // Conversion-only VAs see ALL of their replies, but no send button when evidence,
   // context or tracking is incomplete. A missing link must not turn into a generic DM.
-  if (replyOnlyConversion) {
+  if (conversionPreviewEnabled) {
     const label = c.classification === 'NOT_INTERESTED' ? 'Closed — do not contact'
       : c.affiliate_state === 'CLICKED' ? 'Invite clicked — check registration first'
       : c.verified_status !== 'VERIFIED' ? 'Verify the original creator reply first'
@@ -3254,11 +3258,12 @@ const CREATOR_INFO_URL = 'https://drophero.app/creators';
 // Owner P0: top-five warm reply-only conversion campaign. Actual membership comes from
 // authenticated Supabase; never infer access or exposure from the browser.
 let replyOnlyConversion = false;
+let conversionPreviewEnabled = false;
 let replyOnlyUser = null;
 const conversionCopyCache = new Map();
 const conversionPrepared = {user:null,byReply:new Map(),loading:false,lastLoad:0,message:''};
 async function refreshConversionPrepared(force=false) {
-  if(!replyOnlyConversion || !pendingUserId || $('app').hidden)return;
+  if(!conversionPreviewEnabled || !pendingUserId || $('app').hidden)return;
   const user=pendingUserId;
   if(conversionPrepared.user!==user){
     conversionPrepared.user=user;conversionPrepared.byReply.clear();
@@ -3268,7 +3273,7 @@ async function refreshConversionPrepared(force=false) {
   conversionPrepared.loading=true;
   try{
     const {data,error}=await sb.rpc('dh_va_conversion_previews');
-    if(user!==pendingUserId || !replyOnlyConversion)return;
+    if(user!==pendingUserId || !conversionPreviewEnabled)return;
     if(error || !data?.ok || !Array.isArray(data.rows))throw error||new Error('Preview unavailable');
     conversionPrepared.byReply=new Map(data.rows.filter(x=>x?.reply_event_id&&x?.text&&x?.url).map(x=>[x.reply_event_id,x]));
     conversionPrepared.lastLoad=Date.now();
@@ -3290,11 +3295,12 @@ async function refreshReplyOnlyConversion() {
     if (replyOnlyUser !== who) conversionCopyCache.clear();
     replyOnlyUser = who;
     replyOnlyConversion = data.reply_only === true;
+    conversionPreviewEnabled = data.preview_enabled === true;
     // Work carries cold DMs and reissued first-touch stock; hide it for the 5 reply-only workers.
     // Server cap independently blocks first-touch send confirmation.
     const workButton = document.querySelector('.tab[data-tab="work"]');
     if (workButton) workButton.style.display = replyOnlyConversion ? 'none' : '';
-    if (replyOnlyConversion) void refreshConversionPrepared();
+    if (conversionPreviewEnabled) void refreshConversionPrepared();
     if (replyOnlyConversion && tab === 'work') {
       void selectTab('replies');
     } else {
@@ -3309,7 +3315,7 @@ async function refreshReplyOnlyConversion() {
 function autoLinkFor(c, sug = suggestedFor(c)) {
   // Top-five workers use the server-prepared and retained personal link only.
   // Never issue/rotate a second token from this legacy button.
-  if (replyOnlyConversion) return false;
+  if (conversionPreviewEnabled) return false;
   return !!c.affiliate_available && c.affiliate_state !== 'REGISTERED'
     && c.classification !== 'NOT_INTERESTED'
     && !['CLOSE', 'ESCALATE_TO_OWNER'].includes(sug?.nextAction)
@@ -3592,7 +3598,7 @@ function updateBonusHeader() {
 }
 function replyBucket(c) {
   const suggestion = suggestedFor(c);
-  if (replyOnlyConversion) {
+  if (conversionPreviewEnabled) {
     if (conversionPrepared.byReply.has(c.reply_event_id)) return 'link';
     if (c.affiliate_state === 'REGISTERED' || c.classification === 'NOT_INTERESTED') return 'waiting';
     return 'review';
@@ -3623,7 +3629,9 @@ function drawReplyInbox() {
   const chats = view.chats || [];
   const groups = replyOnlyConversion
     ? [['link','PERSONALIZED replies + unique creator signup links'],['review','Other replies — read and classify before sending'],['waiting','Declined, waiting, or already registered']]
-    : [['link','Send their signup link (paid per creator)'],['ready','Your turn to reply'],['review','Preparing or reviewing the reply'],['waiting','Waiting or finished']];
+    : conversionPreviewEnabled
+      ? [['link','Personalized replies + tracked signup link'],['review','Needs verification before marketing'],['waiting','Closed or registered']]
+      : [['link','Send their signup link (paid per creator)'],['ready','Your turn to reply'],['review','Preparing or reviewing the reply'],['waiting','Waiting or finished']];
   let html = replyOnlyConversion
     ? '<h2>P0 · Convert existing creator replies</h2><p class="muted">ONLY replies. Review every existing TikTok conversation. Where the last verified reply has an approved answer, copy the EXACT contextual answer + the creator\'s personal tracked signup link. Check the original inbox to avoid duplicates. No new cold DMs, automatic TikTok sending, claims of paid conversion or unverified offers. Every reply is listed; no promotional follow-up after an explicit refusal.</p><p id="chatmsg" class="fieldmsg" role="status" aria-live="polite">' + esc(chatStatus) + '</p>'
     : '<h2>Replies</h2><p class="muted">Pasted creator replies start suggestions automatically. '
@@ -3643,7 +3651,7 @@ function drawReplyInbox() {
       + '<button class="sm" style="margin-bottom:16px" data-latest-reply="' + esc(c.task_id)
       + '">Paste latest reply</button>').join('');
   }
-  if(replyOnlyConversion && conversionPrepared.message)
+  if(conversionPreviewEnabled && conversionPrepared.message)
     html += '<p class="fieldmsg bad">'+esc(conversionPrepared.message)+'</p>';
   if (!chats.length) html += '<div class="card">No replies saved yet. Find the creator in Chats and paste their reply text.</div>';
   $('list').innerHTML = html;
