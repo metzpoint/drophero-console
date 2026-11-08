@@ -409,6 +409,13 @@
     <strong id="signup-bonus-value"></strong>per verified<br>affiliate signup
   </div></div>
 
+  <!-- Owner P0 #66 (2026-11-08): reply-only DMers must see at once that prepared replies wait. -->
+  <section id="p0-reply-banner" hidden role="alert" style="margin:10px 0;padding:16px;border:2px solid var(--bad);border-radius:14px;background:rgba(255,107,107,.12)">
+    <h2 style="font-size:18px;margin:0 0 8px;color:var(--bad)">URGENT · <span id="p0-reply-count"></span> creator replies are ready for you</h2>
+    <p style="margin:0 0 12px;font-size:14px;line-height:1.5">Open <b>Replies</b>, copy each prepared answer (it already contains the personal signup link) and send it from your own TikTok account — only if that chat is not handled yet. After the creator answers, paste their reply here. <b>No new cold DMs.</b></p>
+    <button type="button" class="good full" id="p0-reply-open">OPEN REPLIES NOW</button>
+  </section>
+
   <div class="workspace-tools"><a href="./terms.html#performance" target="_blank" rel="noopener noreferrer" style="display:flex;align-items:center;min-height:44px;font-size:12px">Work rules &amp; performance</a><button id="open-help" type="button" class="sm" aria-haspopup="dialog" aria-controls="helpdlg">Quick start &amp; help</button></div>
 
   <!-- TEMPORARY_COUNTER_NOTE: remove seven calendar days after the accounting migration deploy. -->
@@ -823,6 +830,7 @@ function resetVaMemory() {
   }
   if(typeof replyOnlyConversion!=='undefined')replyOnlyConversion=false;
   if(typeof conversionPreviewEnabled!=='undefined')conversionPreviewEnabled=false;
+  { const p0 = document.getElementById('p0-reply-banner'); if (p0) p0.hidden = true; }
   clearTimeout(search.timer);
   search.timer = 0;
   if (typeof tt !== 'undefined') tt = { accounts: [], va_sent_today: 0, va_daily_cap: 0, va_remaining: 0 };
@@ -3622,7 +3630,19 @@ function updateReplyBadge() {
   $('tab-replies').setAttribute('aria-label', 'Replies, ' + count + ' need attention');
   $('tab-replies').title = count ? count + ' replies need a response or review' : 'No replies need attention';
 }
+function updateP0ReplyBanner() {
+  const banner = $('p0-reply-banner');
+  if (!banner) return;
+  const count = replyOnlyConversion && conversionPreviewEnabled ? conversionPrepared.byReply.size : 0;
+  banner.hidden = count === 0;
+  $('p0-reply-count').textContent = String(count);
+  $('p0-reply-open').onclick = () => {
+    void selectTab('replies');
+    $('list')?.scrollIntoView({behavior:'smooth', block:'start'});
+  };
+}
 function redrawReplyViews() {
+  updateP0ReplyBanner();
   updateReplyBadge();
   if (tab === 'replies') drawReplyInbox();
   if (tab === 'conv') drawConversations();
