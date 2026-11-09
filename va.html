@@ -825,7 +825,7 @@ function resetVaMemory() {
   chatStatus = '';
   // Erase prior VA's private tracked-link previews on account switch / sign-out.
   if(typeof conversionPrepared!=='undefined'){
-    conversionPrepared.user=null;conversionPrepared.byReply.clear();
+    conversionPrepared.user=null;conversionPrepared.byReply.clear();conversionPrepared.reviewRows=[];
     conversionPrepared.lastLoad=0;conversionPrepared.message='';
   }
   if(typeof replyOnlyConversion!=='undefined')replyOnlyConversion=false;
@@ -3269,21 +3269,25 @@ let replyOnlyConversion = false;
 let conversionPreviewEnabled = false;
 let replyOnlyUser = null;
 const conversionCopyCache = new Map();
-const conversionPrepared = {user:null,byReply:new Map(),loading:false,lastLoad:0,message:''};
+const conversionPrepared = {user:null,byReply:new Map(),reviewRows:[],loading:false,lastLoad:0,message:''};
 async function refreshConversionPrepared(force=false) {
   if(!conversionPreviewEnabled || !pendingUserId || $('app').hidden)return;
   const user=pendingUserId;
   if(conversionPrepared.user!==user){
-    conversionPrepared.user=user;conversionPrepared.byReply.clear();
+    conversionPrepared.user=user;conversionPrepared.byReply.clear();conversionPrepared.reviewRows=[];
     conversionPrepared.lastLoad=0;conversionPrepared.message='';
   }
   if(conversionPrepared.loading || (!force && Date.now()-conversionPrepared.lastLoad<60000))return;
   conversionPrepared.loading=true;
   try{
-    const {data,error}=await sb.rpc('dh_va_conversion_previews');
+    const [prepared,reviews]=await Promise.all([
+      sb.rpc('dh_va_conversion_previews'),sb.rpc('dh_va_reply_only_review_queue')
+    ]);
     if(user!==pendingUserId || !conversionPreviewEnabled)return;
-    if(error || !data?.ok || !Array.isArray(data.rows))throw error||new Error('Preview unavailable');
-    conversionPrepared.byReply=new Map(data.rows.filter(x=>x?.reply_event_id&&x?.text&&x?.url).map(x=>[x.reply_event_id,x]));
+    if(prepared.error||!prepared.data?.ok||!Array.isArray(prepared.data.rows))throw prepared.error||new Error('Prepared replies unavailable');
+    if(reviews.error||!reviews.data?.ok||!Array.isArray(reviews.data.rows))throw reviews.error||new Error('Review inbox unavailable');
+    conversionPrepared.byReply=new Map(prepared.data.rows.filter(x=>x?.reply_event_id&&x?.text&&x?.url).map(x=>[x.reply_event_id,x]));
+    conversionPrepared.reviewRows=reviews.data.rows.filter(x=>x?.reply_event_id&&x?.review_only);
     conversionPrepared.lastLoad=Date.now();
     conversionPrepared.message='';
     redrawReplyViews();
@@ -3634,7 +3638,7 @@ function updateReplyBadge() {
 function updateP0ReplyBanner() {
   const banner = $('p0-reply-banner');
   if (!banner) return;
-  const count = replyOnlyConversion && conversionPreviewEnabled ? conversionPrepared.byReply.size : 0;
+  const count = replyOnlyConversion && conversionPreviewEnabled ? conversionPrepared.byReply.size+(conversionPrepared.reviewRows||[]).length : 0;
   banner.hidden = count === 0;
   $('p0-reply-count').textContent = String(count);
   $('p0-reply-open').onclick = () => {
@@ -3653,10 +3657,11 @@ function drawReplyOnlyPriority() {
   const list=$('list');
   if(!list)return;
   const rows=[...conversionPrepared.byReply.values()];
-  let html='<h2>1. Finish creator replies · '+rows.length+' remaining</h2>'
+  const reviews=conversionPrepared.reviewRows||[];
+  let html='<h2>1. Finish creator replies · '+(rows.length+reviews.length)+' remaining</h2>'
     +'<p class="muted">Open the original TikTok chat, check their latest message, then copy the prepared reply with its unique DropHero link. No extra warm-up for these existing chats. Confirm only what you actually sent. Once your list is cleared, normal DMs unlock automatically.</p>'
     +'<p id="chatmsg" class="fieldmsg" role="status" aria-live="polite">'+esc(chatStatus)+'</p>';
-  if(!rows.length)html+='<div class="card">'+(conversionPrepared.loading||!conversionPrepared.lastLoad
+  if(!rows.length&&!reviews.length)html+='<div class="card">'+(conversionPrepared.loading||!conversionPrepared.lastLoad
       ? 'Loading your replies…' : 'No open prepared replies. Normal DM work will be available when the server confirms your list is clear.')+'</div>';
   for(const r of rows){
     const profile=safeTikTokProfileUrl(r.profile_url,r.handle);
@@ -3675,11 +3680,24 @@ function drawReplyOnlyPriority() {
       +(profile?'<a class="open" href="'+esc(profile)+'" target="_blank" rel="noopener noreferrer">Open TikTok profile</a>':'')
       +'</div>';
   }
+  for(const r of reviews){
+    const profile=safeTikTokProfileUrl(r.profile_url,r.handle);
+    html+='<div class="row chat" data-ro-review="'+esc(r.reply_event_id)+'">'
+      +'<div class="who">@'+esc(r.handle||'creator')+' · needs review</div>'
+      +'<div class="meta">Original account: @'+esc(r.sender_account||'unknown')+'</div>'
+      +'<div class="quote">'+esc(r.latest_reply||'Check the actual chat.')+'</div>'
+      +'<p class="muted">No approved reply with a personal link is available. Do not send an invented link or generic pitch. Verify the actual conversation and choose an outcome.</p>'
+      +'<div class="cv-actions"><button type="button" data-ro-review-action="ALREADY_SENT_CHECKED" data-ro-id="'+esc(r.reply_event_id)+'">Already answered</button>'
+      +'<button type="button" data-ro-review-action="UNREACHABLE" data-ro-id="'+esc(r.reply_event_id)+'">Cannot access chat</button>'
+      +'<button type="button" data-ro-review-action="NEEDS_OWNER_REVIEW" data-ro-id="'+esc(r.reply_event_id)+'">Team review</button></div>'
+      +(profile?'<a class="open" href="'+esc(profile)+'" target="_blank" rel="noopener noreferrer">Open TikTok profile</a>':'')
+      +'</div>';
+  }
   list.innerHTML=html;
-  for(const button of list.querySelectorAll('[data-ro-action]')){
+  for(const button of list.querySelectorAll('[data-ro-action],[data-ro-review-action]')){
     button.onclick=async()=>{
-      const id=button.dataset.roId, action=button.dataset.roAction;
-      const current=conversionPrepared.byReply.get(id);
+      const id=button.dataset.roId, action=button.dataset.roAction||button.dataset.roReviewAction;
+      const current=conversionPrepared.byReply.get(id)||conversionPrepared.reviewRows.find(r=>r.reply_event_id===id);
       if(!current)return;
       const ask={
         COPIED:'Have you checked the latest reply in the original TikTok chat? This only copies the answer.',
@@ -3688,10 +3706,15 @@ function drawReplyOnlyPriority() {
         UNREACHABLE:'You checked and cannot access this original TikTok conversation? This will flag it for review, not count as sent.',
         NEEDS_OWNER_REVIEW:'This conversation needs owner review and cannot safely be sent by you? It will not count as sent.'
       };
-      if(!confirm(ask[action]))return;
+      const reviewQuestion=current.review_only ? {
+        ALREADY_SENT_CHECKED:'Confirm ONLY if you checked the original TikTok chat and answered this creator appropriately.',
+        UNREACHABLE:'Confirm you cannot access the original TikTok conversation. This does not count as a sent message.',
+        NEEDS_OWNER_REVIEW:'Send this unresolved conversation to DropHero team review? This does not count as sent.'
+      } : ask;
+      if(!confirm(reviewQuestion[action]||'Confirm this action'))return;
       button.disabled=true;
       try{
-        const {data,error}=await sb.rpc('dh_va_reply_only_action',{
+        const {data,error}=await sb.rpc(current.review_only?'dh_va_reply_only_review_action':'dh_va_reply_only_action',{
           p_reply_event_id:id,p_action:action,p_inbox_checked:true
         });
         if(error||!data?.ok)throw new Error(data?.reason||error?.message||'Could not save');
@@ -3704,6 +3727,7 @@ function drawReplyOnlyPriority() {
           const target=$('chatmsg');if(target)target.textContent=chatStatus;
         }else{
           conversionPrepared.byReply.delete(id);
+          conversionPrepared.reviewRows=conversionPrepared.reviewRows.filter(r=>r.reply_event_id!==id);
           conversionPrepared.lastLoad=0;
           chatStatus='Saved: '+(action==='SENT_REPORTED'?'sent reported':action==='ALREADY_SENT_CHECKED'?'already handled':'sent to review')
             +'. '+Number(data.pending_replies||0)+' replies left.';
