@@ -3304,6 +3304,7 @@ async function refreshReplyOnlyConversion() {
     replyOnlyUser = who;
     replyOnlyConversion = data.reply_only === true;
     conversionPreviewEnabled = data.preview_enabled === true;
+    cvGate(0); // Clear stale legacy gate after the real reply queue is completed.
     // Work carries cold DMs and reissued first-touch stock; hide it for the 5 reply-only workers.
     // Server cap independently blocks first-touch send confirmation.
     const workButton = document.querySelector('.tab[data-tab="work"]');
@@ -3647,7 +3648,86 @@ function redrawReplyViews() {
   if (tab === 'replies') drawReplyInbox();
   if (tab === 'conv') drawConversations();
 }
+
+function drawReplyOnlyPriority() {
+  const list=$('list');
+  if(!list)return;
+  const rows=[...conversionPrepared.byReply.values()];
+  let html='<h2>1. Finish creator replies · '+rows.length+' remaining</h2>'
+    +'<p class="muted">Open the original TikTok chat, check their latest message, then copy the prepared reply with its unique DropHero link. No extra warm-up for these existing chats. Confirm only what you actually sent. Once your list is cleared, normal DMs unlock automatically.</p>'
+    +'<p id="chatmsg" class="fieldmsg" role="status" aria-live="polite">'+esc(chatStatus)+'</p>';
+  if(!rows.length)html+='<div class="card">'+(conversionPrepared.loading||!conversionPrepared.lastLoad
+      ? 'Loading your replies…' : 'No open prepared replies. Normal DM work will be available when the server confirms your list is clear.')+'</div>';
+  for(const r of rows){
+    const profile=safeTikTokProfileUrl(r.profile_url,r.handle);
+    html+='<div class="row chat" data-ro-card="'+esc(r.reply_event_id)+'">'
+      +'<div class="who">@'+esc(r.handle||'creator')+'</div>'
+      +'<div class="meta">Send from <b>@'+esc(r.sender_account||'your original account')+'</b></div>'
+      +'<div class="quote">'+esc(r.latest_reply||'Check the original TikTok reply first.')+'</div>'
+      +(r.historical_disposition?'<p class="muted">Previously marked '+esc(r.historical_disposition)+'. Do not send a duplicate; check the chat first.</p>':'')
+      +(r.verified_status!=='VERIFIED'?'<p class="muted">Confirm the actual latest TikTok message before using this prepared reply.</p>':'')
+      +'<div class="cf-draft" style="white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0">'+esc(r.text)+'</div>'
+      +'<div class="cv-actions"><button type="button" class="good" data-ro-action="COPIED" data-ro-id="'+esc(r.reply_event_id)+'">1 · Copy &amp; open TikTok</button>'
+      +'<button type="button" data-ro-action="SENT_REPORTED" data-ro-id="'+esc(r.reply_event_id)+'">2 · I sent it</button></div>'
+      +'<div class="cv-actions"><button type="button" data-ro-action="ALREADY_SENT_CHECKED" data-ro-id="'+esc(r.reply_event_id)+'">Already sent correctly</button>'
+      +'<button type="button" data-ro-action="UNREACHABLE" data-ro-id="'+esc(r.reply_event_id)+'">Cannot access chat</button>'
+      +'<button type="button" data-ro-action="NEEDS_OWNER_REVIEW" data-ro-id="'+esc(r.reply_event_id)+'">Needs team review</button></div>'
+      +(profile?'<a class="open" href="'+esc(profile)+'" target="_blank" rel="noopener noreferrer">Open TikTok profile</a>':'')
+      +'</div>';
+  }
+  list.innerHTML=html;
+  for(const button of list.querySelectorAll('[data-ro-action]')){
+    button.onclick=async()=>{
+      const id=button.dataset.roId, action=button.dataset.roAction;
+      const current=conversionPrepared.byReply.get(id);
+      if(!current)return;
+      const ask={
+        COPIED:'Have you checked the latest reply in the original TikTok chat? This only copies the answer.',
+        SENT_REPORTED:'Confirm ONLY if you pressed Send in the original TikTok chat with the complete personal link. Copying alone is not sending.',
+        ALREADY_SENT_CHECKED:'You checked the original chat and the correct response WITH the personal link was already sent? Do not send a duplicate.',
+        UNREACHABLE:'You checked and cannot access this original TikTok conversation? This will flag it for review, not count as sent.',
+        NEEDS_OWNER_REVIEW:'This conversation needs owner review and cannot safely be sent by you? It will not count as sent.'
+      };
+      if(!confirm(ask[action]))return;
+      button.disabled=true;
+      try{
+        const {data,error}=await sb.rpc('dh_va_reply_only_action',{
+          p_reply_event_id:id,p_action:action,p_inbox_checked:true
+        });
+        if(error||!data?.ok)throw new Error(data?.reason||error?.message||'Could not save');
+        if(action==='COPIED'){
+          const copied=await copyNow(data.text,true);
+          if(!copied.ok)prompt('Copy the entire approved message with its personal link.',data.text);
+          const profile=safeTikTokProfileUrl(current.profile_url,current.handle);
+          if(profile)leaveForTikTok(profile,current.handle);
+          chatStatus='Copied. Send it from @'+(current.sender_account||'your original account')+', then return and tap "I sent it".';
+          const target=$('chatmsg');if(target)target.textContent=chatStatus;
+        }else{
+          conversionPrepared.byReply.delete(id);
+          conversionPrepared.lastLoad=0;
+          chatStatus='Saved: '+(action==='SENT_REPORTED'?'sent reported':action==='ALREADY_SENT_CHECKED'?'already handled':'sent to review')
+            +'. '+Number(data.pending_replies||0)+' replies left.';
+          await refreshConversionPrepared(true);
+          await refreshReplyOnlyConversion();
+          if(data.normal_dms_unlocked===true && !replyOnlyConversion){
+            chatStatus='All priority replies processed. Normal DMs are unlocked.';
+            void refreshWorkhub(true);
+            void refreshWorkhubFollowups(true);
+            void selectTab('work');
+          }else{
+            const target=$('chatmsg');if(target)target.textContent=chatStatus;
+          }
+        }
+      }catch(e){
+        chatStatus='Could not save: '+(e?.message||'Please retry');
+        const target=$('chatmsg');if(target)target.textContent=chatStatus;
+      }finally{button.disabled=false;}
+    };
+  }
+}
+
 function drawReplyInbox() {
+  if(replyOnlyConversion){drawReplyOnlyPriority();return;}
   const chats = view.chats || [];
   const groups = replyOnlyConversion
     ? [['link','PERSONALIZED replies + unique creator signup links'],['review','Other replies — read and classify before sending'],['waiting','Declined, waiting, or already registered']]
@@ -5269,7 +5349,7 @@ function renderConversionVa(){
 
 // Owner rule 2026-11-06: approved creator messages go first; the Work tab's new DMs stay hidden
 // until every approved message is sent or every previously handled chat is checked.
-function cvGate(n){document.body.classList.toggle('cv-gate',n>0);}
+function cvGate(n){document.body.classList.toggle('cv-gate',replyOnlyConversion && n>0);}
 function cvVaMsg(t){cv.vaMsg=t;const m=$('cv-va-msg');if(m)m.textContent=t;}
 async function cvCopy(id){
  if(cv.busy.has(id))return;cv.busy.add(id);
