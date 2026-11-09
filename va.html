@@ -3711,11 +3711,11 @@ function drawReplyOnlyPriority() {
         UNREACHABLE:'Confirm you cannot access the original TikTok conversation. This does not count as a sent message.',
         NEEDS_OWNER_REVIEW:'Send this unresolved conversation to DropHero team review? This does not count as sent.'
       } : ask;
-      if(!confirm(reviewQuestion[action]||'Confirm this action'))return;
+      if(action!=='COPIED'&&!confirm(reviewQuestion[action]||'Confirm this action'))return;
       button.disabled=true;
       try{
         const {data,error}=await sb.rpc(current.review_only?'dh_va_reply_only_review_action':'dh_va_reply_only_action',{
-          p_reply_event_id:id,p_action:action,p_inbox_checked:true
+          p_reply_event_id:id,p_action:action,p_inbox_checked:action!=='COPIED'
         });
         if(error||!data?.ok)throw new Error(data?.reason||error?.message||'Could not save');
         if(action==='COPIED'){
