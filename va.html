@@ -825,7 +825,7 @@ function resetVaMemory() {
   chatStatus = '';
   // Erase prior VA's private tracked-link previews on account switch / sign-out.
   if(typeof conversionPrepared!=='undefined'){
-    conversionPrepared.user=null;conversionPrepared.byReply.clear();conversionPrepared.reviewRows=[];
+    conversionPrepared.user=null;conversionPrepared.byReply.clear();conversionPrepared.reviewRows=[];conversionPrepared.total=0;conversionPrepared.offset=0;
     conversionPrepared.lastLoad=0;conversionPrepared.message='';
   }
   if(typeof replyOnlyConversion!=='undefined')replyOnlyConversion=false;
@@ -3269,25 +3269,47 @@ let replyOnlyConversion = false;
 let conversionPreviewEnabled = false;
 let replyOnlyUser = null;
 const conversionCopyCache = new Map();
-const conversionPrepared = {user:null,byReply:new Map(),reviewRows:[],loading:false,lastLoad:0,message:''};
+const conversionPrepared = {user:null,byReply:new Map(),reviewRows:[],loading:false,lastLoad:0,message:'',total:0,readyTotal:0,reviewTotal:0,offset:0,pageSize:12};
 async function refreshConversionPrepared(force=false) {
   if(!conversionPreviewEnabled || !pendingUserId || $('app').hidden)return;
   const user=pendingUserId;
   if(conversionPrepared.user!==user){
-    conversionPrepared.user=user;conversionPrepared.byReply.clear();conversionPrepared.reviewRows=[];
+    conversionPrepared.user=user;conversionPrepared.byReply.clear();conversionPrepared.reviewRows=[];conversionPrepared.total=0;conversionPrepared.offset=0;
     conversionPrepared.lastLoad=0;conversionPrepared.message='';
   }
   if(conversionPrepared.loading || (!force && Date.now()-conversionPrepared.lastLoad<60000))return;
   conversionPrepared.loading=true;
   try{
-    const [prepared,reviews]=await Promise.all([
-      sb.rpc('dh_va_conversion_previews'),sb.rpc('dh_va_reply_only_review_queue')
-    ]);
-    if(user!==pendingUserId || !conversionPreviewEnabled)return;
-    if(prepared.error||!prepared.data?.ok||!Array.isArray(prepared.data.rows))throw prepared.error||new Error('Prepared replies unavailable');
-    if(reviews.error||!reviews.data?.ok||!Array.isArray(reviews.data.rows))throw reviews.error||new Error('Review inbox unavailable');
-    conversionPrepared.byReply=new Map(prepared.data.rows.filter(x=>x?.reply_event_id&&x?.text&&x?.url).map(x=>[x.reply_event_id,x]));
-    conversionPrepared.reviewRows=reviews.data.rows.filter(x=>x?.reply_event_id&&x?.review_only);
+    if(replyOnlyConversion){
+      // Small, server-paginated pages: never download hundreds of personalized messages to an iPhone.
+      let res=await sb.rpc('dh_va_reply_only_priority_page',{
+        p_limit:conversionPrepared.pageSize,p_offset:conversionPrepared.offset
+      });
+      if(user!==pendingUserId || !conversionPreviewEnabled)return;
+      if(res.error||!res.data?.ok||!Array.isArray(res.data.rows))throw res.error||new Error('Priority replies unavailable');
+      if(!res.data.rows.length&&Number(res.data.total)>0&&conversionPrepared.offset>0){
+        conversionPrepared.offset=Math.max(0,Math.ceil(Number(res.data.total)/conversionPrepared.pageSize)-1)*conversionPrepared.pageSize;
+        res=await sb.rpc('dh_va_reply_only_priority_page',{
+          p_limit:conversionPrepared.pageSize,p_offset:conversionPrepared.offset
+        });
+        if(res.error||!res.data?.ok||!Array.isArray(res.data.rows))throw res.error||new Error('Priority replies unavailable');
+      }
+      conversionPrepared.total=Number(res.data.total||0);
+      conversionPrepared.readyTotal=Number(res.data.prepared_total||0);
+      conversionPrepared.reviewTotal=Number(res.data.review_total||0);
+      conversionPrepared.byReply=new Map(res.data.rows.filter(x=>x?.reply_event_id&&!x.review_only&&x?.text&&x?.url).map(x=>[x.reply_event_id,x]));
+      conversionPrepared.reviewRows=res.data.rows.filter(x=>x?.reply_event_id&&x?.review_only);
+    }else{
+      const [prepared,reviews]=await Promise.all([
+        sb.rpc('dh_va_conversion_previews'),sb.rpc('dh_va_reply_only_review_queue')
+      ]);
+      if(user!==pendingUserId || !conversionPreviewEnabled)return;
+      if(prepared.error||!prepared.data?.ok||!Array.isArray(prepared.data.rows))throw prepared.error||new Error('Prepared replies unavailable');
+      if(reviews.error||!reviews.data?.ok||!Array.isArray(reviews.data.rows))throw reviews.error||new Error('Review inbox unavailable');
+      conversionPrepared.byReply=new Map(prepared.data.rows.filter(x=>x?.reply_event_id&&x?.text&&x?.url).map(x=>[x.reply_event_id,x]));
+      conversionPrepared.reviewRows=reviews.data.rows.filter(x=>x?.reply_event_id&&x?.review_only);
+      conversionPrepared.total=conversionPrepared.byReply.size+conversionPrepared.reviewRows.length;
+    }
     conversionPrepared.lastLoad=Date.now();
     conversionPrepared.message='';
     redrawReplyViews();
@@ -3638,7 +3660,7 @@ function updateReplyBadge() {
 function updateP0ReplyBanner() {
   const banner = $('p0-reply-banner');
   if (!banner) return;
-  const count = replyOnlyConversion && conversionPreviewEnabled ? conversionPrepared.byReply.size+(conversionPrepared.reviewRows||[]).length : 0;
+  const count = replyOnlyConversion && conversionPreviewEnabled ? conversionPrepared.total : 0;
   banner.hidden = count === 0;
   $('p0-reply-count').textContent = String(count);
   $('p0-reply-open').onclick = () => {
@@ -3658,8 +3680,9 @@ function drawReplyOnlyPriority() {
   if(!list)return;
   const rows=[...conversionPrepared.byReply.values()];
   const reviews=conversionPrepared.reviewRows||[];
-  let html='<h2>1. Finish creator replies · '+(rows.length+reviews.length)+' remaining</h2>'
+  let html='<h2>1. Finish creator replies · '+conversionPrepared.total+' remaining</h2>'
     +'<p class="muted">Open the original TikTok chat, check their latest message, then copy the prepared reply with its unique DropHero link. No extra warm-up for these existing chats. Confirm only what you actually sent. Once your list is cleared, normal DMs unlock automatically.</p>'
+    +'<p class="muted">'+conversionPrepared.readyTotal+' ready to send · '+conversionPrepared.reviewTotal+' need checking. Showing '+(conversionPrepared.total?conversionPrepared.offset+1:0)+'–'+Math.min(conversionPrepared.offset+conversionPrepared.pageSize,conversionPrepared.total)+' of '+conversionPrepared.total+'.</p>'
     +'<p id="chatmsg" class="fieldmsg" role="status" aria-live="polite">'+esc(chatStatus)+'</p>';
   if(!rows.length&&!reviews.length)html+='<div class="card">'+(conversionPrepared.loading||!conversionPrepared.lastLoad
       ? 'Loading your replies…' : 'No open prepared replies. Normal DM work will be available when the server confirms your list is clear.')+'</div>';
@@ -3693,7 +3716,19 @@ function drawReplyOnlyPriority() {
       +(profile?'<a class="open" href="'+esc(profile)+'" target="_blank" rel="noopener noreferrer">Open TikTok profile</a>':'')
       +'</div>';
   }
+  if(conversionPrepared.total>conversionPrepared.pageSize){
+    html+='<div class="cv-actions"><button type="button" data-ro-page="prev" '+(conversionPrepared.offset===0?'disabled':'')+'>Previous replies</button>'
+      +'<button type="button" data-ro-page="next" '+(conversionPrepared.offset+conversionPrepared.pageSize>=conversionPrepared.total?'disabled':'')+'>Next replies</button></div>';
+  }
   list.innerHTML=html;
+  for(const b of list.querySelectorAll('[data-ro-page]')){
+    b.onclick=async()=>{
+      conversionPrepared.offset=Math.max(0,conversionPrepared.offset+(b.dataset.roPage==='next'?conversionPrepared.pageSize:-conversionPrepared.pageSize));
+      conversionPrepared.lastLoad=0;
+      await refreshConversionPrepared(true);
+      $('list')?.scrollIntoView({behavior:'smooth',block:'start'});
+    };
+  }
   for(const button of list.querySelectorAll('[data-ro-action],[data-ro-review-action]')){
     button.onclick=async()=>{
       const id=button.dataset.roId, action=button.dataset.roAction||button.dataset.roReviewAction;
@@ -3728,7 +3763,7 @@ function drawReplyOnlyPriority() {
         }else{
           conversionPrepared.byReply.delete(id);
           conversionPrepared.reviewRows=conversionPrepared.reviewRows.filter(r=>r.reply_event_id!==id);
-          conversionPrepared.lastLoad=0;
+          conversionPrepared.offset=0;conversionPrepared.lastLoad=0;
           chatStatus='Saved: '+(action==='SENT_REPORTED'?'sent reported':action==='ALREADY_SENT_CHECKED'?'already handled':'sent to review')
             +'. '+Number(data.pending_replies||0)+' replies left.';
           await refreshConversionPrepared(true);
