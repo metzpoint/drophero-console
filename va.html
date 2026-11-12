@@ -429,12 +429,15 @@
 
 
 
-  <section id="team-apology" hidden role="region" aria-label="Message from DropHero" style="margin:10px 0">
-    <div class="card" style="padding:16px;border:1px solid var(--line);border-radius:14px">
-      <h2 id="team-apology-title" style="font-size:18px;margin:0 0 10px"></h2>
-      <p id="team-apology-message" style="white-space:pre-line;font-size:14px;line-height:1.55;margin:0 0 12px"></p>
-      <button class="sm good" type="button" id="team-apology-confirm">I've read this</button>
-      <p class="fieldmsg" id="team-apology-status" role="status"></p>
+  <!-- One-time update pop-up (owner 2026-11-12): small, shown once per DMer, gone after the X. -->
+  <section id="team-apology" hidden role="dialog" aria-modal="false" aria-labelledby="team-apology-title"
+           style="position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:1000;width:min(420px,calc(100vw - 32px));margin:0">
+    <div class="card" style="position:relative;padding:14px 44px 14px 16px;border:2px solid var(--good,#408d76);border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.45)">
+      <button type="button" id="team-apology-confirm" aria-label="Close" title="Close"
+              style="position:absolute;top:6px;right:6px;width:36px;height:36px;min-height:36px;padding:0;border-radius:18px;font-size:20px;line-height:1">&times;</button>
+      <h2 id="team-apology-title" style="font-size:16px;margin:0 0 6px"></h2>
+      <p id="team-apology-message" style="white-space:pre-line;font-size:14px;line-height:1.45;margin:0"></p>
+      <p class="fieldmsg" id="team-apology-status" role="status" style="margin:4px 0 0"></p>
     </div>
   </section>
   <section id="workhub-dashboard" role="region" aria-label="Daily DropHero dashboard" aria-live="polite">
