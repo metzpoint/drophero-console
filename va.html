@@ -3675,17 +3675,185 @@ function redrawReplyViews() {
   if (tab === 'conv') drawConversations();
 }
 
+// LIVE CREATOR CONVERSATIONS (owner Rico, 2026-11-12): "zodra ze een reply plaatsen moet er direct een
+// antwoord komen, net als in ChatGPT; het veld blijft altijd open". Every open creator reply in this
+// list shows the whole conversation, the AI answer (written by reply-assistant from this creator's
+// conversation and the owner-approved facts only), a copy button that adds the personal signup link
+// on the server, and a paste field that is always open for the creator's next message(s).
+const liveUi={drafts:new Map(),threads:new Map(),loading:new Set(),sent:new Set(),redrawPending:false};
+function liveRow(r){return aiRow(r.reply_event_id)||r;}
+function liveSuggestion(r){
+  const row=liveRow(r), id=r.reply_event_id, input=aiInput(row);
+  if(AI.inflight.has(id)||AI.waiting.has(id)||AI.queued.get(id)?.input===input)return{pending:true};
+  const ai=AI.seen.get(id);
+  if(ai&&ai.input===input){
+    if(ai.text)return{text:ai.text,nextAction:ai.nextAction,source:ai.source};
+    return ai.retryable?{pending:true}:{none:true,guidance:ai.guidance};
+  }
+  return{pending:true};
+}
+function liveThreadHtml(r){
+  const msgs=liveUi.threads.get(r.task_id);
+  if(!msgs)return '<div data-live-thread="'+esc(r.task_id)+'"><div class="quote">'+esc(r.latest_reply||'')+'</div></div>';
+  return '<div data-live-thread="'+esc(r.task_id)+'" style="display:flex;flex-direction:column;gap:6px;margin:8px 0">'
+    +msgs.map(m=>'<div style="max-width:92%;padding:8px 10px;border-radius:12px;white-space:pre-wrap;overflow-wrap:anywhere;'
+      +(m.from==='creator'?'align-self:flex-start;background:rgba(255,255,255,.08)':'align-self:flex-end;background:rgba(64,141,118,.25)')+'">'
+      +'<span class="muted" style="display:block;font-size:11px">'+(m.from==='creator'?'Creator':(m.first?'Your first DM':'You'))+'</span>'
+      +esc(m.text)+'</div>').join('')+'</div>';
+}
+async function loadLiveThread(r,force=false){
+  const key=r.task_id;
+  if(!key||liveUi.loading.has(key)||(!force&&liveUi.threads.has(key)))return;
+  liveUi.loading.add(key);
+  try{
+    const {data,error}=await sb.rpc('dh_va_conversation_thread',{p_task_id:key});
+    if(!error&&data?.ok&&Array.isArray(data.messages)){
+      liveUi.threads.set(key,data.messages);
+      for(const el of document.querySelectorAll('[data-live-thread]'))if(el.dataset.liveThread===key)el.outerHTML=liveThreadHtml(r);
+    }
+  }catch{}finally{liveUi.loading.delete(key);}
+}
+function livePasteHtml(r){
+  const id='lp-'+r.reply_event_id;
+  return '<div style="margin-top:12px"><label class="muted" for="'+esc(id)+'">Creator wrote again? Paste ALL their new messages here</label>'
+    +'<textarea id="'+esc(id)+'" data-live-paste="'+esc(r.task_id)+'" rows="3" maxlength="4000" spellcheck="true" autocomplete="off" placeholder="Paste the creator’s exact words…" style="width:100%;min-height:84px;margin:6px 0">'
+    +esc(liveUi.drafts.get(r.task_id)||'')+'</textarea>'
+    +'<button type="button" class="good" data-live-submit="'+esc(r.task_id)+'">Save and get the AI answer</button></div>';
+}
+function liveCardHtml(r){
+  const id=r.reply_event_id, profile=safeTikTokProfileUrl(r.profile_url,r.handle), sug=liveSuggestion(r);
+  let h='<div class="row chat" data-live-card="'+esc(id)+'">'
+    +'<div class="who">@'+esc(r.handle||'creator')+'</div>'
+    +'<div class="meta">Send from <b>@'+esc(r.sender_account||'your original account')+'</b></div>'
+    +liveThreadHtml(r);
+  if(liveUi.sent.has(id)){
+    h+='<div class="suggest"><span class="lbl">Sent</span>When the creator answers, paste their message below.</div>';
+  }else if(sug.text&&['WAIT','ESCALATE_TO_OWNER'].includes(sug.nextAction)){
+    h+='<div class="suggest"><span class="lbl">'+(sug.nextAction==='WAIT'?'Nothing to send now':'Needs team review')+'</span>'+esc(sug.text)+'</div>';
+  }else if(sug.text){
+    const close=sug.nextAction==='CLOSE';
+    h+='<div class="suggest"><span class="lbl">'+(close?'AI answer · creator declined, no link':'AI answer · your personal signup link is added when you copy')+'</span>'
+      +'<div class="cf-draft" style="white-space:pre-wrap;overflow-wrap:anywhere">'+esc(sug.text)+'</div></div>'
+      +'<div class="cv-actions"><button type="button" class="good" data-live-copy="'+esc(id)+'">1 · Copy answer'+(close?'':' + link')+' &amp; open TikTok</button>'
+      +'<button type="button" data-live-sent="'+esc(id)+'">2 · I sent it</button></div>';
+  }else if(sug.pending){
+    h+='<div class="suggest pending"><span class="lbl">AI answer</span>Writing the answer… (about 10 seconds)</div>';
+  }else{
+    h+='<div class="suggest none"><span class="lbl">AI answer</span>'+esc(sug.guidance||'No answer could be made for this message.')+'</div>'
+      +'<button type="button" class="sm" data-live-retry="'+esc(id)+'">Retry AI answer</button>';
+  }
+  h+=livePasteHtml(r)
+    +'<div class="cv-actions"><button type="button" data-ro-review-action="ALREADY_SENT_CHECKED" data-ro-id="'+esc(id)+'">Already answered</button>'
+    +'<button type="button" data-ro-review-action="UNREACHABLE" data-ro-id="'+esc(id)+'">Cannot access chat</button>'
+    +'<button type="button" data-ro-review-action="NEEDS_OWNER_REVIEW" data-ro-id="'+esc(id)+'">Team review</button></div>'
+    +(profile?'<a class="open" href="'+esc(profile)+'" target="_blank" rel="noopener noreferrer">Open TikTok profile</a>':'')
+    +'</div>';
+  return h;
+}
+function liveStatus(text){chatStatus=text;const t=$('chatmsg');if(t)t.textContent=text;}
+function wireLiveCards(list,reviews){
+  const byId=new Map(reviews.map(r=>[r.reply_event_id,r]));
+  for(const ta of list.querySelectorAll('textarea[data-live-paste]')){
+    ta.oninput=()=>liveUi.drafts.set(ta.dataset.livePaste,ta.value);
+    ta.onblur=()=>{if(liveUi.redrawPending){liveUi.redrawPending=false;setTimeout(()=>{if(!document.activeElement?.matches?.('textarea[data-live-paste]'))redrawReplyViews();},150);}};
+  }
+  for(const b of list.querySelectorAll('[data-live-submit]')){
+    b.onclick=async()=>{
+      const taskId=b.dataset.liveSubmit;
+      const ta=[...list.querySelectorAll('textarea[data-live-paste]')].find(x=>x.dataset.livePaste===taskId);
+      const text=(ta?.value||'').trim();
+      if(text.length<2||text.length>4000){liveStatus('Paste the creator’s message first (2–4000 characters).');return;}
+      b.disabled=true;liveStatus('Saving their message…');
+      let result;
+      try{result=await sb.rpc('dh_va_submit_reply_text',{p_task_id:taskId,p_text:text,p_classification:null});}catch(error){result={error};}
+      const res=normalizeRpc(result);
+      b.disabled=false;
+      if(!res.ok){liveStatus(res.message||'Could not save the message. Try again.');return;}
+      liveUi.drafts.delete(taskId);liveUi.threads.delete(taskId);
+      const newId=result.data?.reply_event_id;
+      const old=reviews.find(r=>r.task_id===taskId)||[...conversionPrepared.byReply.values()].find(r=>r.task_id===taskId)||{};
+      if(newId){
+        // Show the new message at once, even before the server list refreshes.
+        conversionPrepared.reviewRows=[{...old,reply_event_id:newId,task_id:taskId,latest_reply:text,review_only:true,live_new:true},
+          ...conversionPrepared.reviewRows.filter(r=>r.task_id!==taskId)];
+        for(const [k,v] of conversionPrepared.byReply)if(v.task_id===taskId)conversionPrepared.byReply.delete(k);
+        liveUi.sent.delete(newId);
+      }
+      liveStatus('Saved. The AI is writing the answer…');
+      if(ta)ta.value='';
+      ta?.blur();
+      redrawReplyViews();
+      void loadMoney().then(()=>redrawReplyViews(),()=>{});
+      if(newId)startSuggestionWatch(newId);
+      setTimeout(()=>{conversionPrepared.lastLoad=0;void refreshConversionPrepared(true);},1500);
+    };
+  }
+  for(const b of list.querySelectorAll('[data-live-copy]')){
+    b.onclick=async()=>{
+      const id=b.dataset.liveCopy, r=byId.get(id); if(!r)return;
+      const sug=liveSuggestion(r); if(!sug.text)return;
+      b.disabled=true;
+      let text=null;
+      try{
+        if(sug.nextAction==='CLOSE'){
+          text=sug.text;
+          await sb.rpc('dh_va_log_outgoing',{p_reply_event_id:id,p_text:text});
+        }else{
+          const {data,error}=await sb.rpc('dh_va_reply_with_link',{p_reply_event_id:id,p_reply_text:sug.text});
+          if(error||!data?.ok||!data.text){
+            liveStatus(data?.reason==='ALREADY_ATTRIBUTED'?'This creator already joined through someone else. Leave this one.'
+              :'Could not add the signup link ('+String(data?.reason||error?.message||'try again')+').');
+            return;
+          }
+          text=data.text;
+        }
+      }catch(e){liveStatus('Could not prepare the message. Try again.');return;}
+      finally{b.disabled=false;}
+      const cr=await copyNow(text,true);
+      if(!cr.ok)prompt('Copy the complete message.',text);
+      const profile=safeTikTokProfileUrl(r.profile_url,r.handle);
+      if(profile)leaveForTikTok(profile,r.handle);
+      liveUi.threads.delete(r.task_id);
+      liveStatus('Copied. Send it from @'+(r.sender_account||'your original account')+', then tap "I sent it".');
+    };
+  }
+  for(const b of list.querySelectorAll('[data-live-sent]')){
+    b.onclick=async()=>{
+      const id=b.dataset.liveSent;
+      if(!confirm('Confirm ONLY if you pressed Send in the TikTok chat with this answer.'))return;
+      b.disabled=true;
+      try{
+        const {data,error}=await sb.rpc('dh_va_live_reply_sent',{p_reply_event_id:id});
+        if(error||!data?.ok){liveStatus(data?.reason==='COPY_THE_ANSWER_FIRST'?'Tap "Copy answer" first, send it, then confirm.':'Could not save: '+String(data?.reason||error?.message||'retry'));return;}
+        liveUi.sent.add(id);
+        liveStatus('Saved as sent. Paste their next message when they answer. '+Number(data.pending_replies||0)+' replies left.');
+        redrawReplyViews();
+      }finally{b.disabled=false;}
+    };
+  }
+  for(const b of list.querySelectorAll('[data-live-retry]')){
+    b.onclick=()=>{const id=b.dataset.liveRetry;AI.seen.delete(id);startSuggestionWatch(id);};
+  }
+  for(const r of reviews)void loadLiveThread(r);
+  // Fetch every open reply's AI answer right away (three at a time; the server makes at most one
+  // paid call per reply).
+  void primeAssistant(reviews.map(liveRow));
+}
+
 function drawReplyOnlyPriority() {
   const list=$('list');
   if(!list)return;
+  // Never rebuild the list under the DMer's fingers: that would wipe what they are pasting.
+  if(document.activeElement?.matches?.('textarea[data-live-paste]')&&list.contains(document.activeElement)){liveUi.redrawPending=true;return;}
   const rows=[...conversionPrepared.byReply.values()];
   const reviews=conversionPrepared.reviewRows||[];
   let html='<h2>1. Finish creator replies · '+conversionPrepared.total+' remaining</h2>'
-    +'<p class="muted">Open the original TikTok chat, check their latest message, then copy the prepared reply with its unique DropHero link. No extra warm-up for these existing chats. Confirm only what you actually sent. Once your list is cleared, normal DMs unlock automatically.</p>'
+    +'<p class="muted">Every creator reply gets an AI answer within seconds, based on the whole conversation. Copy it (the personal signup link is added), send it in TikTok, tap "I sent it". When the creator writes again, paste ALL their new messages in the field under that creator. Once your list is cleared, normal DMs unlock automatically.</p>'
     +'<p class="muted">'+conversionPrepared.readyTotal+' ready to send · '+conversionPrepared.reviewTotal+' need checking. Showing '+(conversionPrepared.total?conversionPrepared.offset+1:0)+'–'+Math.min(conversionPrepared.offset+conversionPrepared.pageSize,conversionPrepared.total)+' of '+conversionPrepared.total+'.</p>'
     +'<p id="chatmsg" class="fieldmsg" role="status" aria-live="polite">'+esc(chatStatus)+'</p>';
   if(!rows.length&&!reviews.length)html+='<div class="card">'+(conversionPrepared.loading||!conversionPrepared.lastLoad
       ? 'Loading your replies…' : 'No open prepared replies. Normal DM work will be available when the server confirms your list is clear.')+'</div>';
+  for(const r of reviews)html+=liveCardHtml(r);
   for(const r of rows){
     const profile=safeTikTokProfileUrl(r.profile_url,r.handle);
     html+='<div class="row chat" data-ro-card="'+esc(r.reply_event_id)+'">'
@@ -3700,19 +3868,7 @@ function drawReplyOnlyPriority() {
       +'<div class="cv-actions"><button type="button" data-ro-action="ALREADY_SENT_CHECKED" data-ro-id="'+esc(r.reply_event_id)+'">Already sent correctly</button>'
       +'<button type="button" data-ro-action="UNREACHABLE" data-ro-id="'+esc(r.reply_event_id)+'">Cannot access chat</button>'
       +'<button type="button" data-ro-action="NEEDS_OWNER_REVIEW" data-ro-id="'+esc(r.reply_event_id)+'">Needs team review</button></div>'
-      +(profile?'<a class="open" href="'+esc(profile)+'" target="_blank" rel="noopener noreferrer">Open TikTok profile</a>':'')
-      +'</div>';
-  }
-  for(const r of reviews){
-    const profile=safeTikTokProfileUrl(r.profile_url,r.handle);
-    html+='<div class="row chat" data-ro-review="'+esc(r.reply_event_id)+'">'
-      +'<div class="who">@'+esc(r.handle||'creator')+' · needs review</div>'
-      +'<div class="meta">Original account: @'+esc(r.sender_account||'unknown')+'</div>'
-      +'<div class="quote">'+esc(r.latest_reply||'Check the actual chat.')+'</div>'
-      +'<p class="muted">No approved reply with a personal link is available. Do not send an invented link or generic pitch. Verify the actual conversation and choose an outcome.</p>'
-      +'<div class="cv-actions"><button type="button" data-ro-review-action="ALREADY_SENT_CHECKED" data-ro-id="'+esc(r.reply_event_id)+'">Already answered</button>'
-      +'<button type="button" data-ro-review-action="UNREACHABLE" data-ro-id="'+esc(r.reply_event_id)+'">Cannot access chat</button>'
-      +'<button type="button" data-ro-review-action="NEEDS_OWNER_REVIEW" data-ro-id="'+esc(r.reply_event_id)+'">Team review</button></div>'
+      +livePasteHtml(r)
       +(profile?'<a class="open" href="'+esc(profile)+'" target="_blank" rel="noopener noreferrer">Open TikTok profile</a>':'')
       +'</div>';
   }
@@ -3721,6 +3877,8 @@ function drawReplyOnlyPriority() {
       +'<button type="button" data-ro-page="next" '+(conversionPrepared.offset+conversionPrepared.pageSize>=conversionPrepared.total?'disabled':'')+'>Next replies</button></div>';
   }
   list.innerHTML=html;
+  wireLiveCards(list,reviews);
+  for(const ta of list.querySelectorAll('textarea[data-live-paste]'))if(!ta.oninput)ta.oninput=()=>liveUi.drafts.set(ta.dataset.livePaste,ta.value);
   for(const b of list.querySelectorAll('[data-ro-page]')){
     b.onclick=async()=>{
       conversionPrepared.offset=Math.max(0,conversionPrepared.offset+(b.dataset.roPage==='next'?conversionPrepared.pageSize:-conversionPrepared.pageSize));
