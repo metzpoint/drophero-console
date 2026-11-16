@@ -3829,7 +3829,11 @@ function wireLiveCards(list,reviews){
         const {data,error}=await sb.rpc('dh_va_live_reply_sent',{p_reply_event_id:id});
         if(error||!data?.ok){liveStatus(data?.reason==='COPY_THE_ANSWER_FIRST'?'Tap "Copy answer" first, send it, then confirm.':'Could not save: '+String(data?.reason||error?.message||'retry'));return;}
         liveUi.sent.add(id);
-        liveStatus('Saved as sent. Paste their next message when they answer. '+Number(data.pending_replies||0)+' replies left.');
+        const payNote=data.paid?' +'+usd(Number(data.paid_cents||0))+' earned.'
+          :({CREATOR_LIMIT_REACHED:' (Paid limit for this creator reached — no extra pay.)',
+             DAY_LIMIT_REACHED:' (Daily paid limit reached — no extra pay today.)',
+             SAME_MESSAGE_AS_BEFORE:' (Same creator message as before — no extra pay.)'})[data.not_paid_reason]||'';
+        liveStatus('Saved as sent.'+payNote+' Paste their next message when they answer. '+Number(data.pending_replies||0)+' replies left.');
         redrawReplyViews();
       }finally{b.disabled=false;}
     };
@@ -3843,6 +3847,133 @@ function wireLiveCards(list,reviews){
   void primeAssistant(reviews.map(liveRow));
 }
 
+// ---------------------------------------------------------------------------------------------
+// NEW REPLY FROM ONE SCREENSHOT (owner 2026-11-16: DMers must never search or scroll for a creator).
+// The DMer picks a screenshot of the TikTok chat. The reply-intake function reads the creator's name
+// and the chat bubbles, finds the creator among the people THIS DMer messaged, saves only the new
+// messages (creator messages and the DMer's own words) and the AI answer starts at once. The image
+// is shrunk on the phone first and never stored.
+// ---------------------------------------------------------------------------------------------
+const intake = { busy: false, image: null, candidates: null };
+function intakeHtml() {
+  let h = '<div class="card" style="margin:0 0 12px">'
+    + '<button type="button" class="good full" data-intake-pick>📷 New reply? Add a screenshot of the TikTok chat</button>'
+    + '<p class="muted" style="margin:6px 0 0">The creator\'s name must be visible at the top. The AI finds the creator and writes the answer. Also use this when you chatted in your own words.</p>'
+    + '<input type="file" accept="image/*" data-intake-file hidden>';
+  if (intake.candidates?.length) {
+    h += '<p style="margin:10px 0 6px"><b>Which creator is it?</b></p>'
+      + intake.candidates.map((c) => '<button type="button" class="sm" style="margin:0 6px 6px 0" data-intake-task="'
+        + esc(c.task_id) + '">@' + esc(c.handle || '') + (c.display_name ? ' · ' + esc(c.display_name) : '') + '</button>').join('');
+  }
+  return h + '</div>';
+}
+function shrinkImage(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const scale = Math.min(1, 1400 / Math.max(img.naturalWidth, img.naturalHeight));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+        canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        let q = 0.72, out = canvas.toDataURL('image/jpeg', q);
+        while (out.length > 1_900_000 && q > 0.35) { q -= 0.12; out = canvas.toDataURL('image/jpeg', q); }
+        resolve(out);
+      } catch (e) { reject(e); } finally { URL.revokeObjectURL(url); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('not an image')); };
+    img.src = url;
+  });
+}
+const INTAKE_MESSAGES = {
+  NOT_A_TIKTOK_CHAT: 'That does not look like a TikTok chat. Take the screenshot inside the chat with the creator.',
+  NO_MESSAGES_VISIBLE: 'No messages could be read. Take the screenshot so the messages are visible.',
+  NO_CREATOR_NAME_VISIBLE: 'The creator\'s name is not visible. Scroll up so the name at the top shows, then try again.',
+  UNREADABLE_ANSWER: 'The screenshot could not be read. Try again.',
+  IMAGE_INVALID_OR_TOO_LARGE: 'That picture could not be used. Try a normal screenshot.',
+  AI_UNAVAILABLE: 'The AI is busy. Try again in a minute.',
+  AI_NOT_CONFIGURED: 'The AI is not available right now. Tell the DropHero team.',
+  PICKED_CREATOR_NOT_IN_SCREENSHOT: 'Pick the creator again.',
+  NOT_ACTIVE_DMER: 'You are signed out. Sign in again.'
+};
+async function runIntake(list, taskId = null) {
+  if (intake.busy || !intake.image) return;
+  intake.busy = true;
+  for (const b of list.querySelectorAll('[data-intake-pick],[data-intake-task]')) b.disabled = true;
+  liveStatus('Reading the screenshot… (about 10 seconds)');
+  let body = null, status = 0;
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    const response = await fetch('https://aexomkitwnxvpqlmtrik.supabase.co/functions/v1/reply-intake', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer ' + (session?.access_token || '') },
+      body: JSON.stringify(taskId ? { image: intake.image, task_id: taskId } : { image: intake.image })
+    });
+    status = response.status;
+    try { body = await response.json(); } catch { body = null; }
+  } catch { body = null; }
+  intake.busy = false;
+  intake.candidates = null;
+  if (body?.reason === 'PICK_ONE' && Array.isArray(body.candidates) && body.candidates.length) {
+    intake.candidates = body.candidates;
+    liveStatus('More than one creator is called "' + (body.read_name || '') + '". Tap the right one.');
+    redrawReplyViews();
+    return;
+  }
+  intake.image = null;
+  if (!body) { liveStatus('Could not reach the server (' + status + '). Try again.'); redrawReplyViews(); return; }
+  if (body.reason === 'NO_MATCH') {
+    liveStatus('"' + (body.read_name || 'This creator') + '" is not one of the creators you messaged. Check that it is your chat and the name is visible.');
+    redrawReplyViews(); return;
+  }
+  if (!body.ok) {
+    liveStatus(INTAKE_MESSAGES[body.reason] || ('Could not save the messages (' + String(body.reason || status) + ').'));
+    redrawReplyViews(); return;
+  }
+  if (body.nothing_new) {
+    liveStatus('@' + (body.handle || 'creator') + ': nothing new in this screenshot — it is already in the portal.');
+    redrawReplyViews(); return;
+  }
+  const id = body.reply_event_id, taskIdSaved = body.task_id;
+  if (body.new_creator_message && id) {
+    const old = (conversionPrepared.reviewRows || []).find((r) => r.task_id === taskIdSaved) || {};
+    conversionPrepared.reviewRows = [{ ...old, reply_event_id: id, task_id: taskIdSaved, handle: body.handle || old.handle,
+      review_only: true, live_new: true }, ...(conversionPrepared.reviewRows || []).filter((r) => r.task_id !== taskIdSaved)];
+    liveUi.threads.delete(taskIdSaved);
+    liveUi.sent.delete(id);
+    liveStatus('Found @' + (body.handle || 'creator') + '. Their message is saved; the AI is writing the answer…');
+    tab = 'replies';
+    render();
+    startSuggestionWatch(id);
+  } else {
+    liveStatus('Found @' + (body.handle || 'creator') + '. Your own messages are saved to the conversation.');
+    redrawReplyViews();
+  }
+  void loadMoney().then(() => redrawReplyViews(), () => {});
+  setTimeout(() => { conversionPrepared.lastLoad = 0; void refreshConversionPrepared(true); }, 1500);
+}
+function wireIntake(list) {
+  const input = list.querySelector('[data-intake-file]');
+  const pick = list.querySelector('[data-intake-pick]');
+  if (pick && input) {
+    pick.disabled = intake.busy;
+    pick.onclick = () => { input.value = ''; input.click(); };
+    input.onchange = async () => {
+      const f = input.files?.[0];
+      if (!f) return;
+      if (!/^image\//i.test(f.type || '')) { liveStatus('Choose a screenshot (image).'); return; }
+      try { intake.image = await shrinkImage(f); } catch { liveStatus('That picture could not be opened. Try another screenshot.'); return; }
+      intake.candidates = null;
+      void runIntake(list);
+    };
+  }
+  for (const b of list.querySelectorAll('[data-intake-task]')) {
+    b.onclick = () => runIntake(list, b.dataset.intakeTask);
+  }
+}
+
 function drawReplyOnlyPriority() {
   const list=$('list');
   if(!list)return;
@@ -3853,6 +3984,7 @@ function drawReplyOnlyPriority() {
   let html='<h2>1. Finish creator replies · '+conversionPrepared.total+' remaining</h2>'
     +'<p class="muted">Every creator reply gets an AI answer within seconds, based on the whole conversation. Copy it (the personal signup link is added), send it in TikTok, tap "I sent it". When the creator writes again, paste ALL their new messages in the field under that creator. Once your list is cleared, normal DMs unlock automatically.</p>'
     +'<p class="muted">'+conversionPrepared.readyTotal+' ready to send · '+conversionPrepared.reviewTotal+' need checking. Showing '+(conversionPrepared.total?conversionPrepared.offset+1:0)+'–'+Math.min(conversionPrepared.offset+conversionPrepared.pageSize,conversionPrepared.total)+' of '+conversionPrepared.total+'.</p>'
+    +intakeHtml()
     +'<p id="chatmsg" class="fieldmsg" role="status" aria-live="polite">'+esc(chatStatus)+'</p>';
   if(!rows.length&&!reviews.length)html+='<div class="card">'+(conversionPrepared.loading||!conversionPrepared.lastLoad
       ? 'Loading your replies…' : 'No open prepared replies. Normal DM work will be available when the server confirms your list is clear.')+'</div>';
@@ -3880,6 +4012,7 @@ function drawReplyOnlyPriority() {
       +'<button type="button" data-ro-page="next" '+(conversionPrepared.offset+conversionPrepared.pageSize>=conversionPrepared.total?'disabled':'')+'>Next replies</button></div>';
   }
   list.innerHTML=html;
+  wireIntake(list);
   wireLiveCards(list,reviews);
   for(const ta of list.querySelectorAll('textarea[data-live-paste]'))if(!ta.oninput)ta.oninput=()=>liveUi.drafts.set(ta.dataset.livePaste,ta.value);
   for(const b of list.querySelectorAll('[data-ro-page]')){
@@ -4025,7 +4158,7 @@ function drawConversations() {
   const list = $('list');
   let q = $('q');
   if (!q || !list.contains(q) || !$('chat-results')) {
-    list.innerHTML = box + '<div id="chat-results"></div>';
+    list.innerHTML = '<div id="intake-box"></div>' + box + '<div id="chat-results"></div>';
     q = $('q');
     q.onfocus = () => { search.focused = true; };
     q.onblur = () => { search.focused = false; };
@@ -4042,6 +4175,8 @@ function drawConversations() {
   // unfocused; never touch a focused input because that would disrupt typing.
   if (document.activeElement !== q && q.value !== search.q) q.value = search.q;
   $('chatmsg').textContent = chatStatus;
+  const intakeBox = $('intake-box');
+  if (intakeBox && !intake.busy) { intakeBox.innerHTML = intakeHtml(); wireIntake(intakeBox); }
   $('chat-results').innerHTML = answered + body;
   wireRows(rows);
   wireChats(chats);
@@ -4074,6 +4209,7 @@ function drawEarnings() {
     + line('Messages sent', t.DM_SENT, r.dm_cents)
     + line('Replies', t.FIRST_VERIFIED_REPLY, r.reply_cents)
     + line('Signup links sent', t.SIGNUP_LINK_SENT, r.link_cents)
+    + line('AI answers sent', t.REPLY_ANSWER_SENT, r.answer_cents)
     + line('New affiliates', t.AFFILIATE_SIGNUP, r.signup_cents)
     + '<div class="money total"><span>Total today</span><span class="amt">'
     + usd(m.today_total_cents) + '</span></div></div>'
@@ -4082,6 +4218,7 @@ function drawEarnings() {
     + line('Messages sent', p.DM_SENT, r.dm_cents)
     + line('Replies', p.FIRST_VERIFIED_REPLY, r.reply_cents)
     + line('Signup links sent', p.SIGNUP_LINK_SENT, r.link_cents)
+    + line('AI answers sent', p.REPLY_ANSWER_SENT, r.answer_cents)
     + line('New affiliates', p.AFFILIATE_SIGNUP, r.signup_cents)
     + '<div class="money total"><span>Total</span><span class="amt">'
     + usd(m.period_total_cents) + '</span></div>'
