@@ -4202,7 +4202,12 @@ function tierPill(t) {
 function rowHtml(t, opts) {
   const due = t.follow_up_at || t.last_checked_at || t.first_sent_at;
   const profileUrl = safeTikTokProfileUrl(t.profile_url, t.handle);
-  const hasSend = Boolean(t.send_id);
+  // 2026-11-12: a reissued DM (sent by this DMer, task still owned by the original DMer) has no
+  // dh_tiktok_sends row of its own; dh_va_search marks it with reissue_id. The reply can be pasted
+  // (dh_va_submit_reply_text accepts the reissue holder), the status buttons cannot (the task is
+  // not theirs), so those stay hidden for reissued rows.
+  const reissued = Boolean(t.reissue_id);
+  const hasSend = Boolean(t.send_id) || reissued;
   return '<div class="row" data-task="' + esc(t.task_id) + '">'
     + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">'
       + '<div><div class="who">' + esc(t.display_name || t.handle || 'creator') + '</div>'
@@ -4237,7 +4242,7 @@ function rowHtml(t, opts) {
       ? '<button class="good" data-replied="' + esc(t.task_id) + '" style="margin-bottom:10px">'
         + 'They replied — add photo</button>'
         + '<button class="sm" data-copy="1" style="margin-bottom:10px">Copy DM again</button>'
-        + '<p class="muted" style="margin:4px 0 5px">Paste their reply (optional)</p>'
+        + (reissued ? '' : '<p class="muted" style="margin:4px 0 5px">Paste their reply (optional)</p>'
         + '<textarea data-reply="1" placeholder="What they wrote back"></textarea>'
         + '<p class="muted" style="margin:10px 0 5px">Note (optional)</p>'
         + '<textarea data-note="1">' + esc(t.notes || '') + '</textarea>'
@@ -4246,7 +4251,7 @@ function rowHtml(t, opts) {
           + '<button class="bad" data-s="NOT_INTERESTED">Not interested</button>'
           + '<button data-s="FOLLOW_UP_LATER">Follow up later</button>'
           + '<button class="bad" data-s="UNREACHABLE">Can\'t reach</button>'
-        + '</div>'
+        + '</div>')
       : '<p class="muted" style="margin:10px 0 0">Reply reporting stays locked until a real send is confirmed.</p>')
     + '</div>';
 }
@@ -4492,7 +4497,7 @@ function clearReplyReports() {
 async function beginReplyCapture(r) {
   // Existing reply rows already passed the server's send gate. History rows need a send id;
   // dh_reply_report rechecks ownership and the real send record for both entry points.
-  if (!r?.send_id && !r?.reply_event_id) {
+  if (!r?.send_id && !r?.reply_event_id && !r?.reissue_id) {
     const msg = $('reply-msg');
     if (msg) {
       msg.textContent = 'This DM has no confirmed send record. Confirm the send first; nothing was saved.';
