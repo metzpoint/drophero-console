@@ -409,6 +409,9 @@
     <strong id="signup-bonus-value"></strong>per verified<br>affiliate signup
   </div></div>
 
+  <!-- Owner 2026-11-16: the screenshot route is THE way to report a reply, so its button sits at the very top. -->
+  <section id="intake-top" aria-label="Report a new creator reply with a screenshot"></section>
+
   <!-- Owner P0 #66 (2026-11-08): reply-only DMers must see at once that prepared replies wait. -->
   <section id="p0-reply-banner" hidden role="alert" style="margin:10px 0;padding:16px;border:2px solid var(--bad);border-radius:14px;background:rgba(255,107,107,.12)">
     <h2 style="font-size:18px;margin:0 0 8px;color:var(--bad)">URGENT · <span id="p0-reply-count"></span> creator replies are ready for you</h2>
@@ -463,8 +466,8 @@
   <section id="reply-priority-queue" hidden aria-label="Prioritized creator reply quality queue" role="region" aria-live="polite"></section>
 
   <section id="text-reply-tools" aria-label="Paste a creator reply">
-    <button id="text-reply-start" type="button" class="good full">📝 Paste a creator reply</button>
-    <p class="upload-info">Find the creator you messaged, paste their actual TikTok reply, and get help writing your answer. No screenshots required.</p>
+    <button id="text-reply-start" type="button" class="full">📝 Or paste a creator reply instead</button>
+    <p class="upload-info">Backup only. The fastest way is the screenshot button at the top: no searching, no typing.</p>
   </section>
   <section id="screenshot-tools" aria-label="Legacy screenshots" hidden style="display:none!important">
     <button id="ss-open" type="button" class="good full">📸 Upload screenshot</button>
@@ -3671,7 +3674,13 @@ function updateP0ReplyBanner() {
     $('list')?.scrollIntoView({behavior:'smooth', block:'start'});
   };
 }
+const intake = { busy: false, image: null, candidates: null, msg: '' };
+function drawIntakeTop() {
+  const box = $('intake-top');
+  if (box && !intake.busy) { box.innerHTML = intakeHtml(); wireIntake(box); }
+}
 function redrawReplyViews() {
+  drawIntakeTop();
   updateP0ReplyBanner();
   updateReplyBadge();
   if (tab === 'replies') drawReplyInbox();
@@ -3854,7 +3863,6 @@ function wireLiveCards(list,reviews){
 // messages (creator messages and the DMer's own words) and the AI answer starts at once. The image
 // is shrunk on the phone first and never stored.
 // ---------------------------------------------------------------------------------------------
-const intake = { busy: false, image: null, candidates: null };
 function intakeHtml() {
   let h = '<div class="card" style="margin:0 0 12px">'
     + '<button type="button" class="good full" data-intake-pick>📷 New reply? Add a screenshot of the TikTok chat</button>'
@@ -3865,6 +3873,7 @@ function intakeHtml() {
       + intake.candidates.map((c) => '<button type="button" class="sm" style="margin:0 6px 6px 0" data-intake-task="'
         + esc(c.task_id) + '">@' + esc(c.handle || '') + (c.display_name ? ' · ' + esc(c.display_name) : '') + '</button>').join('');
   }
+  h += '<p id="intake-msg" class="fieldmsg" role="status" aria-live="polite" style="margin:8px 0 0">' + esc(intake.msg || '') + '</p>';
   return h + '</div>';
 }
 function shrinkImage(file) {
@@ -3898,11 +3907,17 @@ const INTAKE_MESSAGES = {
   PICKED_CREATOR_NOT_IN_SCREENSHOT: 'Pick the creator again.',
   NOT_ACTIVE_DMER: 'You are signed out. Sign in again.'
 };
+function intakeSay(text) {
+  intake.msg = text;
+  liveStatus(text);
+  const el = $('intake-msg');
+  if (el) el.textContent = text;
+}
 async function runIntake(list, taskId = null) {
   if (intake.busy || !intake.image) return;
   intake.busy = true;
   for (const b of list.querySelectorAll('[data-intake-pick],[data-intake-task]')) b.disabled = true;
-  liveStatus('Reading the screenshot… (about 10 seconds)');
+  intakeSay('Reading the screenshot… (about 10 seconds)');
   let body = null, status = 0;
   try {
     const { data: { session } } = await sb.auth.getSession();
@@ -3918,22 +3933,22 @@ async function runIntake(list, taskId = null) {
   intake.candidates = null;
   if (body?.reason === 'PICK_ONE' && Array.isArray(body.candidates) && body.candidates.length) {
     intake.candidates = body.candidates;
-    liveStatus('More than one creator is called "' + (body.read_name || '') + '". Tap the right one.');
+    intakeSay('More than one creator is called "' + (body.read_name || '') + '". Tap the right one.');
     redrawReplyViews();
     return;
   }
   intake.image = null;
-  if (!body) { liveStatus('Could not reach the server (' + status + '). Try again.'); redrawReplyViews(); return; }
+  if (!body) { intakeSay('Could not reach the server (' + status + '). Try again.'); redrawReplyViews(); return; }
   if (body.reason === 'NO_MATCH') {
-    liveStatus('"' + (body.read_name || 'This creator') + '" is not one of the creators you messaged. Check that it is your chat and the name is visible.');
+    intakeSay('"' + (body.read_name || 'This creator') + '" is not one of the creators you messaged. Check that it is your chat and the name is visible.');
     redrawReplyViews(); return;
   }
   if (!body.ok) {
-    liveStatus(INTAKE_MESSAGES[body.reason] || ('Could not save the messages (' + String(body.reason || status) + ').'));
+    intakeSay(INTAKE_MESSAGES[body.reason] || ('Could not save the messages (' + String(body.reason || status) + ').'));
     redrawReplyViews(); return;
   }
   if (body.nothing_new) {
-    liveStatus('@' + (body.handle || 'creator') + ': nothing new in this screenshot — it is already in the portal.');
+    intakeSay('@' + (body.handle || 'creator') + ': nothing new in this screenshot — it is already in the portal.');
     redrawReplyViews(); return;
   }
   const id = body.reply_event_id, taskIdSaved = body.task_id;
@@ -3943,12 +3958,12 @@ async function runIntake(list, taskId = null) {
       review_only: true, live_new: true }, ...(conversionPrepared.reviewRows || []).filter((r) => r.task_id !== taskIdSaved)];
     liveUi.threads.delete(taskIdSaved);
     liveUi.sent.delete(id);
-    liveStatus('Found @' + (body.handle || 'creator') + '. Their message is saved; the AI is writing the answer…');
+    intakeSay('Found @' + (body.handle || 'creator') + '. Their message is saved; the AI is writing the answer…');
     tab = 'replies';
     render();
     startSuggestionWatch(id);
   } else {
-    liveStatus('Found @' + (body.handle || 'creator') + '. Your own messages are saved to the conversation.');
+    intakeSay('Found @' + (body.handle || 'creator') + '. Your own messages are saved to the conversation.');
     redrawReplyViews();
   }
   void loadMoney().then(() => redrawReplyViews(), () => {});
@@ -3963,8 +3978,8 @@ function wireIntake(list) {
     input.onchange = async () => {
       const f = input.files?.[0];
       if (!f) return;
-      if (!/^image\//i.test(f.type || '')) { liveStatus('Choose a screenshot (image).'); return; }
-      try { intake.image = await shrinkImage(f); } catch { liveStatus('That picture could not be opened. Try another screenshot.'); return; }
+      if (!/^image\//i.test(f.type || '')) { intakeSay('Choose a screenshot (image).'); return; }
+      try { intake.image = await shrinkImage(f); } catch { intakeSay('That picture could not be opened. Try another screenshot.'); return; }
       intake.candidates = null;
       void runIntake(list);
     };
@@ -3973,6 +3988,7 @@ function wireIntake(list) {
     b.onclick = () => runIntake(list, b.dataset.intakeTask);
   }
 }
+drawIntakeTop();
 
 function drawReplyOnlyPriority() {
   const list=$('list');
@@ -3984,7 +4000,6 @@ function drawReplyOnlyPriority() {
   let html='<h2>1. Finish creator replies · '+conversionPrepared.total+' remaining</h2>'
     +'<p class="muted">Every creator reply gets an AI answer within seconds, based on the whole conversation. Copy it (the personal signup link is added), send it in TikTok, tap "I sent it". When the creator writes again, paste ALL their new messages in the field under that creator. Once your list is cleared, normal DMs unlock automatically.</p>'
     +'<p class="muted">'+conversionPrepared.readyTotal+' ready to send · '+conversionPrepared.reviewTotal+' need checking. Showing '+(conversionPrepared.total?conversionPrepared.offset+1:0)+'–'+Math.min(conversionPrepared.offset+conversionPrepared.pageSize,conversionPrepared.total)+' of '+conversionPrepared.total+'.</p>'
-    +intakeHtml()
     +'<p id="chatmsg" class="fieldmsg" role="status" aria-live="polite">'+esc(chatStatus)+'</p>';
   if(!rows.length&&!reviews.length)html+='<div class="card">'+(conversionPrepared.loading||!conversionPrepared.lastLoad
       ? 'Loading your replies…' : 'No open prepared replies. Normal DM work will be available when the server confirms your list is clear.')+'</div>';
@@ -4012,7 +4027,6 @@ function drawReplyOnlyPriority() {
       +'<button type="button" data-ro-page="next" '+(conversionPrepared.offset+conversionPrepared.pageSize>=conversionPrepared.total?'disabled':'')+'>Next replies</button></div>';
   }
   list.innerHTML=html;
-  wireIntake(list);
   wireLiveCards(list,reviews);
   for(const ta of list.querySelectorAll('textarea[data-live-paste]'))if(!ta.oninput)ta.oninput=()=>liveUi.drafts.set(ta.dataset.livePaste,ta.value);
   for(const b of list.querySelectorAll('[data-ro-page]')){
@@ -4158,7 +4172,7 @@ function drawConversations() {
   const list = $('list');
   let q = $('q');
   if (!q || !list.contains(q) || !$('chat-results')) {
-    list.innerHTML = '<div id="intake-box"></div>' + box + '<div id="chat-results"></div>';
+    list.innerHTML = box + '<div id="chat-results"></div>';
     q = $('q');
     q.onfocus = () => { search.focused = true; };
     q.onblur = () => { search.focused = false; };
@@ -4175,8 +4189,6 @@ function drawConversations() {
   // unfocused; never touch a focused input because that would disrupt typing.
   if (document.activeElement !== q && q.value !== search.q) q.value = search.q;
   $('chatmsg').textContent = chatStatus;
-  const intakeBox = $('intake-box');
-  if (intakeBox && !intake.busy) { intakeBox.innerHTML = intakeHtml(); wireIntake(intakeBox); }
   $('chat-results').innerHTML = answered + body;
   wireRows(rows);
   wireChats(chats);
