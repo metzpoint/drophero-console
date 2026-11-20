@@ -722,8 +722,17 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
 // portal for every DMer. The server already refuses all DMer actions while paused (dh_current_va()
 // returns nothing); this only shows a clear screen instead of errors. If the check itself fails we
 // fall through to the normal portal -- the server-side block still holds.
+// Exempt DMers (dh_portal_pause_exempt) get paused = false once signed in, so the screen offers a
+// sign-in button: after signing in, boot() asks again with their session.
 let portalPausedShown = false;
-function showPortalPaused(message) {
+let portalPauseSigningIn = false;
+function hidePortalPaused() {
+  const el = document.getElementById('portal-paused');
+  if (el) el.remove();
+  document.body.style.overflow = '';
+  portalPausedShown = false;
+}
+function showPortalPaused(message, signedIn) {
   if (portalPausedShown) return;
   portalPausedShown = true;
   const el = document.createElement('div');
@@ -735,16 +744,32 @@ function showPortalPaused(message) {
   el.innerHTML = '<div style="max-width:440px">'
     + '<div style="font-size:40px;margin-bottom:12px">\u23F8\uFE0F</div>'
     + '<h1 style="font-size:22px;margin:0 0 12px">The portal is temporarily paused</h1>'
-    + '<p style="margin:0;color:#c9ced8">' + esc(message || 'The DropHero portal is temporarily paused. '
+    + '<p style="margin:0 0 20px;color:#c9ced8">' + esc(message || 'The DropHero portal is temporarily paused. '
       + 'Your account and your earnings stay saved. We will let you know when it opens again.') + '</p>'
+    + '<p style="margin:0 0 10px;color:#8b92a0;font-size:14px">Were you told your account is still active?</p>'
+    + '<button type="button" id="portal-paused-signin" style="font:inherit;padding:10px 18px;border-radius:8px;'
+    + 'border:1px solid #3a4150;background:#1b1f27;color:#f2f4f8;cursor:pointer">'
+    + (signedIn ? 'Sign in with another account' : 'Sign in') + '</button>'
     + '</div>';
   document.body.appendChild(el);
   document.body.style.overflow = 'hidden';
+  el.querySelector('#portal-paused-signin').onclick = async () => {
+    portalPauseSigningIn = true;
+    if (signedIn) { try { await sb.auth.signOut(); } catch { /* the login form shows anyway */ } }
+    hidePortalPaused();
+    $('app').hidden = true; $('claim').hidden = true; $('wrongacct').hidden = true;
+    $('loginmsg').textContent = '';
+    $('login').hidden = false;
+  };
 }
 async function portalPausedGate() {
   try {
+    const { data: { session } } = await sb.auth.getSession();
+    // On the sign-in form with no session yet: let the DMer sign in, then check again.
+    if (!session && portalPauseSigningIn) return false;
     const { data, error } = await sb.rpc('dh_portal_state');
-    if (!error && data && data.paused) { showPortalPaused(data.message); return true; }
+    if (!error && data && data.paused) { showPortalPaused(data.message, !!session); return true; }
+    if (!error && data && !data.paused) hidePortalPaused();
   } catch { /* fail open: the database still blocks every DMer action */ }
   return false;
 }
