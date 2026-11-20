@@ -718,6 +718,38 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+// PORTAL PAUSE (owner request 2026-11-20). One switch in the database (dh_portal_status) closes the
+// portal for every DMer. The server already refuses all DMer actions while paused (dh_current_va()
+// returns nothing); this only shows a clear screen instead of errors. If the check itself fails we
+// fall through to the normal portal -- the server-side block still holds.
+let portalPausedShown = false;
+function showPortalPaused(message) {
+  if (portalPausedShown) return;
+  portalPausedShown = true;
+  const el = document.createElement('div');
+  el.id = 'portal-paused';
+  el.setAttribute('role', 'alert');
+  el.style.cssText = 'position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;'
+    + 'justify-content:center;padding:24px 16px;background:#0f1115;color:#f2f4f8;'
+    + 'font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;text-align:center';
+  el.innerHTML = '<div style="max-width:440px">'
+    + '<div style="font-size:40px;margin-bottom:12px">\u23F8\uFE0F</div>'
+    + '<h1 style="font-size:22px;margin:0 0 12px">The portal is temporarily paused</h1>'
+    + '<p style="margin:0;color:#c9ced8">' + esc(message || 'The DropHero portal is temporarily paused. '
+      + 'Your account and your earnings stay saved. We will let you know when it opens again.') + '</p>'
+    + '</div>';
+  document.body.appendChild(el);
+  document.body.style.overflow = 'hidden';
+}
+async function portalPausedGate() {
+  try {
+    const { data, error } = await sb.rpc('dh_portal_state');
+    if (!error && data && data.paused) { showPortalPaused(data.message); return true; }
+  } catch { /* fail open: the database still blocks every DMer action */ }
+  return false;
+}
+setInterval(() => { if (!portalPausedShown) void portalPausedGate(); }, 120000);
+
 function cleanTikTokHandle(value) {
   const handle = String(value || '').trim().replace(/^@/, '');
   return handle && !/[\s/?#]/.test(handle) ? handle : null;
@@ -1210,6 +1242,7 @@ async function boot() {
 
 async function bootOrThrow() {
   const token = seq.begin('boot');
+  if (await portalPausedGate()) return;
   const { data: { session } } = await sb.auth.getSession();
 
   // EEN SESSIE VERLOOPT, ZODAT ER AF EN TOE OPNIEUW GETEKEND WORDT.
