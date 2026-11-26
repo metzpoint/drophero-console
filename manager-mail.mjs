@@ -153,12 +153,14 @@ export async function managerMail(call) {
         value: drafts.get(id)?.body ?? (data.job?.state === 'failed' ? data.job.body : '') });
       body.oninput = () => drafts.set(id, { body: body.value });
       const locked = ['queued', 'sending', 'uncertain'].includes(data.job?.state);
+      const canFollowUp = !data.reply_message && !!data.thread.contact_email && !!data.thread.last_out_at;
+      const canWrite = !locked && data.send_enabled && (data.reply_message || canFollowUp);
       const sendStatus = formStatus();
       const actions = node('div', { className: 'actions' });
-      const replyForm = node('form', {}, fromLine(data.thread.mailbox), field('Reply', body), actions, sendStatus);
+      const replyForm = node('form', {}, fromLine(data.thread.mailbox), field(canFollowUp ? 'Follow up' : 'Reply', body), actions, sendStatus);
       const send = (close, click) => submit({
         control: click.currentTarget, status: sendStatus, draftKey: id, body,
-        args: { p_thread: id, p_reply_message: data.reply_message, p_close: close }
+        args: { p_thread: id, p_reply_message: data.reply_message, p_type: canFollowUp ? 'outreach_followup' : null, p_close: close }
       });
       const sendButton = btn('Send', click => void send(false, click));
       actions.append(sendButton, btn('Send and close', click => void send(true, click)));
@@ -177,12 +179,12 @@ export async function managerMail(call) {
       const refresh = btn('Refresh conversation', () => void open(id));
       conversation.replaceChildren(back, subject, s,
         node('div', { className: 'actions' }, data.thread.state === 'closed' ? null : close, refresh), history,
-        !locked && data.send_enabled && data.reply_message ? replyForm : null);
-      if (!locked && data.reply_message && !data.send_enabled) {
+        canWrite ? replyForm : null);
+      if (!locked && (data.reply_message || canFollowUp) && !data.send_enabled) {
         conversation.append(node('p', { className: 'muted' }, 'Sending from this mailbox is unavailable.'));
       }
       history.append(...historyPage(data.messages, id, version));
-      renderAffiliate(data.affiliate, !locked && data.send_enabled && data.reply_message ? body : null);
+      renderAffiliate(data.affiliate, canWrite ? body : null);
       if (focus) subject.focus();
       if (['queued', 'sending'].includes(data.job?.state)) {
         setTimeout(() => {

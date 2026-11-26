@@ -517,7 +517,7 @@ export function startOperations(url, key) {
 
   const pages = { start: startHere, overview, team, messages, quality, payments, reports,
     email: async () => {
-      const { managerMail } = await import('./manager-mail.mjs');
+      const { managerMail } = await import('./manager-mail.mjs?v=20261126-followup');
       return [await managerMail(call)];
     }
   };
