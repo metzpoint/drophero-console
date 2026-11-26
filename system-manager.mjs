@@ -515,7 +515,13 @@ export function startOperations(url, key) {
     ];
   }
 
-  const pages = { start: startHere, overview, team, messages, quality, payments, reports };
+  const pages = { start: startHere, overview, team, messages, quality, payments, reports,
+    email: async () => {
+      const { managerMail } = await import('./manager-mail.mjs');
+      return [await managerMail(call)];
+    }
+  };
+  const mailTab = $('navigation').querySelector('[data-page="email"]');
   async function openPage(page = state.page) {
     if (!state.role) return;
     const version = ++state.pageVersion;
@@ -542,6 +548,8 @@ export function startOperations(url, key) {
     state.role = null;
     state.pageVersion++;
     $('app').hidden = true;
+    if (mailTab) mailTab.hidden = true;
+    if (state.page === 'email') state.page = 'overview';
     $('account').hidden = true;
     $('signed-in-as').textContent = '';
     $('page').replaceChildren();
@@ -575,6 +583,10 @@ export function startOperations(url, key) {
       $('signed-in-as').textContent = session.user.email ?? '';
       status('login-status', '');
       await openPage();
+      if (mailTab) {
+        const availability = await call('dh_manager_mail_options').catch(() => null);
+        if (version === state.loginVersion) mailTab.hidden = !availability?.mailboxes?.length;
+      }
     } catch (error) {
       if (version !== state.loginVersion) return;
       showLogin();

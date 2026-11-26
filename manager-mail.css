@@ -1,0 +1,36 @@
+.manager-mail{--mail-border:var(--line,#e3e0ed);--mail-accent:var(--accent,#5033b1)}
+.mail-heading,.mail-filters,.mail-pager,.mail-layout .actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.mail-heading{justify-content:space-between;border:0;background:transparent}
+.mail-heading h2{margin:0}
+.mail-filters{margin:14px 0}
+.mail-filters input[type=search]{flex:1 1 220px}
+.mail-filters select{width:auto;max-width:100%}
+.mail-layout{display:grid;grid-template-columns:minmax(170px,1fr) minmax(0,2fr) minmax(140px,.75fr);gap:12px;align-items:start}
+.mail-list,.mail-detail,.mail-affiliate{min-width:0;background:white;border:1px solid var(--mail-border);border-radius:12px;padding:12px;margin:0}
+.mail-card{display:grid;gap:3px;text-align:left;width:100%;background:white;border-color:transparent;overflow-wrap:anywhere;margin:0 0 4px}
+.mail-card[aria-current=true]{color:var(--mail-accent);border-color:var(--mail-accent);background:#f7f3ff}
+.mail-card span,.mail-card small,.mail-message small{color:#575367}
+.mail-message{border-bottom:1px solid var(--mail-border);padding:12px 0;overflow-wrap:anywhere}
+.mail-message small{display:block}
+.mail-body{white-space:pre-wrap;margin:8px 0}
+.mail-affiliate summary{font-weight:700}
+.mail-referral{overflow-wrap:anywhere}
+.mail-layout form label{display:block;margin:12px 0}
+.mail-layout form :is(input,textarea){width:100%}
+.mail-from{border-bottom:1px solid var(--mail-border);padding-bottom:8px;overflow-wrap:anywhere}
+.mail-pager{margin-top:10px}
+.mail-back{display:none}
+@media(max-width:760px){
+  .mail-layout{display:block}
+  .mail-layout .mail-detail{display:none}
+  .manager-mail:not(.mail-selected) .mail-affiliate{display:none}
+  .mail-selected .mail-list{display:none}
+  .mail-selected .mail-detail,.mail-selected .mail-back{display:block}
+  .mail-affiliate{margin-top:10px}
+  .mail-filters select{flex:1 1 100px}
+}
+@media(max-width:760px){
+  .mail-selected .mail-filters,.mail-selected > nav{display:none}
+  .manager-mail button{min-height:44px}
+  .mail-layout :is(input,textarea,select){font-size:16px}
+}

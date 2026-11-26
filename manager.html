@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://aexomkitwnxvpqlmtrik.supabase.co wss://aexomkitwnxvpqlmtrik.supabase.co; img-src data: blob: https://aexomkitwnxvpqlmtrik.supabase.co; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src https://aexomkitwnxvpqlmtrik.supabase.co wss://aexomkitwnxvpqlmtrik.supabase.co; img-src data: blob: https://aexomkitwnxvpqlmtrik.supabase.co; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <title>DropHero Operations</title>
@@ -59,6 +59,7 @@ dialog{width:min(92%,640px);max-height:88vh;border:1px solid var(--line);border-
 dialog::backdrop{background:#18162980}
 @media(max-width:600px){.top,.wrap{padding-inline:15px}.wrap{padding-block:24px}.account small{display:none}.panel{padding:13px}.tabs button{padding-inline:10px}.top{height:60px}}
 </style>
+<link rel="stylesheet" href="./manager-mail.css">
 </head>
 <body>
 <header>
@@ -91,6 +92,7 @@ dialog::backdrop{background:#18162980}
       <button type="button" data-page="overview" aria-pressed="true">Overview</button>
       <button type="button" data-page="team" aria-pressed="false">Team</button>
       <button type="button" data-page="messages" aria-pressed="false">Communications</button>
+      <button type="button" data-page="email" aria-pressed="false" hidden>Email</button>
       <button type="button" data-page="quality" aria-pressed="false">Quality control</button>
       <button type="button" data-page="payments" aria-pressed="false">Payout preparation</button>
       <button type="button" data-page="reports" aria-pressed="false">Reports</button>
@@ -104,7 +106,7 @@ dialog::backdrop{background:#18162980}
   <form id="action-form"></form>
 </dialog>
 <script type="module">
-import { startOperations } from './system-manager.mjs?v=20261126-first-day';
+import { startOperations } from './system-manager.mjs?v=20261126-mail';
 startOperations('https://aexomkitwnxvpqlmtrik.supabase.co', 'sb_publishable_Y88uWkdq3igd5dMkT1c8JA_qMB_ZB7d');
 </script>
 </body>
