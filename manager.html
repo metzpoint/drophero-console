@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://aexomkitwnxvpqlmtrik.supabase.co wss://aexomkitwnxvpqlmtrik.supabase.co; img-src data: blob: https://aexomkitwnxvpqlmtrik.supabase.co; base-uri 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>DropHero Operations</title>
+<style>
+:root{font:16px/1.5 system-ui,sans-serif;color:#181629;background:#f7f6fb;--ink:#181629;--muted:#575367;--line:#e3e0ed;--accent:#5033b1;--white:#fff}
+*{box-sizing:border-box}
+body{margin:0}
+[hidden]{display:none!important}
+header{background:var(--white);border-bottom:1px solid var(--line)}
+.top,.wrap{max-width:1120px;margin:auto;padding:0 24px}
+.top{height:68px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:750;letter-spacing:-.02em}
+.logo{display:grid;place-items:center;background:var(--accent);color:var(--white);border-radius:9px;width:34px;height:34px}
+.account,.actions,.tabs,.fields{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.wrap{padding-block:36px}
+#login{width:min(100%,430px);margin:28px auto;background:var(--white);border:1px solid var(--line);border-radius:16px;padding:26px}
+h1,h2,h3,p{margin:0 0 12px}
+h1{font-size:clamp(1.6rem,5vw,2.1rem);letter-spacing:-.04em;line-height:1.15}
+h2{font-size:1.24rem;letter-spacing:-.025em}
+h3{font-size:1rem}
+small,.muted{color:var(--muted)}
+a{color:var(--accent)}
+.tabs{margin:25px 0 20px;border-bottom:1px solid var(--line);padding-bottom:10px}
+button,input,select,textarea{font:inherit}
+button,.button{border:1px solid var(--line);border-radius:8px;padding:8px 13px;background:var(--white);color:var(--ink);cursor:pointer}
+button[aria-pressed="true"],.primary{background:var(--accent);border-color:var(--accent);color:var(--white)}
+button:disabled{opacity:.55;cursor:wait}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid #866bee;outline-offset:2px}
+label{display:grid;gap:5px;font-size:.9rem;font-weight:650;min-width:0}
+input,select,textarea{color:var(--ink);padding:8px 10px;border:1px solid #bdb7cc;border-radius:7px;min-width:0;width:100%;background:var(--white)}
+textarea{min-height:95px;resize:vertical}
+form{display:grid;gap:14px}
+.panel{border:1px solid var(--line);background:var(--white);border-radius:13px;padding:18px;margin-bottom:16px;overflow-wrap:anywhere}
+.panel summary{cursor:pointer;font-weight:650}
+details.panel[open]>summary{margin-bottom:14px}
+.entry{border-top:1px solid var(--line);padding:12px 0}
+.entry:first-child{border-top:0}
+.entry:last-child{padding-bottom:0}
+.scroll{overflow:auto}
+table{border-collapse:collapse;width:100%;font-size:.91rem}
+thead{background:#f4f1fb;text-align:left}
+th,td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+td:last-child{min-width:100px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:12px;margin-bottom:16px}
+.kpi{border:1px solid var(--line);background:var(--white);border-radius:10px;padding:12px}
+.kpi strong{display:block;font-size:1.4rem}
+.copy{white-space:pre-wrap;overflow-wrap:anywhere}
+.status{min-height:1.5em}
+.error{color:#962d35}
+.evidence{display:block;max-width:min(100%,600px);max-height:580px;object-fit:contain;background:#f4f1fb;margin-bottom:12px}
+.check{display:flex;align-items:center;font-weight:500}
+.check input{width:auto}
+dialog{width:min(92%,640px);max-height:88vh;border:1px solid var(--line);border-radius:15px;padding:22px;color:var(--ink)}
+dialog::backdrop{background:#18162980}
+@media(max-width:600px){.top,.wrap{padding-inline:15px}.wrap{padding-block:24px}.account small{display:none}.panel{padding:13px}.tabs button{padding-inline:10px}.top{height:60px}}
+</style>
+</head>
+<body>
+<header>
+  <div class="top">
+    <div class="brand"><span class="logo" aria-hidden="true">D</span> DropHero</div>
+    <div id="account" class="account" hidden>
+      <small id="signed-in-as"></small>
+      <a id="owner-link" href="./" hidden>Owner dashboard</a>
+      <button id="sign-out" type="button">Sign out</button>
+    </div>
+  </div>
+</header>
+<main class="wrap">
+  <section id="login" aria-labelledby="login-title">
+    <h1 id="login-title">Operations sign in</h1>
+    <p class="muted">Use your existing DropHero portal account.</p>
+    <form id="login-form">
+      <label>Email address <input id="email" type="email" autocomplete="username" required></label>
+      <label>Password <input id="password" type="password" autocomplete="current-password" required></label>
+      <button type="submit" class="primary" id="sign-in" disabled>Sign in</button>
+    </form>
+    <p id="login-status" class="status" role="status"></p>
+    <a href="./va.html">VA portal and password recovery</a>
+  </section>
+  <section id="app" hidden aria-labelledby="app-title">
+    <h1 id="app-title">Outreach operations</h1>
+    <p id="role" class="muted"></p>
+    <nav id="navigation" class="tabs" aria-label="Operations sections">
+      <button type="button" data-page="overview" aria-pressed="true">Overview</button>
+      <button type="button" data-page="team" aria-pressed="false">Team</button>
+      <button type="button" data-page="messages" aria-pressed="false">Communications</button>
+      <button type="button" data-page="quality" aria-pressed="false">Quality control</button>
+      <button type="button" data-page="payments" aria-pressed="false">Payout preparation</button>
+      <button type="button" data-page="reports" aria-pressed="false">Reports</button>
+    </nav>
+    <p id="page-status" class="status" role="status"></p>
+    <div id="page"></div>
+  </section>
+</main>
+<dialog id="action-dialog" aria-labelledby="action-title">
+  <h2 id="action-title"></h2>
+  <form id="action-form"></form>
+</dialog>
+<script type="module">
+import { startOperations } from './system-manager.mjs';
+startOperations('https://aexomkitwnxvpqlmtrik.supabase.co', 'sb_publishable_Y88uWkdq3igd5dMkT1c8JA_qMB_ZB7d');
+</script>
+</body>
+</html>
