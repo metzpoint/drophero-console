@@ -75,7 +75,8 @@ const dateSpan = report => {
 
 export function startOperations(url, key) {
   const db = createClient(url, key);
-  const state = { role: null, page: 'overview', loginVersion: 0, pageVersion: 0 };
+  const state = { role: null, page: location.hash === '#start' ? 'start' : 'overview', loginVersion: 0, pageVersion: 0 };
+  const followupFilter = { sender: '', stage: 'REVIEW', search: '' };
   const reportDate = el('input', { type: 'date', value: new Date().toISOString().slice(0, 10) });
   const reportPeriod = select([['DAILY', 'Daily'], ['WEEKLY', 'Weekly']]);
   let refreshMessage = '';
@@ -108,7 +109,7 @@ export function startOperations(url, key) {
       try {
         await submit();
         dialog.close();
-        refreshMessage = success;
+        refreshMessage = typeof success === 'function' ? success() : success;
         await openPage();
       } catch (error) {
         feedback.textContent = message(error);
@@ -220,15 +221,59 @@ export function startOperations(url, key) {
     ];
   }
 
+  function startHere() {
+    return [
+      panel(heading('Your role in Outreach'),
+        paragraph('Work from Operations with your own DropHero login. Each DMer works in their own VA portal and sends from the original TikTok account. You review the conversation, write the answer and hand it to that DMer.'),
+        paragraph('Work within your five hours per week, Monday to Friday. Start with replies waiting for your review, then check pending proof and team issues.'),
+        button('Open creator follow-up drafts', () => void openPage('messages'))),
+      panel(heading('Prepare an answer for a DMer'),
+        el('ol', {},
+          el('li', {}, 'Open Communications, then Creator follow-up drafts. Choose Needs review and filter by assigned DMer. Start with the oldest creator reply.'),
+          el('li', {}, 'Open the creator card. Check the latest incoming message, previous replies, the assigned DMer, and the listed TikTok account.'),
+          el('li', {}, 'Select Edit draft. Write a short reply that answers the creator’s question. Check suggested wording against the conversation and use only terms you can confirm.'),
+          el('li', {}, 'Choose Queue for assigned DMer and save. The draft appears in the assigned DMer’s VA portal. They copy it, send it in the original TikTok conversation, then confirm the send in their portal.'),
+          el('li', {}, 'Use Awaiting DMer to check handoffs. Use Sent to see the DMer’s recorded confirmation.')),
+        paragraph('If a creator replied again, the sender is unclear, or there is no matching draft, ask the DMer to verify the latest chat and flag the issue in your report. Use a targeted team notice for a quick follow-up.')),
+      panel(heading('Your first shift'),
+        el('ol', {},
+          el('li', {}, 'Open Communications and review the oldest open creator replies. Queue the answers you can verify for the assigned DMers.'),
+          el('li', {}, 'Open Quality control. Review submitted proof and record what needs correction.'),
+          el('li', {}, 'Save a Daily report with the drafts queued, proofs reviewed, and anything that needs a decision. Use Weekly for the end-of-week summary.')),
+        paragraph('Use Payout preparation to give the owner a reviewed balance and a note. The owner approves and records final payments.'),
+        el('div', { className: 'actions' },
+          button('Open Quality control', () => void openPage('quality')),
+          button('Open Reports', () => void openPage('reports'))))
+    ];
+  }
+
+  function canQueueDraft(row) {
+    return ['READY_FOR_REVIEW', 'NEEDS_INVESTIGATION', 'APPROVED'].includes(row.status)
+      && !row.new_reply_since_draft && !row.copied_at && Boolean(row.sender_account && row.dmer);
+  }
+
   function reviewDraft(row) {
     const copy = notes(row.approved_text || row.draft_text || '');
     const note = notes();
-    const decision = select([['APPROVE', 'Approve for sender'], ['REJECT', 'Return for review'],
-      ['DECLINE', 'Close without follow-up'], ['REOPEN', 'Reopen draft']]);
-    action('Review creator draft', [field('Decision', decision), field('Reply draft', copy), field('Review note', note)],
-      () => call('dh_owner_conversion_review', {
-        p_draft_id: row.draft_id, p_action: decision.value, p_text: copy.value, p_note: note.value
-      }), 'Draft decision saved.');
+    const choices = [];
+    if (canQueueDraft(row)) choices.push(['APPROVE', 'Queue for assigned DMer']);
+    if (['DECLINED', 'NEEDS_INVESTIGATION'].includes(row.status)
+        || (row.status === 'ALREADY_HANDLED' && row.verify_result === 'NOT_SENT')) {
+      choices.push(['REOPEN', 'Reopen draft']);
+    }
+    if (row.status !== 'DECLINED') {
+      choices.push(['REJECT', 'Return for review'], ['DECLINE', 'Close without follow-up']);
+    }
+    const decision = select(choices);
+    action('Edit draft for ' + (row.dmer || 'review'), [
+      paragraph((row.handle || 'Creator') + ' · ' + (row.sender_account || 'TikTok account needs verification'), 'muted'),
+      field('Decision', decision), field('Reply draft', copy), field('Review note', note)
+    ], async () => {
+      if (decision.value === 'APPROVE' && !copy.value.trim()) throw new Error('Enter the reply before queuing it.');
+      await call('dh_owner_conversion_review', {
+        p_draft_id: row.draft_id, p_action: decision.value, p_text: copy.value, p_note: note.value || null
+      });
+    }, () => decision.value === 'APPROVE' ? 'Queued for ' + row.dmer + ' to send in TikTok.' : 'Draft decision saved.');
   }
 
   function creatorConversation(lead) {
@@ -260,26 +305,64 @@ export function startOperations(url, key) {
     const recipients = staff.filter(s => s.manageable && s.active);
     const recipient = select([['', 'All active team members'], ...recipients.map(s => [s.va_id, s.name])]);
     const creators = interested.map(creatorConversation);
-    const drafts = queue.rows.map(row => details((row.handle || row.creator_name || 'Creator') + ' · ' + labelFor(row.status), async () => [
-      paragraph('Assigned sender: ' + (row.dmer || 'Unknown'), 'muted'),
-      paragraph(row.latest_reply || 'No creator reply text.', 'copy'),
-      ...row.history.map(m => entry(el('small', {}, labelFor(m.dir) + ' · ' + formatDate(m.at)), paragraph(m.text, 'copy'))),
-      paragraph(row.approved_text || row.draft_text || 'No draft text.', 'copy'),
-      ...(['SENT', 'REGISTERED'].includes(row.status) ? [] : [button('Review draft', () => reviewDraft(row))])
-    ]));
-    const search = el('input', { type: 'search', placeholder: 'Search drafts' });
-    const list = el('div', {}, drafts.length ? drafts : paragraph('No drafts in this queue.', 'muted'));
-    search.oninput = () => drafts.forEach(draft => {
-      draft.hidden = !draft.querySelector('summary').textContent.toLowerCase().includes(search.value.trim().toLowerCase());
-    });
+    const rows = queue.rows;
+    const senders = [...new Set(rows.map(row => row.dmer).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    const sender = select([['', 'All DMers'], ...senders.map(name => [name, name])]);
+    const stages = {
+      REVIEW: ['READY_FOR_REVIEW', 'NEEDS_INVESTIGATION'],
+      QUEUED: ['APPROVED'],
+      SENT: ['SENT']
+    };
+    const stage = select([['REVIEW', 'Needs review'], ['QUEUED', 'Awaiting DMer'], ['SENT', 'Sent'], ['ALL', 'All statuses']]);
+    const search = el('input', { type: 'search', placeholder: 'Creator handle or name', value: followupFilter.search });
+    sender.value = senders.includes(followupFilter.sender) ? followupFilter.sender : '';
+    stage.value = followupFilter.stage;
+    const count = el('p', { className: 'muted', role: 'status' });
+    const list = el('div');
+    const draftCards = new Map();
+    const draftCard = row => {
+      if (draftCards.has(row.draft_id)) return draftCards.get(row.draft_id);
+      const card = details((row.handle || row.creator_name || 'Creator') + ' · ' + (row.dmer || 'DMer unverified') + ' · ' + labelFor(row.status),
+        async () => [
+          paragraph('TikTok account · ' + (row.sender_account || 'Verify with the DMer'), 'muted'),
+          paragraph('Latest reply · ' + formatDate(row.latest_reply_at), 'muted'),
+          paragraph(row.latest_reply || 'No creator reply text.', 'copy'),
+          ...row.history.map(m => entry(el('small', {}, labelFor(m.dir) + ' · ' + formatDate(m.at)), paragraph(m.text, 'copy'))),
+          paragraph(row.approved_text || row.draft_text || 'No draft text.', 'copy'),
+          row.new_reply_since_draft ? paragraph('The creator has a newer reply. Wait for an updated draft.', 'error') : null,
+          row.sent_confirmed_at ? paragraph('DM sent · Confirmed by the DMer ' + formatDate(row.sent_confirmed_at), 'muted') : null,
+          !['SENT', 'REGISTERED'].includes(row.status) && !row.copied_at
+            && (row.status !== 'ALREADY_HANDLED' || row.verify_result === 'NOT_SENT') ?
+            button('Edit draft', () => reviewDraft(row)) : null
+        ].filter(Boolean));
+      draftCards.set(row.draft_id, card);
+      return card;
+    };
+    function renderDrafts() {
+      Object.assign(followupFilter, { sender: sender.value, stage: stage.value, search: search.value });
+      const query = search.value.trim().toLowerCase();
+      const filtered = rows.filter(row => (stage.value === 'ALL' || stages[stage.value].includes(row.status))
+        && (!sender.value || row.dmer === sender.value)
+        && (!query || [row.handle, row.creator_name].some(value => value?.toLowerCase().includes(query))));
+      if (stage.value === 'REVIEW') filtered.sort((a, b) =>
+        (a.latest_reply_at || a.created_at || '9999').localeCompare(b.latest_reply_at || b.created_at || '9999'));
+      count.textContent = filtered.length + (filtered.length === 1 ? ' draft' : ' drafts');
+      list.replaceChildren(...(filtered.length ? filtered.map(draftCard) : [paragraph('No drafts match these filters.', 'muted')]));
+    }
+    sender.onchange = renderDrafts;
+    stage.onchange = renderDrafts;
+    search.oninput = renderDrafts;
+    renderDrafts();
     return [
-      panel(heading('Team notices'), el('div', { className: 'fields' },
-        field('Recipient', recipient), button('Create notice', () => addNotice(recipients.find(s => s.va_id === recipient.value)))),
-      el('div', { className: 'entry' }, historyTable(history.filter(row => row.notice_title)))),
+      panel(heading('Creator follow-up drafts'),
+        paragraph('Queue the reviewed text for the assigned DMer. They send it in TikTok and confirm the send in their VA portal.', 'muted'),
+        el('div', { className: 'fields' }, field('Assigned DMer', sender), field('Draft status', stage), field('Find a creator', search)),
+        count, list),
       panel(heading('Interested creator conversations'),
         creators.length ? creators : paragraph('No interested conversations awaiting follow-up.', 'muted')),
-      panel(heading('Creator follow-up drafts'), paragraph('Approved drafts go to the assigned sender for the next reply.', 'muted'),
-        field('Search by creator', search), list)
+      panel(heading('Team notices'), el('div', { className: 'fields' },
+        field('Recipient', recipient), button('Create notice', () => addNotice(recipients.find(s => s.va_id === recipient.value)))),
+        el('div', { className: 'entry' }, historyTable(history.filter(row => row.notice_title))))
     ];
   }
 
@@ -428,7 +511,7 @@ export function startOperations(url, key) {
     ];
   }
 
-  const pages = { overview, team, messages, quality, payments, reports };
+  const pages = { start: startHere, overview, team, messages, quality, payments, reports };
   async function openPage(page = state.page) {
     if (!state.role) return;
     const version = ++state.pageVersion;

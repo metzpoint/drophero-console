@@ -87,6 +87,7 @@ dialog::backdrop{background:#18162980}
     <h1 id="app-title">Outreach operations</h1>
     <p id="role" class="muted"></p>
     <nav id="navigation" class="tabs" aria-label="Operations sections">
+      <button type="button" data-page="start" aria-pressed="false">Start here</button>
       <button type="button" data-page="overview" aria-pressed="true">Overview</button>
       <button type="button" data-page="team" aria-pressed="false">Team</button>
       <button type="button" data-page="messages" aria-pressed="false">Communications</button>
@@ -103,7 +104,7 @@ dialog::backdrop{background:#18162980}
   <form id="action-form"></form>
 </dialog>
 <script type="module">
-import { startOperations } from './system-manager.mjs';
+import { startOperations } from './system-manager.mjs?v=20261126-onboarding';
 startOperations('https://aexomkitwnxvpqlmtrik.supabase.co', 'sb_publishable_Y88uWkdq3igd5dMkT1c8JA_qMB_ZB7d');
 </script>
 </body>
