@@ -264,9 +264,13 @@ export async function managerMail(call) {
     const subject = node('input', { required: true, maxLength: 998, value: previous?.subject || '' });
     const recipient = node('input', { type: 'email', required: true, maxLength: 254, value: previous?.recipient || '' });
     const body = node('textarea', { rows: 6, required: true, maxLength: 30000, value: previous?.body || '' });
-    const type = picker('Mail type', Object.entries(types));
-    type.value = previous?.type || 'affiliate_support';
     const available = mailboxes.filter(row => row.provider === 'graph' && row.send_enabled);
+    const affiliateReady = mailboxes.some(row => row.mailbox === 'affiliate@drophero.app' && row.send_enabled);
+    const choices = Object.entries(types).filter(([value]) =>
+      value === 'outreach_followup' ? available.length > 0 : affiliateReady);
+    const type = picker('Mail type', choices);
+    type.value = choices.some(([value]) => previous?.type === value) ? previous.type
+      : affiliateReady ? 'affiliate_support' : 'outreach_followup';
     const original = picker('Original outreach mailbox', available.map(row => [row.mailbox, row.mailbox]));
     if (previous?.mailbox) original.value = previous.mailbox;
     const originalField = field('Original outreach mailbox', original);
